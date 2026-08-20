@@ -41,21 +41,38 @@ that comes back green.
 | `npm run reap:offers` | Cancels offers on abandoned claims, reclaiming 0.2 XRP each. Dry run by default |
 | `npm run e2e:mainnet` | Spends real XRP. Refuses without an explicit consent flag |
 
-## Try it — the demo harness
+## Try it — the demo
 
 ```bash
-npm run demo
+npm run demo            # localhost
+npm run demo -- --lan   # also on your network, so a real phone can join
 ```
 
 One command, no setup: it faucet-funds a throwaway testnet issuer, starts the
-API with in-memory storage, and prints a URL. Open it and walk the seven steps
-— create an attendee, claim, sign, confirm, verify, **burn**, verify again.
-Step 7 is the point: `attended: true`, `status: attended_badge_burned`.
+API with in-memory storage, and prints the URLs.
 
-The page drives the real endpoints, not a parallel demo path. Every step shows
-the method, the path, the raw JSON and an explorer link, and a request log at
-the bottom lists every call it made — so you can check it is not faking
-anything.
+**Two screens, one event** — the demo is a role-play of a real badge desk:
+
+| Page | Who | What happens |
+|---|---|---|
+| `/demo/attendee` | attendee, on a phone | Get a wallet, show it as a **QR code**, then confirm the badge that appears |
+| `/demo/volunteer` | volunteer, on a laptop | **Scan** the QR, see whether the wallet can even receive an NFT, **fund it** if not, then issue the badge |
+| `/demo/walkthrough` | one screen | The original explainer: the whole cycle in seven steps, ending in a burn |
+| `/demo` | — | Role chooser |
+
+The interesting default is an **unactivated** attendee wallet: it has no account
+root, so a badge cannot be delivered to it at all. The volunteer's console says
+so, shows the shortfall, and offers to send the reserve — which is the
+sponsorship path, with its two-phase reserve and daily cap, made visible.
+
+Scanning uses the browser's built-in `BarcodeDetector` (Chrome/Edge). Where
+that is missing or there is no camera, typing the address is a first-class
+path, not a fallback bolted on. The QR encoder is hand-written and in-file —
+no library, no CDN.
+
+Both pages drive the real endpoints, not a parallel demo path. Every step shows
+the method, the path, the raw JSON and an explorer link, and a request log
+lists every call made — so you can check it is not faking anything.
 
 `DEMO_ENABLED` is **testnet-only by construction**: paired with mainnet it
 refuses to boot rather than quietly disabling itself, and the routes re-check

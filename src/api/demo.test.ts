@@ -19,7 +19,7 @@ import { Wallet } from "xrpl";
 import { describe, expect, it, vi } from "vitest";
 import { MockGateway } from "../../test/helpers/mock-gateway.js";
 import type { AppConfig } from "../config.js";
-import { AccountNotFoundError, ConfigError } from "../errors.js";
+import { AccountNotFoundError, ConfigError, SponsorshipDeniedError } from "../errors.js";
 import {
   MAX_TAXON,
   type AttendanceRecord,
@@ -32,10 +32,15 @@ import {
   type SponsorReserveInput,
 } from "../types.js";
 import {
+  BASE_RESERVE_XRP,
   DEMO_EVENT_ID_BASE,
   DemoState,
+  MAX_DEMO_WALLETS,
+  OWNER_RESERVE_PER_OBJECT_XRP,
   assertDemoAllowed,
+  badgeReadyReserveXrp,
   parseDemoEnabled,
+  reserveShortfallXrp,
   type DemoChainOps,
   type DemoOptions,
 } from "./demo-state.js";
@@ -54,8 +59,46 @@ const BURN_TX = "C31F96F645E7BDFDE9D28B2612A8C9442C4CB2DA3B05A5F8EA32F2A1BE2F32B
 
 const ISSUER_BALANCE = "999.99";
 
-/** A path that is guaranteed not to exist, so the 503 branch is deterministic. */
-const MISSING_HTML = join(tmpdir(), "xrpl-demo-ui-that-was-never-built", "demo.html");
+/**
+ * A directory that is guaranteed not to exist, so the 503 branch is
+ * deterministic for all four pages. Pointing at the real src/api/public would
+ * make these tests pass or fail depending on which UI files happen to have been
+ * written yet, which is exactly the coupling the 503 exists to avoid.
+ */
+const MISSING_DIR = join(tmpdir(), "xrpl-demo-ui-that-was-never-built");
+
+/** The four pages, and the repo-relative file each 503 has to name. */
+const DEMO_PAGES = [
+  ["/demo", "demo-index.html"],
+  ["/demo/walkthrough", "demo.html"],
+  ["/demo/attendee", "attendee.html"],
+  ["/demo/volunteer", "volunteer.html"],
+] as const;
+
+/**
+ * EVERY route this harness registers.
+ *
+ * One list, used by both the "absent unless enabled" and the "403 on mainnet"
+ * sweeps, so a route added without a guard cannot slip through by being left
+ * out of a copy of the list. Both guards run before body validation, so a
+ * bodyless POST is enough to reach them.
+ */
+const DEMO_ROUTES = [
+  ["GET", "/demo"],
+  ["GET", "/demo/walkthrough"],
+  ["GET", "/demo/attendee"],
+  ["GET", "/demo/volunteer"],
+  ["GET", "/demo/state"],
+  ["POST", "/demo/attendee"],
+  ["POST", "/demo/accept"],
+  ["POST", "/demo/burn"],
+  ["POST", "/demo/reset"],
+  ["POST", "/demo/wallet"],
+  ["GET", `/demo/wallet/${ISSUER}/status`],
+  ["POST", `/demo/wallet/${ISSUER}/accept`],
+  ["GET", `/demo/lookup?address=${ISSUER}`],
+  ["POST", "/demo/sponsor"],
+] as const;
 
 function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {
@@ -217,6 +260,11 @@ function makeDeps(
     /** false leaves ApiDeps.demo undefined, i.e. DEMO_ENABLED was not set. */
     demo?: boolean;
     demoOverrides?: Partial<DemoOptions>;
+    /**
+     * Only the ChainOps a test needs. Everything else stays wired to explode,
+     * so a demo route that reaches for the real ledger by accident fails loudly.
+     */
+    chain?: Partial<ChainOps>;
   } = {},
 ): Harness {
   const state = new DemoState();
@@ -252,7 +300,7 @@ function makeDeps(
     enabled: true,
     ops,
     state,
-    htmlPath: MISSING_HTML,
+    htmlDir: MISSING_DIR,
     ...options.demoOverrides,
   };
 
@@ -264,7 +312,7 @@ function makeDeps(
     attendance,
     claims,
     sponsorLedger: new FakeSponsorLedger(),
-    chain: unusedChainOps(),
+    chain: { ...unusedChainOps(), ...options.chain },
     rateLimit: { enabled: false },
     // The real logger configuration from buildDeps(), pointed at an array, so
     // what is asserted about the log sink is the configuration that ships.
@@ -295,17 +343,10 @@ describe("demo routes are absent unless enabled", () => {
   it("404s every demo path when DEMO_ENABLED was not set", async () => {
     const h = harness({ demo: false });
 
-    for (const [method, url] of [
-      ["GET", "/demo"],
-      ["GET", "/demo/state"],
-      ["POST", "/demo/attendee"],
-      ["POST", "/demo/accept"],
-      ["POST", "/demo/burn"],
-      ["POST", "/demo/reset"],
-    ] as const) {
+    for (const [method, url] of DEMO_ROUTES) {
       const res = await h.app.inject({ method, url });
       expect(res.statusCode, `${method} ${url}`).toBe(404);
-      expect(res.json().error.code).toBe("NOT_FOUND");
+      expect(res.json().error.code, `${method} ${url}`).toBe("NOT_FOUND");
     }
 
     // Not disabled-but-present: nothing was constructed at all.
@@ -380,17 +421,10 @@ describe("the network is re-checked on every demo request", () => {
     // ...and then something mutates the live config object.
     h.deps.config.network = "mainnet";
 
-    for (const [method, url] of [
-      ["GET", "/demo"],
-      ["GET", "/demo/state"],
-      ["POST", "/demo/attendee"],
-      ["POST", "/demo/accept"],
-      ["POST", "/demo/burn"],
-      ["POST", "/demo/reset"],
-    ] as const) {
+    for (const [method, url] of DEMO_ROUTES) {
       const res = await h.app.inject({ method, url });
       expect(res.statusCode, `${method} ${url}`).toBe(403);
-      expect(res.json().error.code).toBe("NETWORK_GUARD");
+      expect(res.json().error.code, `${method} ${url}`).toBe("NETWORK_GUARD");
     }
 
     // Nothing was signed and no faucet was touched on the way to the refusal.
@@ -466,36 +500,87 @@ describe("the attendee seed never leaves the process", () => {
 });
 
 // ---------------------------------------------------------------------------
-// GET /demo
+// The pages
+//
+// Four of them now, owned by nobody here: they are read off disk and served
+// as-is. A page that has not been written yet is a 503 naming the file, never
+// a crash and never a boot failure — that is what lets the UI half and the API
+// half be built independently.
 // ---------------------------------------------------------------------------
 
-describe("GET /demo", () => {
-  it("503s with an operator message when the UI file has not been built yet", async () => {
+describe("the demo pages", () => {
+  it("503s with an operator message when a page has not been built yet", async () => {
     const h = harness();
 
-    const res = await h.app.inject({ method: "GET", url: "/demo" });
+    for (const [url, file] of DEMO_PAGES) {
+      const res = await h.app.inject({ method: "GET", url });
 
-    // 503, not a crash, and not a boot failure: the API half stays up.
-    expect(res.statusCode).toBe(503);
-    expect(res.json().error.message).toMatch(/src\/api\/public\/demo\.html/);
-    expect(res.json().error.message).toMatch(/has not been built yet/i);
+      expect(res.statusCode, url).toBe(503);
+      // Named individually: "the demo UI is missing" is useless when there are
+      // four of them and three are fine.
+      expect(res.json().error.message, url).toContain(`src/api/public/${file}`);
+      expect(res.json().error.message, url).toMatch(/has not been built yet/i);
+    }
 
     // The rest of the harness still works, which is the point of not crashing.
     expect((await h.app.inject({ method: "GET", url: "/demo/state" })).statusCode).toBe(200);
   });
 
-  it("serves the page as text/html when it exists", async () => {
+  it("serves each page as text/html when its file exists", async () => {
     const dir = mkdtempSync(join(tmpdir(), "xrpl-demo-ui-"));
-    const htmlPath = join(dir, "demo.html");
+    for (const [, file] of DEMO_PAGES) {
+      writeFileSync(join(dir, file), `<h1>${file}</h1>`, "utf8");
+    }
+
+    try {
+      const h = harness({ demoOverrides: { htmlDir: dir } });
+
+      for (const [url, file] of DEMO_PAGES) {
+        const res = await h.app.inject({ method: "GET", url });
+
+        expect(res.statusCode, url).toBe(200);
+        expect(res.headers["content-type"], url).toMatch(/text\/html/);
+        expect(res.body, url).toContain(file);
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("still honours the walkthrough's own path override", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xrpl-demo-ui-"));
+    const htmlPath = join(dir, "somewhere-else.html");
     writeFileSync(htmlPath, "<h1>claim your badge</h1>", "utf8");
 
     try {
       const h = harness({ demoOverrides: { htmlPath } });
-      const res = await h.app.inject({ method: "GET", url: "/demo" });
+      const res = await h.app.inject({ method: "GET", url: "/demo/walkthrough" });
 
       expect(res.statusCode).toBe(200);
       expect(res.headers["content-type"]).toMatch(/text\/html/);
       expect(res.body).toContain("claim your badge");
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("routes GET and POST /demo/attendee independently", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xrpl-demo-ui-"));
+    writeFileSync(join(dir, "attendee.html"), "<h1>your badge</h1>", "utf8");
+
+    try {
+      const h = harness({ demoOverrides: { htmlDir: dir } });
+
+      // The page...
+      const page = await h.app.inject({ method: "GET", url: "/demo/attendee" });
+      expect(page.statusCode).toBe(200);
+      expect(page.body).toContain("your badge");
+
+      // ...and the walkthrough's wallet route, on the same path. A page route
+      // silently shadowing the POST would break the walkthrough invisibly.
+      const created = await h.app.inject({ method: "POST", url: "/demo/attendee" });
+      expect(created.statusCode).toBe(201);
+      expect(String(created.json().address)).toMatch(/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -791,5 +876,773 @@ describe("POST /demo/reset", () => {
     expect(h.ops.acceptOfferAs).not.toHaveBeenCalled();
     expect(h.ops.burn).not.toHaveBeenCalled();
     expect((h.deps.gateway as MockGateway).submits).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// THE TWO-ROLE FLOW
+//
+// An attendee walks up to a volunteer. Everything below is one half of that
+// conversation, and the two halves must never be able to disagree: both read
+// the SAME two stores the real routes wrote, through the same reader.
+// ---------------------------------------------------------------------------
+
+/** Address-shaped junk that is not a valid classic address. */
+const NOT_AN_ADDRESS = "https://example.com/definitely-not-a-wallet";
+
+/** Register a wallet through the route and hand back what the page would hold. */
+async function newWallet(
+  h: ReturnType<typeof harness>,
+  body?: { funded: boolean },
+): Promise<{ address: string; token: string }> {
+  const res = await h.app.inject({
+    method: "POST",
+    url: "/demo/wallet",
+    ...(body ? { payload: body } : {}),
+  });
+  expect(res.statusCode).toBe(201);
+  return { address: res.json().address as string, token: res.json().token as string };
+}
+
+// ---------------------------------------------------------------------------
+// Reserve arithmetic
+// ---------------------------------------------------------------------------
+
+describe("what an empty wallet actually needs", () => {
+  it("computes the shortfall from the named reserves rather than a literal", () => {
+    // Base reserve, plus headroom for the one NFTokenPage the badge lands in.
+    expect(badgeReadyReserveXrp()).toBe("1.2");
+    expect(BASE_RESERVE_XRP).toBe("1");
+    expect(OWNER_RESERVE_PER_OBJECT_XRP).toBe("0.2");
+
+    expect(reserveShortfallXrp("0")).toBe("1.2");
+    expect(reserveShortfallXrp("0.5")).toBe("0.7");
+    expect(reserveShortfallXrp("1")).toBe("0.2");
+  });
+
+  it("never reports a negative shortfall, which would read as a refund", () => {
+    expect(reserveShortfallXrp("1.2")).toBe("0");
+    expect(reserveShortfallXrp("100")).toBe("0");
+    expect(reserveShortfallXrp("999.999999")).toBe("0");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The wallet registry
+// ---------------------------------------------------------------------------
+
+describe("the wallet registry", () => {
+  it("holds many attendees at once and evicts the oldest past the cap", () => {
+    const state = new DemoState();
+    const first = Wallet.generate();
+    state.registerWallet(first, { funded: false });
+
+    for (let i = 0; i < MAX_DEMO_WALLETS; i += 1) {
+      state.registerWallet(Wallet.generate(), { funded: false });
+    }
+
+    // Bounded, and it is the oldest that went.
+    expect(state.walletCount).toBe(MAX_DEMO_WALLETS);
+    expect(state.hasWallet(first.classicAddress)).toBe(false);
+    expect(state.walletFor(first.classicAddress)).toBeUndefined();
+  });
+
+  it("never evicts the walkthrough's attendee out from under the page", () => {
+    const state = new DemoState();
+    const walkthrough = Wallet.generate();
+    state.setAttendee(walkthrough, { funded: true });
+
+    for (let i = 0; i < MAX_DEMO_WALLETS * 2; i += 1) {
+      state.registerWallet(Wallet.generate(), { funded: false });
+    }
+
+    expect(state.walletCount).toBe(MAX_DEMO_WALLETS);
+    expect(state.signingWallet()?.classicAddress).toBe(walkthrough.classicAddress);
+  });
+
+  it("issues a handle that is unguessable, unique, and not the key", () => {
+    const state = new DemoState();
+    const wallet = Wallet.generate();
+    const seed = wallet.seed ?? "";
+
+    const token = state.registerWallet(wallet, { funded: false });
+    const other = state.registerWallet(Wallet.generate(), { funded: false });
+
+    expect(token).not.toBe(seed);
+    expect(token).not.toBe(other);
+    expect(token).toMatch(/^[0-9a-f]{48}$/);
+
+    expect(state.authorises(wallet.classicAddress, token)).toBe(true);
+    expect(state.authorises(wallet.classicAddress, other)).toBe(false);
+    expect(state.authorises(wallet.classicAddress, undefined)).toBe(false);
+    expect(state.authorises(wallet.classicAddress, "")).toBe(false);
+    // An address this process holds no key for cannot be authorised at all.
+    expect(state.authorises(Wallet.generate().classicAddress, token)).toBe(false);
+  });
+
+  it("keeps handles out of every view of the state", () => {
+    const state = new DemoState();
+    const wallet = Wallet.generate();
+    const token = state.registerWallet(wallet, { funded: false });
+
+    expect(JSON.stringify(state)).not.toContain(token);
+    expect(JSON.stringify(state.view())).not.toContain(token);
+    expect(JSON.stringify({ ...state })).not.toContain(token);
+    expect(JSON.stringify(state.wallets())).not.toContain(token);
+    // ...and the disclosure is still useful.
+    expect(state.wallets()).toEqual([
+      { address: wallet.classicAddress, createdAt: expect.any(String), fundedAtCreation: false },
+    ]);
+  });
+
+  it("survives a reset, because the people did not go home", () => {
+    const state = new DemoState();
+    const wallet = Wallet.generate();
+    const token = state.registerWallet(wallet, { funded: false });
+    const before = state.eventId;
+
+    state.reset();
+
+    expect(state.eventId).toBe(before + 1);
+    expect(state.authorises(wallet.classicAddress, token)).toBe(true);
+    // But nothing they did on the old event may read as current.
+    state.markWalletAccepted(wallet.classicAddress, before, ACCEPT_TX, 1);
+    expect(state.walletAccept(wallet.classicAddress, state.eventId)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /demo/wallet
+// ---------------------------------------------------------------------------
+
+describe("POST /demo/wallet", () => {
+  it("defaults to an unactivated wallet, and takes no faucet money", async () => {
+    const h = harness();
+
+    const res = await h.app.inject({ method: "POST", url: "/demo/wallet" });
+
+    expect(res.statusCode).toBe(201);
+    const body = res.json();
+    expect(body.activated).toBe(false);
+    expect(body.balanceXrp).toBe("0");
+    expect(String(body.address)).toMatch(/^r[1-9A-HJ-NP-Za-km-z]{24,34}$/);
+
+    // The whole point of the default: the address genuinely does not exist on
+    // the ledger, so the volunteer has to fund it before a badge can land.
+    expect(h.ops.fundWallet).not.toHaveBeenCalled();
+    expect(h.balances.has(body.address)).toBe(false);
+  });
+
+  it("faucet-funds only when asked", async () => {
+    const h = harness();
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/demo/wallet",
+      payload: { funded: true },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(res.json()).toMatchObject({ balanceXrp: "100", activated: true });
+    expect(h.ops.fundWallet).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns a handle that is not the seed, and never logs either", async () => {
+    const h = harness();
+    const wallet = Wallet.generate();
+    const seed = wallet.seed ?? "";
+    expect(seed.length).toBeGreaterThan(20);
+    h.ops.fundWallet.mockResolvedValue({ wallet, balanceXrp: "100" });
+    h.balances.set(wallet.classicAddress, "100");
+
+    const created = await h.app.inject({
+      method: "POST",
+      url: "/demo/wallet",
+      payload: { funded: true },
+    });
+    const token = created.json().token as string;
+
+    expect(token).toBeTypeOf("string");
+    expect(token).not.toBe(seed);
+    expect(created.body).not.toContain(seed);
+    // The other exit. `token` is on LOG_REDACT_PATHS too, so even a future log
+    // line that names it cannot print it.
+    expect(h.log()).not.toContain(seed);
+    expect(h.log()).not.toContain(token);
+
+    // Everything downstream still keeps the seed in.
+    await h.claims.seed(h.state.eventId, wallet.classicAddress, {
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+    });
+    const status = await h.app.inject({
+      method: "GET",
+      url: `/demo/wallet/${wallet.classicAddress}/status`,
+    });
+    const lookup = await h.app.inject({
+      method: "GET",
+      url: `/demo/lookup?address=${wallet.classicAddress}`,
+    });
+    const accepted = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${wallet.classicAddress}/accept`,
+      payload: { token },
+    });
+
+    for (const res of [status, lookup, accepted]) {
+      expect(res.body).not.toContain(seed);
+      expect(res.body).not.toContain(token);
+    }
+    expect(h.log()).not.toContain(seed);
+    expect(h.log()).not.toContain(token);
+  });
+
+  it("400s a body that is not the documented shape", async () => {
+    const h = harness();
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/demo/wallet",
+      payload: { funded: "yes please" },
+    });
+    expect(res.statusCode).toBe(400);
+    expect(h.ops.fundWallet).not.toHaveBeenCalled();
+  });
+
+  it("leaves the walkthrough's attendee slot alone", async () => {
+    const h = harness();
+    const walkthrough = await h.app.inject({ method: "POST", url: "/demo/attendee" });
+
+    await newWallet(h);
+    await newWallet(h);
+
+    // Two more people scanned in; the walkthrough is still on its own attendee.
+    const state = await h.app.inject({ method: "GET", url: "/demo/state" });
+    expect(state.json().attendee.address).toBe(walkthrough.json().address);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /demo/wallet/:address/status
+// ---------------------------------------------------------------------------
+
+describe("GET /demo/wallet/:address/status", () => {
+  it("reports an unactivated wallet and what it is short by", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      address,
+      eventId: h.state.eventId,
+      activated: false,
+      balanceXrp: "0",
+      reserveShortfallXrp: "1.2",
+      pending: null,
+      accepted: false,
+      attended: false,
+    });
+  });
+
+  it("derives `pending` from the claim slot the REAL claim route wrote", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+
+    // Nothing is posted back to the demo: this is what POST
+    // /events/:eventId/claims leaves in the claim repository.
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+
+    expect(res.json().pending).toEqual({ offerId: OFFER_ID, nftokenId: NFTOKEN_ID });
+    expect(res.json().accepted).toBe(false);
+  });
+
+  it("shows nothing pending while the mint is still in flight", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+
+    // The claim slot is taken before anything is minted, so there is a moment
+    // where a row exists with no offer. Nothing for the attendee to confirm yet.
+    await h.claims.open({ eventId: h.state.eventId, address });
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+    expect(res.json().pending).toBeNull();
+  });
+
+  it("reports attendance from the index the REAL confirm route wrote", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    await h.attendance.insert({
+      eventId: h.state.eventId,
+      address,
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+      txHash: ACCEPT_TX,
+      ledgerIndex: 4_242_000,
+    });
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+
+    expect(res.json()).toMatchObject({
+      attended: true,
+      accepted: true,
+      txHash: ACCEPT_TX,
+      // The offer is consumed; showing it as pending would invite a second
+      // accept that can only fail.
+      pending: null,
+    });
+  });
+
+  it("reads the balance live rather than remembering what it handed out", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+
+    // The volunteer sponsors them; the ledger, not this process, is what says so.
+    h.balances.set(address, "1.5");
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+
+    expect(res.json()).toMatchObject({
+      activated: true,
+      balanceXrp: "1.5",
+      reserveShortfallXrp: "0",
+    });
+  });
+
+  it("400s an address that is not a classic address", async () => {
+    const h = harness();
+    const res = await h.app.inject({ method: "GET", url: "/demo/wallet/nonsense/status" });
+    expect(res.statusCode).toBe(400);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /demo/wallet/:address/accept
+// ---------------------------------------------------------------------------
+
+describe("POST /demo/wallet/:address/accept", () => {
+  it("403s a wrong handle, before it reads anything and long before it signs", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token: "0".repeat(48) },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(res.json().error.message).toMatch(/handle/i);
+    expect(h.ops.acceptOfferAs).not.toHaveBeenCalled();
+  });
+
+  it("403s a missing handle rather than 400ing it", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    // No body at all, and an empty body. "You may not drive this wallet" is a
+    // different answer from "your JSON is wrong" and the page shows different
+    // things for them.
+    for (const payload of [undefined, {}]) {
+      const res = await h.app.inject({
+        method: "POST",
+        url: `/demo/wallet/${address}/accept`,
+        ...(payload ? { payload } : {}),
+      });
+      expect(res.statusCode).toBe(403);
+    }
+    expect(h.ops.acceptOfferAs).not.toHaveBeenCalled();
+  });
+
+  it("403s a handle that is real but belongs to somebody else's wallet", async () => {
+    const h = harness();
+    const mine = await newWallet(h);
+    const theirs = await newWallet(h);
+    await h.claims.seed(h.state.eventId, theirs.address, {
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+    });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${theirs.address}/accept`,
+      payload: { token: mine.token },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(h.ops.acceptOfferAs).not.toHaveBeenCalled();
+  });
+
+  it("409s when there is no offer waiting", async () => {
+    const h = harness();
+    const { address, token } = await newWallet(h);
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toMatch(/no claim offer is waiting/i);
+    expect(h.ops.acceptOfferAs).not.toHaveBeenCalled();
+  });
+
+  it("signs the offer the real claim route created, as that wallet", async () => {
+    const h = harness();
+    const { address, token } = await newWallet(h);
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ txHash: ACCEPT_TX, ledgerIndex: 4_242_000 });
+
+    const call = h.ops.acceptOfferAs.mock.calls[0]?.[1];
+    expect(call?.offerId).toBe(OFFER_ID);
+    // Signed by the attendee, never by the issuer.
+    expect(call?.wallet.classicAddress).toBe(address);
+
+    // ...and the phone sees it immediately, before /confirm has indexed it.
+    const status = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+    expect(status.json()).toMatchObject({ accepted: true, attended: false, txHash: ACCEPT_TX });
+  });
+
+  it("replays the same hash on a double tap instead of submitting twice", async () => {
+    const h = harness();
+    const { address, token } = await newWallet(h);
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    const first = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token },
+    });
+    const second = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token },
+    });
+
+    expect(first.statusCode).toBe(200);
+    expect(second.statusCode).toBe(200);
+    expect(second.json()).toMatchObject({ txHash: ACCEPT_TX, alreadyAccepted: true });
+    // The offer is gone from the ledger by now; a second submit could only fail.
+    expect(h.ops.acceptOfferAs).toHaveBeenCalledTimes(1);
+  });
+
+  it("409s once attendance is recorded, because there is nothing left to sign", async () => {
+    const h = harness();
+    const { address, token } = await newWallet(h);
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    await h.attendance.insert({
+      eventId: h.state.eventId,
+      address,
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+      txHash: ACCEPT_TX,
+      ledgerIndex: 4_242_000,
+    });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.message).toMatch(/already has a recorded badge/i);
+    expect(h.ops.acceptOfferAs).not.toHaveBeenCalled();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /demo/lookup — the volunteer's scan result
+// ---------------------------------------------------------------------------
+
+describe("GET /demo/lookup", () => {
+  it("answers 200 with valid:false for anything that is not an address", async () => {
+    const h = harness();
+
+    for (const scanned of [NOT_AN_ADDRESS, "", "  ", "rNotAnAddress", ISSUER.slice(0, -1)]) {
+      const res = await h.app.inject({
+        method: "GET",
+        url: `/demo/lookup?address=${encodeURIComponent(scanned)}`,
+      });
+
+      // 200, not 400: a mis-scan is a thing to render, not a broken app.
+      expect(res.statusCode, scanned).toBe(200);
+      expect(res.json().valid, scanned).toBe(false);
+      expect(res.json().alreadyHasBadge, scanned).toBe(false);
+    }
+
+    // Nothing was asked of the ledger on the way to that answer.
+    expect(h.ops.getAccountBalanceXrp).not.toHaveBeenCalled();
+  });
+
+  it("says an unactivated wallet needs sponsorship, and by how much", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      address,
+      valid: true,
+      eventId: h.state.eventId,
+      activated: false,
+      balanceXrp: "0",
+      needsSponsorship: true,
+      reserveShortfallXrp: "1.2",
+      // What the sponsor would actually send, from the real SponsorConfig.
+      sponsorAmountXrp: "1.5",
+      claim: null,
+      attended: false,
+      alreadyHasBadge: false,
+    });
+  });
+
+  it("stops asking for sponsorship once the wallet exists", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    h.balances.set(address, "1.5");
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+    expect(res.json()).toMatchObject({
+      activated: true,
+      balanceXrp: "1.5",
+      needsSponsorship: false,
+      reserveShortfallXrp: "0",
+    });
+  });
+
+  it("shows an open claim without calling it a badge", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    h.balances.set(address, "1.5");
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+    expect(res.json().claim).toEqual({
+      status: "pending",
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+    });
+    // POST /claims hands that same offer back rather than minting twice, so the
+    // volunteer may still press issue.
+    expect(res.json().alreadyHasBadge).toBe(false);
+    expect(res.json().attended).toBe(false);
+  });
+
+  it("says plainly when this person already attended", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    h.balances.set(address, "1.5");
+    await h.attendance.insert({
+      eventId: h.state.eventId,
+      address,
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+      txHash: ACCEPT_TX,
+      ledgerIndex: 4_242_000,
+    });
+
+    const res = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+    expect(res.json()).toMatchObject({
+      attended: true,
+      attendedTxHash: ACCEPT_TX,
+      alreadyHasBadge: true,
+    });
+  });
+
+  it("works on an address this process holds no key for", async () => {
+    const h = harness();
+
+    // The volunteer scans a real Xaman wallet. There is no demo wallet behind
+    // it and there does not need to be.
+    const res = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${ISSUER}` });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ valid: true, activated: true, balanceXrp: ISSUER_BALANCE });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// POST /demo/sponsor
+// ---------------------------------------------------------------------------
+
+/** A sponsorWallet that answers however the test wants, and records its input. */
+function sponsorOps(impl: ChainOps["sponsorWallet"]) {
+  return { sponsorWallet: vi.fn<ChainOps["sponsorWallet"]>(impl) };
+}
+
+describe("POST /demo/sponsor", () => {
+  it("calls the REAL sponsorWallet, with the real config and the real ledger", async () => {
+    const chain = sponsorOps(async (_gateway, input) => ({
+      sponsored: true,
+      alreadyActivated: false,
+      address: input.address,
+      amountXrp: "1.5",
+      txHash: ACCEPT_TX,
+      ledgerIndex: 4_242_002,
+    }));
+    const h = harness({ chain });
+    const { address } = await newWallet(h);
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/demo/sponsor",
+      payload: { address, eventId: h.state.eventId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ sponsored: true, alreadyActivated: false, amountXrp: "1.5", txHash: ACCEPT_TX });
+
+    // The guards are only real if the real ledger is passed: without it there
+    // is no duplicate check and no daily cap.
+    const call = chain.sponsorWallet.mock.calls[0]?.[1];
+    expect(call?.address).toBe(address);
+    expect(call?.eventId).toBe(h.state.eventId);
+    expect(call?.config).toBe(h.deps.config.sponsor);
+    expect(call?.ledger).toBe(h.deps.sponsorLedger);
+  });
+
+  it("reports an already-activated wallet without spending anything", async () => {
+    const chain = sponsorOps(async (_gateway, input) => ({
+      sponsored: false,
+      alreadyActivated: true,
+      address: input.address,
+    }));
+    const h = harness({ chain });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/demo/sponsor",
+      payload: { address: ISSUER, eventId: h.state.eventId },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ sponsored: false, alreadyActivated: true });
+  });
+
+  it("surfaces a refusal as a 403, with the kind the page needs", async () => {
+    for (const kind of ["duplicate", "disabled", "already_activated"] as const) {
+      const chain = sponsorOps(async () => {
+        throw new SponsorshipDeniedError(`refused: ${kind}`, kind, { address: ISSUER });
+      });
+      const h = harness({ chain });
+
+      const res = await h.app.inject({
+        method: "POST",
+        url: "/demo/sponsor",
+        payload: { address: ISSUER, eventId: h.state.eventId },
+      });
+
+      expect(res.statusCode, kind).toBe(403);
+      expect(res.json().error.code, kind).toBe("SPONSORSHIP_DENIED");
+      expect(res.json().error.details.kind, kind).toBe(kind);
+    }
+  });
+
+  it("surfaces the daily cap as a 429, because tomorrow it may pass", async () => {
+    const chain = sponsorOps(async () => {
+      throw new SponsorshipDeniedError("Daily sponsorship cap of 50 XRP would be exceeded", "daily_cap", {
+        amountXrp: "1.5",
+        dailyCapXrp: "50",
+        spentTodayXrp: "49",
+      });
+    });
+    const h = harness({ chain });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: "/demo/sponsor",
+      payload: { address: ISSUER, eventId: h.state.eventId },
+    });
+
+    // A throttle, not a refusal — and never a generic 500, or the volunteer
+    // learns nothing from watching the cap work.
+    expect(res.statusCode).toBe(429);
+    expect(res.json().error.code).toBe("SPONSORSHIP_DENIED");
+    expect(res.json().error.details).toMatchObject({ kind: "daily_cap", spentTodayXrp: "49" });
+  });
+
+  it("400s an address or event id that is not one", async () => {
+    const h = harness();
+
+    for (const payload of [
+      { address: NOT_AN_ADDRESS, eventId: 900_001 },
+      { address: ISSUER },
+      {},
+    ]) {
+      const res = await h.app.inject({ method: "POST", url: "/demo/sponsor", payload });
+      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The two screens agree
+// ---------------------------------------------------------------------------
+
+describe("the attendee's phone and the volunteer's screen", () => {
+  it("tell the same story at every step, because they read the same stores", async () => {
+    const h = harness();
+    const { address, token } = await newWallet(h);
+
+    const status = async () =>
+      (await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` })).json();
+    const lookup = async () =>
+      (await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` })).json();
+
+    // 1. Scanned. Empty wallet: it cannot receive an NFT at all.
+    expect((await lookup()).needsSponsorship).toBe(true);
+    expect((await status()).activated).toBe(false);
+    expect((await status()).reserveShortfallXrp).toBe((await lookup()).reserveShortfallXrp);
+
+    // 2. Sponsored — by the ledger, which is the only thing either side reads.
+    h.balances.set(address, "1.5");
+    expect((await lookup()).needsSponsorship).toBe(false);
+    expect((await status()).activated).toBe(true);
+
+    // 3. Issued, by the REAL claim route.
+    await h.claims.seed(h.state.eventId, address, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    expect((await status()).pending).toEqual({ offerId: OFFER_ID, nftokenId: NFTOKEN_ID });
+    expect((await lookup()).claim.offerId).toBe(OFFER_ID);
+    expect((await lookup()).alreadyHasBadge).toBe(false);
+
+    // 4. Confirmed on the phone.
+    await h.app.inject({
+      method: "POST",
+      url: `/demo/wallet/${address}/accept`,
+      payload: { token },
+    });
+    expect((await status())).toMatchObject({ accepted: true, pending: null, attended: false });
+
+    // 5. Indexed by the REAL confirm route.
+    await h.attendance.insert({
+      eventId: h.state.eventId,
+      address,
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+      txHash: ACCEPT_TX,
+      ledgerIndex: 4_242_000,
+    });
+    expect((await status())).toMatchObject({ attended: true, txHash: ACCEPT_TX });
+    expect((await lookup())).toMatchObject({ attended: true, alreadyHasBadge: true });
   });
 });

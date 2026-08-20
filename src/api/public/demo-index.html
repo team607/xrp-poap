@@ -1,0 +1,149 @@
+<!-- Role chooser. Two screens, one event. -->
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>XRPL POAP · pick a role</title>
+<style>
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --paper:#f0ebe1; --surface:#f8f5ef; --surface-2:#ece5d8; --sunk:#e4dccc;
+  --ink:#1d1a16; --ink-2:#4d453a; --ink-3:#6b6153;
+  --rule:#d6cbb6; --rule-2:#c0b39a;
+  --signal:#8d5310; --signal-2:#b9812c; --signal-wash:rgba(185,129,44,.13); --on-signal:#fffaf2;
+  --jade:#186a4c; --grid:rgba(93,74,44,.09);
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
+}
+@media (prefers-color-scheme:dark){:root{
+  --paper:#0e100f; --surface:#161917; --surface-2:#1c201d; --sunk:#101312;
+  --ink:#ece6da; --ink-2:#b3aa9a; --ink-3:#8d8778;
+  --rule:#2b302c; --rule-2:#3c433d;
+  --signal:#e0a24a; --signal-2:rgba(201,135,48,.56); --signal-wash:rgba(224,162,74,.12); --on-signal:#17130c;
+  --jade:#5cbc93; --grid:rgba(200,180,140,.05);
+  --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 22px 40px -28px rgba(0,0,0,.8);
+}}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{
+  background:var(--paper); color:var(--ink);
+  font-family:var(--font-display); font-size:17px; line-height:1.6;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:32px 32px;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:64rem;margin:0 auto;padding:clamp(1.5rem,4vw,4rem) clamp(1rem,4vw,2rem) 4rem}
+.tag{
+  display:inline-block;font-family:var(--font-mono);font-size:.66rem;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--on-signal);background:var(--signal);
+  padding:.32rem .6rem;border-radius:3px;
+}
+h1{font-size:clamp(2.1rem,6vw,3.4rem);line-height:1.06;margin:1.4rem 0 .6rem;letter-spacing:-.02em;font-weight:600}
+h1 em{font-style:italic;color:var(--signal)}
+.lede{color:var(--ink-2);max-width:44rem;margin:0 0 .6rem}
+.net{
+  font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--ink-3);border:1px solid var(--rule);border-radius:3px;padding:.4rem .7rem;
+  display:inline-flex;gap:.6rem;flex-wrap:wrap;margin:1rem 0 0;background:var(--surface)
+}
+.net b{color:var(--jade);font-weight:600}
+.roles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,17rem),1fr));gap:1.2rem;margin:2.6rem 0 0}
+a.card{
+  display:flex;flex-direction:column;gap:.55rem;text-decoration:none;color:inherit;
+  background:var(--surface);border:1px solid var(--rule);border-radius:6px;
+  padding:1.4rem 1.3rem 1.5rem;box-shadow:var(--shadow);
+  transition:border-color .16s ease, transform .16s ease;
+}
+a.card:hover,a.card:focus-visible{border-color:var(--signal-2);transform:translateY(-2px)}
+a.card:focus-visible{outline:2px solid var(--signal);outline-offset:3px}
+.card .n{font-family:var(--font-mono);font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3)}
+.card h2{font-size:1.5rem;margin:0;letter-spacing:-.01em;font-weight:600}
+.card p{margin:0;color:var(--ink-2);font-size:.94rem;line-height:1.55}
+.card .go{margin-top:.5rem;font-family:var(--font-mono);font-size:.75rem;color:var(--signal);letter-spacing:.06em}
+.card.sub{background:var(--surface-2)}
+.card.sub h2{font-size:1.2rem}
+.how{
+  margin:2.8rem 0 0;border-top:1px solid var(--rule);padding-top:1.4rem;
+}
+.how h3{font-family:var(--font-mono);font-size:.7rem;letter-spacing:.16em;text-transform:uppercase;color:var(--ink-3);margin:0 0 .9rem;font-weight:500}
+ol{margin:0;padding-left:1.3rem;color:var(--ink-2);max-width:46rem}
+ol li{margin:.35rem 0}
+ol b{color:var(--ink);font-weight:600}
+code{font-family:var(--font-mono);font-size:.86em;background:var(--sunk);padding:.1rem .32rem;border-radius:3px;color:var(--ink)}
+footer{margin-top:2.6rem;border-top:1px solid var(--rule);padding-top:1.2rem;color:var(--ink-3);font-size:.86rem;max-width:46rem}
+</style>
+
+<div class="wrap">
+  <span class="tag">XRPL · POAP badge demo</span>
+  <h1>Two screens,<br><em>one event.</em></h1>
+  <p class="lede">
+    An attendee walks up to a volunteer at a badge desk. Open both pages and play
+    both parts — the flow between them is the real one, running against the XRP
+    Ledger testnet. Nothing here is simulated except the phone.
+  </p>
+  <div class="net" id="net"><span>checking the node…</span></div>
+
+  <div class="roles">
+    <a class="card" href="/demo/attendee">
+      <span class="n">Open on a phone</span>
+      <h2>I'm an attendee</h2>
+      <p>
+        Get a wallet and show it as a QR code for the volunteer to scan. A badge
+        appears; you confirm it. Stand-in for Xaman on your own device.
+      </p>
+      <span class="go">/demo/attendee →</span>
+    </a>
+    <a class="card" href="/demo/volunteer">
+      <span class="n">Open on a laptop</span>
+      <h2>I'm a volunteer</h2>
+      <p>
+        The badge desk. Scan the attendee's code, see whether their wallet can
+        even receive an NFT, fund it if it can't, then issue the badge.
+      </p>
+      <span class="go">/demo/volunteer →</span>
+    </a>
+  </div>
+
+  <div class="roles" style="margin-top:1.2rem">
+    <a class="card sub" href="/demo/walkthrough">
+      <span class="n">One screen · explainer</span>
+      <h2>Walkthrough</h2>
+      <p>
+        The whole lifecycle as seven steps you drive yourself, ending in a burn —
+        and the proof that a burned badge still verifies.
+      </p>
+      <span class="go">/demo/walkthrough →</span>
+    </a>
+  </div>
+
+  <div class="how">
+    <h3>If you only have one screen</h3>
+    <ol>
+      <li>Open <b>volunteer</b> here, and <b>attendee</b> in a second window side by side.</li>
+      <li>The volunteer page takes a pasted address when there's no camera — scanning is optional.</li>
+      <li>To use a real phone, restart with <code>npm run demo -- --lan</code> and open the address it prints. That puts the server on your local network, so only do it on a network you trust.</li>
+    </ol>
+  </div>
+
+  <footer>
+    Testnet only. Every wallet on these pages is a throwaway funded from the XRPL
+    testnet faucet, and the XRP is not money. No seed or private key is ever
+    shown, requested or stored by any page here.
+  </footer>
+</div>
+
+<script>
+(async () => {
+  const el = document.getElementById("net");
+  try {
+    const r = await fetch("/demo/state");
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const s = await r.json();
+    el.innerHTML =
+      "<span>net <b>" + s.network + "</b></span>" +
+      "<span>node " + s.endpoint.replace(/^wss:\/\//, "") + "</span>" +
+      "<span>event / taxon " + s.eventId + "</span>" +
+      "<span>issuer " + s.issuer.balanceXrp + " XRP</span>";
+  } catch (err) {
+    el.innerHTML = "<span>the API is not answering — is <code>npm run demo</code> still running?</span>";
+  }
+})();
+</script>

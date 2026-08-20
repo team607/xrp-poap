@@ -11,17 +11,18 @@
  * │      mainnet. It throws rather than quietly disabling itself, because a   │
  * │      silent skip lets an operator believe the demo is off when they meant │
  * │      it on, or ship it believing it is on.                                │
- * │   2. `DemoState` — the attendee's Wallet lives in a `#private` field and  │
- * │      is reachable only through a method. It is unreachable to             │
+ * │   2. `DemoState` — every attendee Wallet lives in a `#private` Map and is │
+ * │      reachable only through a method. It is unreachable to                │
  * │      `JSON.stringify`, to pino, to `Object.keys`, and to a spread. There  │
- * │      is no code path that can serialise the seed by accident.             │
+ * │      is no code path that can serialise a seed by accident.               │
  * └───────────────────────────────────────────────────────────────────────────┘
  *
  * Nothing in here imports the HTTP layer or the ledger layer, so both
  * `deps.ts` (the composition root) and `routes/demo.ts` can depend on it
  * without a cycle.
  */
-import type { Wallet } from "xrpl";
+import { randomBytes, timingSafeEqual } from "node:crypto";
+import { dropsToXrp, xrpToDrops, type Wallet } from "xrpl";
 import { ConfigError } from "../errors.js";
 import type { BurnResult, EventId, NetworkName, XrplGateway } from "../types.js";
 import { MAX_TAXON } from "../types.js";
@@ -74,6 +75,53 @@ export function parseDemoEnabled(raw: string | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
+// Reserve arithmetic — what "this wallet cannot receive an NFT" costs to fix
+// ---------------------------------------------------------------------------
+
+/**
+ * The account reserve. An address that has never received this much does not
+ * exist on the ledger at all, which is the state the volunteer has to fix
+ * before a badge can be offered to it.
+ *
+ * Testnet and mainnet have both sat at 1 XRP since the 2024 reduction. It is a
+ * network parameter, not a protocol constant, so it is named here rather than
+ * inlined: when it moves, one line moves with it and every number this module
+ * reports moves with that line.
+ */
+export const BASE_RESERVE_XRP = "1";
+
+/**
+ * Owner reserve for one ledger object. A badge lands in an NFTokenPage, which
+ * is one object however many badges are on it (brief 7).
+ */
+export const OWNER_RESERVE_PER_OBJECT_XRP = "0.2";
+
+/** Integer drops. Balances are never touched with floats (CLAUDE.md). */
+function drops(xrp: string): bigint {
+  return BigInt(xrpToDrops(xrp));
+}
+
+/**
+ * What a wallet must hold before it can be activated AND hold one badge.
+ *
+ * COMPUTED, so the number in the response and the reason for it cannot drift
+ * apart: change either constant above and this follows.
+ */
+export function badgeReadyReserveXrp(): string {
+  return String(dropsToXrp((drops(BASE_RESERVE_XRP) + drops(OWNER_RESERVE_PER_OBJECT_XRP)).toString()));
+}
+
+/**
+ * How much more this balance needs before the badge can land. `"0"` once there
+ * is enough — never a negative number, which reads as a refund.
+ */
+export function reserveShortfallXrp(balanceXrp: string): string {
+  const need = drops(BASE_RESERVE_XRP) + drops(OWNER_RESERVE_PER_OBJECT_XRP);
+  const shortfall = need - drops(balanceXrp);
+  return shortfall <= 0n ? "0" : String(dropsToXrp(shortfall.toString()));
+}
+
+// ---------------------------------------------------------------------------
 // Ledger operations the demo needs and the real routes do not
 // ---------------------------------------------------------------------------
 
@@ -100,6 +148,32 @@ export interface DemoChainOps {
   burn(gateway: XrplGateway, params: { nftokenId: string; wallet: Wallet }): Promise<BurnResult>;
 }
 
+// ---------------------------------------------------------------------------
+// The pages
+// ---------------------------------------------------------------------------
+
+/**
+ * The four pages `/demo/*` serves, and the files they come from.
+ *
+ * NONE of them are owned by this module — they are read off disk as-is and a
+ * missing one is a 503, never a crash. The repo-relative form is what goes in
+ * that 503: an absolute server path in a response body helps nobody and leaks
+ * the layout.
+ */
+export type DemoPageName = "index" | "walkthrough" | "attendee" | "volunteer";
+
+export const DEMO_PAGE_FILES: Record<DemoPageName, string> = {
+  /** Role chooser: "are you an attendee or a volunteer?" */
+  index: "demo-index.html",
+  /** The original single-page explainer. Still the whole flow in one screen. */
+  walkthrough: "demo.html",
+  attendee: "attendee.html",
+  volunteer: "volunteer.html",
+};
+
+/** Where the pages live, relative to the repo root. Used in operator messages. */
+export const DEMO_PUBLIC_REPO_DIR = "src/api/public";
+
 /** What `ApiDeps.demo` carries. Absent means the demo does not exist. */
 export interface DemoOptions {
   /** Both this AND a non-mainnet network are required. See assertDemoAllowed. */
@@ -107,8 +181,16 @@ export interface DemoOptions {
   ops: DemoChainOps;
   /** Supplied by tests; the routes make their own otherwise. */
   state?: DemoState;
-  /** Overridable so a test can point at a file that is deliberately absent. */
+  /**
+   * Override for the WALKTHROUGH page only, unchanged in meaning since it was
+   * the only page there was. `htmlDir` covers the other three.
+   */
   htmlPath?: string;
+  /**
+   * Directory the four pages are read from. Defaults to `src/api/public`.
+   * Overridable so a test can point at a directory that is deliberately empty.
+   */
+  htmlDir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -126,6 +208,20 @@ export const DEMO_EVENT_ID_BASE = 900_000;
 
 /** Paranoia, not arithmetic: keeps the counter inside the legal taxon range. */
 const MAX_DEMO_SEQUENCE = 99_999;
+
+/**
+ * How many attendee wallets this process will hold keys for at once.
+ *
+ * A real event has many attendees and every one of them costs a Wallet in
+ * memory for the life of the process. Fifty is far more than a demo table ever
+ * queues up and small enough that the map can never be the reason this process
+ * grows. The oldest is evicted first; an evicted wallet's badge is untouched on
+ * the ledger, only this process's ability to sign for it is gone.
+ */
+export const MAX_DEMO_WALLETS = 50;
+
+/** Bytes of entropy behind a wallet handle token. */
+const TOKEN_BYTES = 24;
 
 export interface DemoBadgeView {
   /** Null until the mint lands; the offer id follows a moment later. */
@@ -145,9 +241,62 @@ export interface DemoStateView {
   burnTxHash: string | null;
 }
 
+/** A registered wallet, minus the two things that must never be disclosed. */
+export interface DemoWalletView {
+  address: string;
+  /** ISO 8601. Only used for "which of these is oldest". */
+  createdAt: string;
+  /** Whether the faucet was used when it was made, NOT its balance now. */
+  fundedAtCreation: boolean;
+}
+
+/**
+ * One wallet the demo can sign for.
+ *
+ * `wallet` and `token` are the two fields that must not escape, and neither is
+ * ever put in a view: the whole record only exists inside DemoState's `#private`
+ * map, so there is no object here that a serialiser could reach.
+ */
+interface DemoWalletEntry {
+  wallet: Wallet;
+  /** The opaque handle the attendee page holds. Not a key; still a credential. */
+  token: string;
+  createdAt: Date;
+  fundedAtCreation: boolean;
+  /**
+   * Our own receipt for having signed this wallet's NFTokenAcceptOffer.
+   *
+   * NOT a duplicate of claim state: nothing in `deps.claims` or
+   * `deps.attendance` records that the attendee signed until the REAL
+   * `/confirm` route verifies it against the chain, and between those two
+   * moments the attendee's phone still has to be told "done". Scoped to the
+   * event id it happened on, so a reset cannot make it look current.
+   */
+  acceptedOnEventId?: EventId;
+  acceptTxHash?: string;
+  acceptLedgerIndex?: number;
+}
+
+/** Our receipt for one accept we signed. Not attendance — that comes off chain. */
+export interface DemoAcceptReceipt {
+  txHash: string;
+  /** Absent only on the walkthrough path, which records the hash and no more. */
+  ledgerIndex?: number;
+}
+
 /**
  * One demo run's worth of state. In memory, single process, deliberately
  * forgotten on exit.
+ *
+ * TWO THINGS LIVE HERE and they are different in kind:
+ *
+ *   1. THE WALLET REGISTRY — a Map of address -> keypair, because a two-role
+ *      event demo has many attendees walking up to one volunteer. It exists
+ *      because a browser cannot hold an XRPL key, and for no other reason.
+ *   2. THE WALKTHROUGH SLOT — `#attendeeAddress`, the single attendee the
+ *      original one-page explainer drives. It points INTO the registry rather
+ *      than duplicating it, so /demo/state and /demo/wallet/:address/status can
+ *      never disagree about the same wallet.
  *
  * The badge fields are a CACHE OF OBSERVED REALITY, never something the UI
  * feeds back in: `routes/demo.ts` refreshes them from the claim slot and the
@@ -157,15 +306,19 @@ export interface DemoStateView {
  */
 export class DemoState {
   /**
-   * The attendee's key. `#private`, so it is not an own property: invisible to
-   * JSON.stringify, to `{...state}`, to Object.keys, and to pino's serialisers.
-   * Reachable only via signingWallet() below, which is a method and therefore
-   * also unserialisable.
+   * Every attendee key this process holds. `#private`, so it is not an own
+   * property: invisible to JSON.stringify, to `{...state}`, to Object.keys, and
+   * to pino's serialisers. Reachable only via the methods below, which are
+   * methods and therefore also unserialisable.
+   *
+   * Insertion-ordered, which is what makes "evict the oldest" a `keys().next()`.
    */
-  #attendee: Wallet | undefined;
+  readonly #wallets = new Map<string, DemoWalletEntry>();
+
+  /** The walkthrough's attendee. An address INTO #wallets, never a second copy. */
+  #attendeeAddress: string | undefined;
 
   #sequence = 1;
-  #attendeeFunded = false;
   #nftokenId: string | undefined;
   #offerId: string | undefined;
   #acceptTxHash: string | undefined;
@@ -176,11 +329,11 @@ export class DemoState {
   }
 
   get attendeeAddress(): string | undefined {
-    return this.#attendee?.classicAddress;
+    return this.#attendeeAddress;
   }
 
   get attendeeFunded(): boolean {
-    return this.#attendeeFunded;
+    return this.#currentEntry()?.fundedAtCreation ?? false;
   }
 
   get nftokenId(): string | undefined {
@@ -207,24 +360,135 @@ export class DemoState {
     return this.#burnTxHash !== undefined;
   }
 
+  /** How many keypairs are held right now. Bounded by MAX_DEMO_WALLETS. */
+  get walletCount(): number {
+    return this.#wallets.size;
+  }
+
+  // -- the registry ---------------------------------------------------------
+
   /**
-   * The only way out for the key, and it is a method so that no serialiser can
-   * reach it. Callers sign with it and must never put it in a response, a log
-   * line or an error's details bag.
+   * Register a wallet the demo may sign for, and mint the handle that proves a
+   * page drives it.
+   *
+   * THE TOKEN IS NOT A KEY. It is an unguessable random string, returned once,
+   * held by the attendee's browser, and checked before this process will sign
+   * anything as that wallet. Without it any tab that knew an address could make
+   * someone else's phone-side confirmation happen. It carries no authority over
+   * anything except this demo's signing shim.
    */
-  signingWallet(): Wallet | undefined {
-    return this.#attendee;
+  registerWallet(wallet: Wallet, opts: { funded: boolean }): string {
+    const token = randomBytes(TOKEN_BYTES).toString("hex");
+    this.#wallets.set(wallet.classicAddress, {
+      wallet,
+      token,
+      createdAt: new Date(),
+      fundedAtCreation: opts.funded,
+    });
+    this.#evictOldest();
+    return token;
+  }
+
+  /** True when this process still holds a key for the address. */
+  hasWallet(address: string): boolean {
+    return this.#wallets.has(address);
   }
 
   /**
-   * Replace the demo attendee. The badge state goes with them: a new wallet
-   * means a new claim, and carrying the old ids over would show the previous
-   * attendee's badge against this one's address.
+   * Whether `token` is the handle issued for `address`.
+   *
+   * Constant-time on the comparison and false for an unknown address, so this
+   * answers "may you drive this wallet" without also answering "does this
+   * wallet exist" at different speeds.
+   */
+  authorises(address: string, token: string | undefined): boolean {
+    const entry = this.#wallets.get(address);
+    if (!entry || typeof token !== "string") return false;
+
+    const expected = Buffer.from(entry.token, "utf8");
+    const supplied = Buffer.from(token, "utf8");
+    if (expected.length !== supplied.length) return false;
+    return timingSafeEqual(expected, supplied);
+  }
+
+  /**
+   * The only way out for a key, and it is a method so that no serialiser can
+   * reach it. Callers sign with it and must never put it in a response, a log
+   * line or an error's details bag.
+   */
+  walletFor(address: string): Wallet | undefined {
+    return this.#wallets.get(address)?.wallet;
+  }
+
+  /** Registered wallets, oldest first, with neither key nor token. */
+  wallets(): DemoWalletView[] {
+    return [...this.#wallets.values()].map((entry) => ({
+      address: entry.wallet.classicAddress,
+      createdAt: entry.createdAt.toISOString(),
+      fundedAtCreation: entry.fundedAtCreation,
+    }));
+  }
+
+  /** Whether the faucet was used when this wallet was made. */
+  fundedAtCreation(address: string): boolean | undefined {
+    return this.#wallets.get(address)?.fundedAtCreation;
+  }
+
+  /**
+   * Remember that we signed this wallet's accept, against this event.
+   *
+   * The attendance index is authoritative and arrives a moment later, once the
+   * real `/confirm` route has verified the hash on chain. This covers the gap
+   * in between, and only that gap.
+   */
+  markWalletAccepted(
+    address: string,
+    eventId: EventId,
+    txHash: string,
+    ledgerIndex?: number,
+  ): void {
+    const entry = this.#wallets.get(address);
+    if (!entry) return;
+    entry.acceptedOnEventId = eventId;
+    entry.acceptTxHash = txHash;
+    if (ledgerIndex !== undefined) entry.acceptLedgerIndex = ledgerIndex;
+  }
+
+  /** What we signed for this wallet on this event, if we signed anything. */
+  walletAccept(address: string, eventId: EventId): DemoAcceptReceipt | undefined {
+    const entry = this.#wallets.get(address);
+    if (!entry || entry.acceptedOnEventId !== eventId || entry.acceptTxHash === undefined) {
+      return undefined;
+    }
+    return {
+      txHash: entry.acceptTxHash,
+      ...(entry.acceptLedgerIndex === undefined ? {} : { ledgerIndex: entry.acceptLedgerIndex }),
+    };
+  }
+
+  // -- the walkthrough slot -------------------------------------------------
+
+  /**
+   * The walkthrough's attendee. Kept for the single-page explainer, which knows
+   * about one attendee and has no token to send.
+   *
+   * Registers into the same map as everyone else — the registry is the one
+   * place a key lives — and drops the token on the floor, because the
+   * walkthrough authenticates by being the only attendee there is.
    */
   setAttendee(wallet: Wallet, opts: { funded: boolean }): void {
-    this.#attendee = wallet;
-    this.#attendeeFunded = opts.funded;
+    this.registerWallet(wallet, opts);
+    this.#attendeeAddress = wallet.classicAddress;
+    // A new wallet means a new claim; carrying the old ids over would show the
+    // previous attendee's badge against this one's address.
     this.#clearBadge();
+  }
+
+  /**
+   * The walkthrough's key. Unchanged signature: it is the wallet in the slot.
+   */
+  signingWallet(): Wallet | undefined {
+    return this.#currentEntry()?.wallet;
   }
 
   /**
@@ -239,6 +503,10 @@ export class DemoState {
 
   markAccepted(txHash: string): void {
     this.#acceptTxHash = txHash;
+    // Keep the two views of the same wallet in step: /demo/state and
+    // /demo/wallet/:address/status must never disagree about whether this
+    // address has signed.
+    if (this.#attendeeAddress) this.markWalletAccepted(this.#attendeeAddress, this.eventId, txHash);
   }
 
   markBurned(txHash: string): void {
@@ -249,11 +517,16 @@ export class DemoState {
    * Start a fresh demo on a new event id. Touches nothing on the ledger: the
    * previous badge stays exactly where it is and still verifies, which is the
    * whole point of "attendance is an event, not a state".
+   *
+   * The wallet registry SURVIVES on purpose. Those are real attendees standing
+   * in a room; a new event id does not send them home, and their handles are
+   * still the only way their phones can confirm the next badge. Per-wallet
+   * accept receipts are scoped to the event they happened on, so nothing from
+   * the old event can read as current.
    */
   reset(): EventId {
     this.#sequence = this.#sequence >= MAX_DEMO_SEQUENCE ? 1 : this.#sequence + 1;
-    this.#attendee = undefined;
-    this.#attendeeFunded = false;
+    this.#attendeeAddress = undefined;
     this.#clearBadge();
     return this.eventId;
   }
@@ -263,10 +536,13 @@ export class DemoState {
    * so there is no object here that could carry a key along with it.
    */
   view(): DemoStateView {
-    const address = this.attendeeAddress;
+    const entry = this.#currentEntry();
     return {
       eventId: this.eventId,
-      attendee: address === undefined ? null : { address, funded: this.#attendeeFunded },
+      attendee:
+        entry === undefined
+          ? null
+          : { address: entry.wallet.classicAddress, funded: entry.fundedAtCreation },
       badge:
         this.#nftokenId === undefined && this.#offerId === undefined
           ? null
@@ -288,6 +564,32 @@ export class DemoState {
    */
   toJSON(): DemoStateView {
     return this.view();
+  }
+
+  #currentEntry(): DemoWalletEntry | undefined {
+    return this.#attendeeAddress === undefined
+      ? undefined
+      : this.#wallets.get(this.#attendeeAddress);
+  }
+
+  /**
+   * Hold the map at MAX_DEMO_WALLETS, oldest out first.
+   *
+   * The walkthrough's attendee is skipped: evicting them mid-run would break
+   * the page that is currently on screen, and there is exactly one of them.
+   */
+  #evictOldest(): void {
+    while (this.#wallets.size > MAX_DEMO_WALLETS) {
+      let victim: string | undefined;
+      for (const address of this.#wallets.keys()) {
+        if (address !== this.#attendeeAddress) {
+          victim = address;
+          break;
+        }
+      }
+      if (victim === undefined) return;
+      this.#wallets.delete(victim);
+    }
   }
 
   #clearBadge(): void {
