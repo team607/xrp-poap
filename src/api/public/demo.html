@@ -1,0 +1,1894 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Attendance is an event, not a state — XRPL badge lifecycle</title>
+<style>
+/* ==========================================================================
+   Ledger instrument.
+   Editorial serif for prose, monospace for anything the ledger said.
+   Two palettes: bone paper, and ink. No webfonts, no images, no CDN.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --sunk:#e4dccc;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --on-signal:#fffaf2;
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+  --vermilion:#a8331a;
+  --vermilion-wash:rgba(168,51,26,.11);
+
+  --j-key:#8d5310; --j-str:#186a4c; --j-num:#1c5c86; --j-bool:#a8331a; --j-null:#6b6153;
+
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 18px 34px -26px rgba(50,36,18,.55);
+  --grid:rgba(93,74,44,.09);
+  --grain-opacity:.055;
+}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --sunk:#101312;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+
+    --signal:#e0a24a;
+    --signal-2:#c9873090;
+    --signal-wash:rgba(224,162,74,.12);
+    --on-signal:#17130c;
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+    --vermilion:#e8724f;
+    --vermilion-wash:rgba(232,114,79,.12);
+
+    --j-key:#e0a24a; --j-str:#5cbc93; --j-num:#79b6d8; --j-bool:#e8724f; --j-null:#8d8778;
+
+    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
+    --grid:rgba(224,214,190,.055);
+    --grain-opacity:.04;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e100f;
+  --surface:#161917;
+  --surface-2:#1c201d;
+  --sunk:#101312;
+  --ink:#ece6da;
+  --ink-2:#b3aa9a;
+  --ink-3:#8d8778;
+  --rule:#2b302c;
+  --rule-2:#3c433d;
+
+  --signal:#e0a24a;
+  --signal-2:#c9873090;
+  --signal-wash:rgba(224,162,74,.12);
+  --on-signal:#17130c;
+  --jade:#5cbc93;
+  --jade-wash:rgba(92,188,147,.12);
+  --vermilion:#e8724f;
+  --vermilion-wash:rgba(232,114,79,.12);
+
+  --j-key:#e0a24a; --j-str:#5cbc93; --j-num:#79b6d8; --j-bool:#e8724f; --j-null:#8d8778;
+
+  --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
+  --grid:rgba(224,214,190,.055);
+  --grain-opacity:.04;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+/* Several toggled elements set display:flex, which outranks the UA [hidden] rule. */
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:16.5px;
+  line-height:1.6;
+  overflow-x:hidden;
+}
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px;
+  -webkit-mask-image:radial-gradient(120% 90% at 12% -10%,#000 0%,rgba(0,0,0,.45) 45%,transparent 78%);
+  mask-image:radial-gradient(120% 90% at 12% -10%,#000 0%,rgba(0,0,0,.45) 45%,transparent 78%);
+}
+.grain{
+  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative; z-index:1; max-width:1060px; margin:0 auto; padding:0 clamp(14px,3.6vw,36px)}
+
+/* --- typography primitives ------------------------------------------------ */
+h1,h2,h3,h4{margin:0; font-weight:600; letter-spacing:-.012em; line-height:1.15}
+p{margin:0 0 .85em}
+p:last-child{margin-bottom:0}
+a{color:var(--signal)}
+.label{
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.19em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+}
+.prose{max-width:64ch; color:var(--ink-2)}
+.prose strong{color:var(--ink); font-weight:600}
+code,pre,.mono{font-family:var(--font-mono)}
+code{font-size:.86em}
+.tick{font-family:var(--font-mono); font-size:.82em; background:var(--sunk); border:1px solid var(--rule); border-radius:2px; padding:.05em .35em; color:var(--ink-2)}
+
+/* --- top bar -------------------------------------------------------------- */
+.topbar{
+  position:sticky; top:0; z-index:40;
+  background:var(--paper);
+  background:color-mix(in srgb, var(--paper) 88%, transparent);
+  -webkit-backdrop-filter:saturate(140%) blur(9px);
+  backdrop-filter:saturate(140%) blur(9px);
+  border-bottom:1px solid var(--rule);
+}
+.topbar__in{display:flex; flex-wrap:wrap; align-items:center; gap:10px 22px; padding:9px 0}
+.brand{display:flex; align-items:baseline; gap:9px; margin-right:auto}
+.brand__mark{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; font-weight:700;
+  color:var(--paper); background:var(--signal); padding:3px 7px; border-radius:2px;
+}
+.brand__name{font-size:14.5px; letter-spacing:-.01em; color:var(--ink-2)}
+.facts{display:flex; flex-wrap:wrap; gap:2px 20px; align-items:baseline}
+.fact{display:flex; align-items:baseline; gap:7px; min-width:0}
+.fact__v{font-family:var(--font-mono); font-size:12px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:min(46vw,290px)}
+.topbar__act{display:flex; gap:8px; align-items:center}
+@media (max-width:720px){
+  /* Two rows, not three — this bar is sticky and must not eat the viewport.
+     The facts become one horizontally scrollable line. */
+  .topbar__in{gap:7px 12px}
+  .brand{min-width:0}
+  .brand__name{overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:38vw}
+  .facts{
+    order:3; width:100%; border-top:1px dashed var(--rule); padding-top:6px;
+    flex-wrap:nowrap; overflow-x:auto; gap:0 18px; scrollbar-width:none;
+  }
+  .facts::-webkit-scrollbar{display:none}
+  .fact{flex:none}
+  .fact__v{max-width:44vw}
+}
+@media (max-width:440px){ .brand__name{display:none} }
+
+/* --- buttons -------------------------------------------------------------- */
+.btn{
+  font-family:var(--font-mono); font-size:11.5px; letter-spacing:.12em; text-transform:uppercase; font-weight:600;
+  color:var(--ink); background:var(--surface);
+  border:1px solid var(--rule-2); border-radius:2px;
+  padding:8px 14px; cursor:pointer; position:relative;
+  transition:transform .12s ease, background .16s ease, border-color .16s ease, color .16s ease;
+}
+.btn:hover:not(:disabled){background:var(--surface-2); border-color:var(--ink-3)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.btn:disabled{opacity:.42; cursor:not-allowed}
+.btn--go{
+  background:var(--signal); color:var(--on-signal); border-color:transparent;
+  box-shadow:0 8px 18px -14px rgba(0,0,0,.9);
+}
+.btn--go:hover:not(:disabled){background:var(--signal); filter:brightness(1.08)}
+.btn--danger{border-color:var(--vermilion); color:var(--vermilion); background:var(--vermilion-wash)}
+.btn--danger:hover:not(:disabled){background:var(--vermilion); color:var(--paper); border-color:var(--vermilion)}
+.btn--danger[data-armed="1"]{background:var(--vermilion); color:var(--paper); animation:pulse 1.1s ease-in-out infinite}
+.btn--ghost{background:transparent; padding:6px 10px}
+.btn--tiny{font-size:10px; padding:4px 7px; letter-spacing:.1em}
+.btn[aria-busy="true"]::after{
+  content:""; position:absolute; left:0; bottom:-1px; height:2px; width:100%;
+  background:linear-gradient(90deg,transparent,currentColor,transparent);
+  animation:sweep 1s linear infinite;
+}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+@keyframes pulse{50%{opacity:.62}}
+
+/* --- banners -------------------------------------------------------------- */
+.banner{
+  display:flex; gap:12px; align-items:flex-start;
+  border:1px solid var(--vermilion); background:var(--vermilion-wash);
+  border-left-width:3px; padding:12px 14px; margin:16px 0; border-radius:2px;
+}
+.banner--warn{border-color:var(--signal); background:var(--signal-wash)}
+.banner__t{font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
+.banner p{font-size:14.5px; color:var(--ink-2); margin:.25em 0 0}
+
+/* --- hero ----------------------------------------------------------------- */
+.hero{padding:clamp(38px,8vw,84px) 0 clamp(22px,4vw,38px); position:relative}
+.hero__eyebrow{display:flex; align-items:center; gap:12px; margin-bottom:18px}
+.hero__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
+.hero h1{
+  font-size:clamp(2.15rem,7.6vw,4.05rem);
+  line-height:1.02; letter-spacing:-.03em; max-width:15ch; text-wrap:balance;
+}
+.hero h1 em{font-style:italic; color:var(--signal)}
+.hero__lede{margin-top:22px; font-size:clamp(1rem,2.4vw,1.16rem); max-width:60ch; color:var(--ink-2)}
+.hero__net{
+  display:inline-flex; align-items:center; gap:9px; margin-top:26px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+  border:1px dashed var(--rule-2); border-radius:2px; padding:7px 11px; color:var(--ink-2);
+}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--signal); box-shadow:0 0 0 3px var(--signal-wash); flex:none}
+
+/* --- run state strip ------------------------------------------------------ */
+.runstate{
+  border:1px solid var(--rule); border-radius:3px; background:var(--surface);
+  box-shadow:var(--shadow); margin:26px 0 8px; overflow:hidden;
+}
+.runstate__hd{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  padding:9px 14px; border-bottom:1px solid var(--rule); background:var(--surface-2);
+}
+.chips{display:grid; grid-template-columns:repeat(auto-fit,minmax(148px,1fr)); gap:1px; background:var(--rule)}
+.chip{background:var(--surface); padding:11px 14px; min-width:0}
+.chip__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--ink-3); display:block; margin-bottom:3px}
+.chip__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.chip__v.is-yes{color:var(--jade)}
+.chip__v.is-no{color:var(--ink-3)}
+.chip__v.is-burn{color:var(--vermilion)}
+
+/* --- phases and steps ----------------------------------------------------- */
+.phase{margin:clamp(40px,7vw,74px) 0 0; opacity:0; animation:rise .6s cubic-bezier(.2,.7,.3,1) forwards}
+/* Stagger counted from the run-state strip. :nth-of-type would count every
+   <section> in <main>, including the hero, and silently miss. */
+.runstate ~ .phase{animation-delay:.05s}
+.runstate ~ .phase ~ .phase{animation-delay:.12s}
+.runstate ~ .phase ~ .phase ~ .phase{animation-delay:.19s}
+.runstate ~ .phase ~ .phase ~ .phase ~ .phase{animation-delay:.26s}
+.runstate ~ .phase ~ .phase ~ .phase ~ .phase ~ .phase{animation-delay:.33s}
+@keyframes rise{from{opacity:0; transform:translateY(14px)}to{opacity:1; transform:none}}
+.phase__hd{display:flex; gap:14px; align-items:baseline; flex-wrap:wrap; padding-bottom:12px; border-bottom:2px solid var(--ink); margin-bottom:6px}
+.phase__n{font-family:var(--font-mono); font-size:11px; letter-spacing:.2em; color:var(--signal); font-weight:700}
+.phase__t{font-size:1.32rem; letter-spacing:-.015em}
+.phase__note{font-size:14.5px; color:var(--ink-3); font-style:italic; margin-left:auto}
+@media (max-width:640px){.phase__note{margin-left:0; width:100%}}
+
+.step{display:grid; grid-template-columns:58px minmax(0,1fr); gap:0 clamp(12px,2.6vw,24px); padding-top:30px; position:relative}
+.step__spine{position:relative; display:flex; flex-direction:column; align-items:center}
+.step__num{
+  font-family:var(--font-display); font-size:1.55rem; font-weight:600; line-height:1;
+  width:44px; height:44px; display:grid; place-items:center; flex:none;
+  border:1px solid var(--rule-2); border-radius:50%; background:var(--surface); color:var(--ink-3);
+  transition:background .3s ease,color .3s ease,border-color .3s ease,box-shadow .3s ease;
+}
+.step__line{flex:1; width:1px; background:var(--rule); margin-top:8px; min-height:12px}
+.step:last-child .step__line{background:linear-gradient(var(--rule),transparent)}
+.step__body{min-width:0; padding-bottom:6px}
+.step__hd{display:flex; flex-wrap:wrap; gap:8px 14px; align-items:baseline; margin-bottom:5px}
+.step__t{font-size:1.24rem; letter-spacing:-.015em}
+.step__lane{font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); margin-bottom:9px}
+.step__lane b{color:var(--signal); font-weight:600}
+.step__ctl{display:flex; flex-wrap:wrap; gap:10px; align-items:center; margin-top:16px}
+
+.step[data-state="done"] .step__num{background:var(--jade); border-color:var(--jade); color:var(--paper); box-shadow:0 0 0 4px var(--jade-wash)}
+.step[data-state="error"] .step__num{border-color:var(--vermilion); color:var(--vermilion); box-shadow:0 0 0 4px var(--vermilion-wash)}
+/* Dim the explanatory prose, never the reason a step is blocked — that
+   message is the whole point of disabling it. */
+.step[data-state="blocked"] .step__t,
+.step[data-state="blocked"] .prose,
+.step[data-state="blocked"] .step__lane{opacity:.78}
+.step[data-state="blocked"] .step__num{border-style:dashed}
+
+@media (max-width:660px){
+  .step{grid-template-columns:minmax(0,1fr); padding-top:26px}
+  .step__spine{flex-direction:row; align-items:center; gap:10px; margin-bottom:10px}
+  .step__num{width:34px; height:34px; font-size:1.1rem}
+  .step__line{flex:1; height:1px; width:auto; min-height:0; margin:0}
+}
+
+/* --- endpoint chip -------------------------------------------------------- */
+.ep{
+  display:inline-flex; align-items:center; gap:0; font-family:var(--font-mono); font-size:11.5px;
+  border:1px solid var(--rule-2); border-radius:2px; overflow:hidden; background:var(--sunk);
+  max-width:100%; min-width:0;
+}
+.ep__m{padding:3px 7px; font-weight:700; letter-spacing:.08em; color:var(--paper); background:var(--ink-3); flex:none}
+.ep__m[data-m="POST"]{background:var(--signal); color:var(--on-signal)}
+.ep__m[data-m="GET"]{background:var(--jade); color:var(--paper)}
+.ep__p{padding:3px 9px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0}
+
+/* --- blocked reason ------------------------------------------------------- */
+.blocked{
+  display:flex; gap:9px; margin-top:13px; padding:9px 12px;
+  border-left:2px solid var(--rule-2); background:var(--sunk); border-radius:0 2px 2px 0;
+  font-size:14px; color:var(--ink-2);
+}
+.blocked::before{content:"blocked"; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); padding-top:3px; flex:none}
+
+/* --- results -------------------------------------------------------------- */
+.result{margin-top:16px; border:1px solid var(--rule); border-radius:3px; background:var(--surface); box-shadow:var(--shadow); overflow:hidden; min-width:0}
+.result__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 13px; border-bottom:1px solid var(--rule); background:var(--surface-2)}
+.status{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; font-weight:700; padding:2px 7px; border-radius:2px}
+.status--ok{color:var(--jade); background:var(--jade-wash)}
+.status--err{color:var(--vermilion); background:var(--vermilion-wash)}
+.result__body{padding:13px}
+.reading{font-size:15px; color:var(--ink-2); margin-top:12px; padding-top:12px; border-top:1px dashed var(--rule)}
+.kv{display:grid; grid-template-columns:130px minmax(0,1fr); gap:4px 14px; padding:5px 0; align-items:baseline; border-bottom:1px dotted var(--rule)}
+.kv:last-of-type{border-bottom:0}
+.kv__k{font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); padding-top:3px}
+.kv__v{min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 9px}
+.val{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); word-break:break-all}
+.tone-ok .val{color:var(--jade)}
+.tone-warn .val{color:var(--signal)}
+.tone-burn .val{color:var(--vermilion)}
+@media (max-width:520px){.kv{grid-template-columns:minmax(0,1fr); gap:2px}.kv__k{padding-top:0}}
+.links{display:inline-flex; gap:9px}
+.link{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
+.link:hover{border-bottom-style:dashed}
+.copy{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase;
+  border:1px solid var(--rule-2); background:transparent; color:var(--ink-3); border-radius:2px;
+  padding:1px 5px; cursor:pointer;
+}
+.copy:hover{color:var(--ink); border-color:var(--ink-3)}
+
+/* --- error block ---------------------------------------------------------- */
+.errbox{border-left:3px solid var(--vermilion); background:var(--vermilion-wash); padding:11px 13px; border-radius:0 2px 2px 0}
+.errbox__code{font-family:var(--font-mono); font-size:12px; font-weight:700; letter-spacing:.09em; color:var(--vermilion)}
+.errbox__msg{font-size:14.5px; color:var(--ink); margin-top:5px}
+.errbox__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px; font-style:italic}
+
+/* --- raw json ------------------------------------------------------------- */
+.raw{margin-top:12px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk); min-width:0}
+.raw>summary{
+  cursor:pointer; list-style:none; padding:7px 12px;
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  display:flex; gap:10px; align-items:center; flex-wrap:wrap;
+}
+.raw>summary::-webkit-details-marker{display:none}
+.raw>summary::before{content:"▸"; color:var(--signal); font-size:11px}
+.raw[open]>summary::before{content:"▾"}
+.raw>summary:hover{color:var(--ink)}
+.raw pre{
+  margin:0; padding:12px; overflow-x:auto; font-size:12px; line-height:1.55;
+  border-top:1px solid var(--rule); color:var(--ink-2); max-height:min(48vh,460px); overflow-y:auto;
+}
+.j-key{color:var(--j-key)} .j-str{color:var(--j-str)} .j-num{color:var(--j-num)}
+.j-bool{color:var(--j-bool)} .j-null{color:var(--j-null)}
+
+/* --- payload card (the three fields) -------------------------------------- */
+.payload{margin-top:14px; border:1px solid var(--signal); border-radius:3px; background:var(--signal-wash)}
+.payload__hd{padding:8px 13px; border-bottom:1px solid var(--signal); display:flex; gap:10px; flex-wrap:wrap; align-items:baseline}
+.payload__hd .label{color:var(--signal)}
+.payload pre{margin:0; padding:13px; font-size:12.5px; overflow-x:auto; color:var(--ink)}
+.payload__ft{padding:9px 13px; border-top:1px dashed var(--signal); font-size:13.5px; color:var(--ink-2)}
+.payload__ft b{color:var(--ink)}
+
+/* --- five checks ---------------------------------------------------------- */
+.checks{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:2px; margin-top:12px; overflow:hidden}
+.check{display:flex; gap:10px; align-items:baseline; background:var(--surface); padding:7px 12px}
+.check__m{font-family:var(--font-mono); font-size:12px; font-weight:700; width:1.1em; flex:none}
+.check--ok .check__m{color:var(--jade)}
+.check--no .check__m{color:var(--vermilion)}
+.check__n{font-family:var(--font-mono); font-size:11.5px; color:var(--ink)}
+.check__d{font-size:13px; color:var(--ink-3); margin-left:auto; text-align:right}
+.check--no{background:var(--vermilion-wash)}
+@media (max-width:560px){.check__d{margin-left:0; width:100%; text-align:left; padding-left:calc(1.1em + 10px)}}
+
+/* --- aside: where the money leaks ----------------------------------------- */
+.aside{margin-top:16px; border:1px solid var(--rule); border-left:3px solid var(--signal); border-radius:0 3px 3px 0; padding:12px 14px; background:var(--surface)}
+.aside ul{margin:9px 0 0; padding-left:18px}
+.aside li{font-size:14px; color:var(--ink-2); margin-bottom:6px}
+.aside li:last-child{margin-bottom:0}
+.aside li b{color:var(--ink); font-weight:600}
+
+/* --- the payoff ----------------------------------------------------------- */
+.payoff{
+  margin-top:18px; border:2px solid var(--ink); border-radius:3px; overflow:hidden;
+  background:var(--surface); box-shadow:0 30px 60px -44px rgba(0,0,0,.8);
+}
+.payoff__hd{padding:9px 15px; background:var(--ink); color:var(--paper); display:flex; gap:12px; align-items:center; flex-wrap:wrap}
+.payoff__hd .label{color:var(--paper); opacity:.75}
+.payoff__grid{display:grid; grid-template-columns:minmax(0,1fr) 1px minmax(0,1fr)}
+.payoff__cell{padding:clamp(18px,3.6vw,30px)}
+.payoff__rule{background:var(--rule-2)}
+.payoff__k{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--ink-3); margin-bottom:12px}
+.payoff__big{font-size:clamp(2rem,7.5vw,3.3rem); line-height:.95; letter-spacing:-.035em}
+.payoff__sub{font-family:var(--font-mono); font-size:12px; line-height:1.55; margin-top:12px; color:var(--ink-2); overflow-wrap:break-word}
+.payoff__cell--trap .payoff__big{color:var(--ink-3); text-decoration:line-through; text-decoration-thickness:2px; text-decoration-color:var(--vermilion)}
+.payoff__cell--truth{background:var(--jade-wash)}
+.payoff__cell--truth .payoff__big{color:var(--jade)}
+.payoff__cell--truth .payoff__status{font-family:var(--font-mono); font-size:clamp(12px,2.6vw,15px); color:var(--jade); letter-spacing:.02em; margin-top:10px; overflow-wrap:anywhere}
+.payoff__ft{padding:13px 15px; border-top:1px solid var(--rule); font-size:15px; color:var(--ink-2); background:var(--surface-2)}
+.payoff__ft b{color:var(--ink)}
+.payoff.is-live{animation:land .5s cubic-bezier(.2,.8,.25,1)}
+@keyframes land{from{transform:scale(.985); opacity:.3}to{transform:none; opacity:1}}
+@media (max-width:640px){
+  .payoff__grid{grid-template-columns:minmax(0,1fr)}
+  .payoff__rule{height:1px}
+}
+
+/* --- form bits ------------------------------------------------------------ */
+.seg{border:1px solid var(--rule-2); border-radius:2px; padding:0; margin:7px 0 0; display:flex; overflow:hidden; max-width:520px}
+.seg label{flex:1; position:relative; display:block; min-width:0}
+.seg input{position:absolute; opacity:0; width:1px; height:1px}
+.seg span{
+  display:block; text-align:center; padding:9px 10px; cursor:pointer; background:var(--surface);
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink-3);
+  border-right:1px solid var(--rule); transition:background .15s ease,color .15s ease;
+}
+.seg label:last-child span{border-right:0}
+.seg input:checked+span{background:var(--signal); color:var(--on-signal)}
+.seg input:focus-visible+span{outline:2px solid var(--signal); outline-offset:-2px}
+.field{margin-top:14px}
+.field label{display:block; margin-bottom:5px}
+.input{
+  width:100%; max-width:640px; font-family:var(--font-mono); font-size:12.5px;
+  padding:9px 11px; border:1px solid var(--rule-2); border-radius:2px;
+  background:var(--sunk); color:var(--ink);
+}
+.input:focus{outline:2px solid var(--signal); outline-offset:1px}
+.hint{font-size:13.5px; color:var(--ink-3); margin-top:7px}
+.advanced>summary{
+  cursor:pointer; list-style:none; font-family:var(--font-mono); font-size:10.5px;
+  letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); margin-top:14px;
+}
+.advanced>summary::-webkit-details-marker{display:none}
+.advanced>summary::before{content:"+ "; color:var(--signal)}
+.advanced[open]>summary::before{content:"– "}
+.advanced>summary:hover{color:var(--ink)}
+
+/* --- read-only panels ----------------------------------------------------- */
+.reads{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:clamp(14px,2.6vw,24px); margin-top:22px}
+@media (max-width:800px){.reads{grid-template-columns:minmax(0,1fr)}}
+.panel{border:1px solid var(--rule); border-radius:3px; background:var(--surface); box-shadow:var(--shadow); display:flex; flex-direction:column; min-width:0}
+.panel__hd{padding:12px 14px; border-bottom:1px solid var(--rule); min-width:0}
+.panel__src{display:inline-flex; align-items:center; gap:7px; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; font-weight:700; padding:2px 7px; border-radius:2px; margin-bottom:8px}
+.panel__src--chain{color:var(--signal); background:var(--signal-wash)}
+.panel__src--index{color:var(--jade); background:var(--jade-wash)}
+.panel__t{font-size:1.08rem}
+.panel__d{font-size:13.5px; color:var(--ink-3); margin-top:6px}
+.panel__body{padding:13px 14px; flex:1; min-width:0}
+.counts{display:grid; grid-template-columns:repeat(auto-fit,minmax(74px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:2px; overflow:hidden}
+.count{background:var(--surface); padding:9px 10px; text-align:center}
+.count__n{font-family:var(--font-display); font-size:1.5rem; line-height:1; color:var(--ink)}
+.count__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); margin-top:5px}
+.rows{margin-top:12px; border-top:1px solid var(--rule)}
+.row{padding:8px 0; border-bottom:1px dotted var(--rule); font-size:12px; font-family:var(--font-mono); color:var(--ink-2); word-break:break-all}
+.row b{color:var(--ink); font-weight:600}
+.row .flag{color:var(--vermilion)}
+.empty{font-size:14px; color:var(--ink-3); font-style:italic}
+
+/* --- wire log ------------------------------------------------------------- */
+.wire{margin-top:clamp(40px,7vw,72px)}
+.wire__box{border:1px solid var(--rule); border-radius:3px; background:var(--sunk); max-height:290px; overflow-y:auto}
+.wire__row{display:grid; grid-template-columns:62px 46px minmax(0,1fr) auto auto; gap:10px; align-items:baseline; padding:6px 12px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11.5px}
+.wire__row:last-child{border-bottom:0}
+.wire__t{color:var(--ink-3)}
+.wire__m{font-weight:700; color:var(--signal)}
+.wire__p{color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.wire__s{font-weight:700}
+.wire__s.ok{color:var(--jade)} .wire__s.err{color:var(--vermilion)}
+.wire__ms{color:var(--ink-3)}
+@media (max-width:560px){
+  .wire__row{grid-template-columns:44px minmax(0,1fr) auto; row-gap:2px}
+  .wire__t{display:none}
+  .wire__ms{grid-column:3}
+}
+
+/* --- footer --------------------------------------------------------------- */
+.foot{margin:clamp(44px,8vw,80px) 0 60px; padding-top:20px; border-top:1px solid var(--rule); font-size:13.5px; color:var(--ink-3)}
+.foot p{max-width:72ch}
+.foot b{color:var(--ink-2)}
+
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+  .phase{opacity:1}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="topbar">
+  <div class="wrap topbar__in">
+    <div class="brand">
+      <span class="brand__mark">XRPL</span>
+      <span class="brand__name">POAP badge lifecycle · demo harness</span>
+    </div>
+    <div class="facts">
+      <span class="fact"><span class="label">net</span><span class="fact__v" id="hdr-network">—</span></span>
+      <span class="fact"><span class="label">node</span><span class="fact__v" id="hdr-endpoint">—</span></span>
+      <span class="fact"><span class="label">issuer</span><span class="fact__v" id="hdr-issuer">—</span></span>
+      <span class="fact"><span class="label">event / taxon</span><span class="fact__v" id="hdr-event">—</span></span>
+    </div>
+    <div class="topbar__act">
+      <button class="btn btn--ghost btn--tiny" id="btn-theme" type="button" title="Switch between the paper and ink palettes">Theme</button>
+      <button class="btn btn--ghost btn--tiny" id="btn-refresh" type="button">Refresh</button>
+      <button class="btn btn--danger btn--tiny" id="btn-reset" type="button">Reset</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <noscript>
+    <div class="banner"><div><span class="banner__t">JavaScript required</span>
+    <p>This page drives a live HTTP API from the browser. Nothing here is pre-rendered.</p></div></div>
+  </noscript>
+
+  <div class="banner" id="banner-offline" hidden>
+    <div>
+      <span class="banner__t">The API is not answering</span>
+      <p id="banner-offline-msg">A request from this page failed at the network layer. The page is served from the same origin as the API, so if the page loaded but a <code>fetch</code> did not, the server is down or restarting. Start it, then press Refresh.</p>
+    </div>
+  </div>
+
+  <div class="banner banner--warn" id="banner-demo" hidden>
+    <div>
+      <span class="banner__t">Demo helper routes are off</span>
+      <p id="banner-demo-msg"></p>
+    </div>
+  </div>
+
+  <section class="hero">
+    <div class="hero__eyebrow"><span class="label">The one architectural rule</span></div>
+    <h1>Attendance is an event, <em>not a state</em>.</h1>
+    <p class="hero__lede">
+      Verification never asks whether a wallet still holds the badge. It asks whether that wallet
+      ever accepted a badge this issuer minted under this taxon. The attendee's
+      <code>NFTokenAcceptOffer</code> hash <em>is</em> the attendance record, and the ledger keeps it forever.
+      Walk the seven steps below, burn the badge at step 6, and watch the proof survive at step 7.
+    </p>
+    <span class="hero__net"><span class="dot"></span><span id="hero-net-text">Testnet · faucet XRP · no real money is at risk</span></span>
+  </section>
+
+  <section class="runstate" aria-labelledby="runstate-t">
+    <div class="runstate__hd">
+      <span class="label" id="runstate-t">Run state</span>
+      <span class="ep"><span class="ep__m" data-m="GET">GET</span><span class="ep__p">/demo/state</span></span>
+      <span class="hint" style="margin:0 0 0 auto">Read on load and after every action. Never polled.</span>
+    </div>
+    <div class="chips">
+      <div class="chip"><span class="chip__k">attendee</span><span class="chip__v" id="rs-attendee">—</span></div>
+      <div class="chip"><span class="chip__k">activated</span><span class="chip__v" id="rs-activated">—</span></div>
+      <div class="chip"><span class="chip__k">nftoken id</span><span class="chip__v" id="rs-nft">—</span></div>
+      <div class="chip"><span class="chip__k">offer</span><span class="chip__v" id="rs-offer">—</span></div>
+      <div class="chip"><span class="chip__k">accepted</span><span class="chip__v" id="rs-accepted">—</span></div>
+      <div class="chip"><span class="chip__k">burned</span><span class="chip__v" id="rs-burned">—</span></div>
+      <div class="chip"><span class="chip__k">indexed</span><span class="chip__v" id="rs-indexed">—</span></div>
+      <div class="chip"><span class="chip__k">issuer balance</span><span class="chip__v" id="rs-issuer-bal">—</span></div>
+    </div>
+    <details class="raw" id="raw-state" style="margin:0; border-width:1px 0 0; border-radius:0">
+      <summary><span>Raw · GET /demo/state</span><span class="status" id="raw-state-status"></span></summary>
+      <pre id="raw-state-pre"></pre>
+    </details>
+  </section>
+
+  <!-- ================= PHASE 1 ================= -->
+  <section class="phase">
+    <div class="phase__hd">
+      <span class="phase__n">Phase 1</span>
+      <h2 class="phase__t">Claim</h2>
+      <span class="phase__note">Everything the issuer spends happens here.</span>
+    </div>
+
+    <!-- STEP 1 -->
+    <article class="step" id="step-1" data-state="blocked">
+      <div class="step__spine"><span class="step__num">1</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Create an attendee wallet</h3>
+          <span class="ep"><span class="ep__m" data-m="POST">POST</span><span class="ep__p">/demo/attendee</span></span>
+        </div>
+        <div class="step__lane">demo harness <b>→</b> testnet faucet</div>
+        <p class="prose">
+          A throwaway wallet, generated server-side for the length of this run. Choose whether the
+          ledger has ever heard of it. An <strong>unactivated</strong> address has no account root:
+          it cannot hold an <code>NFTokenPage</code>, so a badge cannot be delivered to it at all.
+          That is the entire reason the claim path has a sponsorship branch.
+        </p>
+        <p class="label" style="margin:16px 0 0" id="s1-mode-label">Wallet mode</p>
+        <div class="seg" role="radiogroup" aria-labelledby="s1-mode-label">
+          <label><input type="radio" name="fundmode" value="funded" checked><span>Funded from faucet</span></label>
+          <label><input type="radio" name="fundmode" value="unactivated"><span>Unactivated</span></label>
+        </div>
+        <p class="hint" id="s1-mode-note"></p>
+        <div class="step__ctl">
+          <button class="btn btn--go" id="s1-btn" type="button">Create wallet</button>
+        </div>
+        <p class="blocked" id="s1-blocked" hidden></p>
+        <div class="result" id="s1-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s1-raw" hidden><summary><span id="s1-raw-t">Raw response</span></summary><pre id="s1-raw-pre"></pre></details>
+      </div>
+    </article>
+
+    <!-- STEP 2 -->
+    <article class="step" id="step-2" data-state="blocked">
+      <div class="step__spine"><span class="step__num">2</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Claim a badge</h3>
+          <span class="ep"><span class="ep__m" data-m="POST">POST</span><span class="ep__p" id="s2-path">/events/{eventId}/claims</span></span>
+        </div>
+        <div class="step__lane">attendee <b>→</b> api <b>→</b> xrp ledger</div>
+        <p class="prose">
+          The real endpoint, not a demo wrapper. It takes the <code>(eventId, address)</code> slot
+          <em>before</em> it spends anything, sponsors the address if the ledger has never seen it,
+          mints one soulbound badge with <code>NFTokenTaxon = eventId</code>, then creates a single
+          sell offer for <code>0</code> locked to that attendee.
+        </p>
+        <details class="advanced">
+          <summary>Optional request body field</summary>
+          <div class="field">
+            <label class="label" for="s2-uri">metadataUri</label>
+            <input class="input" id="s2-uri" type="text" placeholder="ipfs://… — leave blank to use the event default" autocomplete="off" spellcheck="false">
+            <p class="hint">Routes never pin metadata themselves. If the server has no per-event default and you send nothing, the API answers <code>400 INVALID_INPUT</code> and says so — which is rendered below rather than swallowed.</p>
+          </div>
+        </details>
+        <div class="step__ctl">
+          <button class="btn btn--go" id="s2-btn" type="button">Claim badge</button>
+          <span class="hint" style="margin:0">Safe to press twice — see below.</span>
+        </div>
+        <p class="blocked" id="s2-blocked" hidden></p>
+        <div class="result" id="s2-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s2-raw" hidden><summary><span id="s2-raw-t">Raw response</span></summary><pre id="s2-raw-pre"></pre></details>
+        <div class="aside">
+          <span class="label">Where the money can leak, and what stops it</span>
+          <ul>
+            <li><b>The slot is taken before the spend.</b> <code>UNIQUE(event_id, address)</code> is the mint guard. Six retries would otherwise mint six badges and lock 1.2 XRP in six open offers. Press <em>Claim badge</em> a second time: you get <code>200</code> with <code>reusedExistingOffer: true</code>, not a second mint.</li>
+            <li><b>Sponsorship is booked before the money moves.</b> <code>reserve()</code> then Payment then <code>confirm()</code>. Check-then-pay-then-record pays N times under concurrency and records one.</li>
+            <li><b>Offers are lazy, one per attendee.</b> Each open offer locks 0.2 XRP; pre-creating 100 locks 20 XRP at once.</li>
+            <li><b>Every offer sets <code>Destination</code>.</b> Without it anyone watching the ledger can accept the offer and take the badge.</li>
+          </ul>
+        </div>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= PHASE 2 ================= -->
+  <section class="phase">
+    <div class="phase__hd">
+      <span class="phase__n">Phase 2</span>
+      <h2 class="phase__t">Sign</h2>
+      <span class="phase__note">The issuer never sees the attendee's key.</span>
+    </div>
+
+    <!-- STEP 3 -->
+    <article class="step" id="step-3" data-state="blocked">
+      <div class="step__spine"><span class="step__num">3</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Sign as the attendee</h3>
+          <span class="ep"><span class="ep__m" data-m="POST">POST</span><span class="ep__p">/demo/accept</span></span>
+        </div>
+        <div class="step__lane">attendee <b>→</b> xrp ledger <span style="color:var(--ink-3)">(the api is not in this arrow)</span></div>
+        <p class="prose">
+          <strong>Read this before believing the demo.</strong> In production the three-field payload above
+          goes to the attendee's phone and is signed in Xaman; the API only ever learns the resulting hash.
+          There is no phone in this loop, so <strong>the demo signs it server-side</strong> with the
+          throwaway key it generated at step 1. The issuer does not hold attendee keys in production,
+          and no key of any kind is sent to, displayed by, or stored in this page.
+        </p>
+        <div class="step__ctl">
+          <button class="btn btn--go" id="s3-btn" type="button">Sign &amp; submit accept</button>
+        </div>
+        <p class="blocked" id="s3-blocked" hidden></p>
+        <div class="result" id="s3-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s3-raw" hidden><summary><span id="s3-raw-t">Raw response</span></summary><pre id="s3-raw-pre"></pre></details>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= PHASE 3 ================= -->
+  <section class="phase">
+    <div class="phase__hd">
+      <span class="phase__n">Phase 3</span>
+      <h2 class="phase__t">Record</h2>
+      <span class="phase__note">The chain is the authority, not the caller.</span>
+    </div>
+
+    <!-- STEP 4 -->
+    <article class="step" id="step-4" data-state="blocked">
+      <div class="step__spine"><span class="step__num">4</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Confirm — re-derive, then index</h3>
+          <span class="ep"><span class="ep__m" data-m="POST">POST</span><span class="ep__p" id="s4-path">/events/{eventId}/claims/{offerId}/confirm</span></span>
+        </div>
+        <div class="step__lane">attendee <b>→</b> api <b>→</b> xrp ledger <b>→</b> attendance index</div>
+        <p class="prose">
+          A client saying "I claimed it" is not evidence that it did. The API pulls the transaction
+          off the ledger and runs five checks. All five, or no row is written — a failure is
+          <code>422</code> with the failing check named, and nothing is indexed. The offer id in the
+          path is only a correlation hint; what gets stored is the offer the accept transaction
+          actually consumed, read from the chain.
+        </p>
+        <div class="field">
+          <label class="label" for="s4-hash">attendance tx hash (the request body's <code>txHash</code>)</label>
+          <input class="input" id="s4-hash" type="text" placeholder="filled in by step 3" autocomplete="off" spellcheck="false">
+          <p class="hint">Editable on purpose. Change one character and confirm again to watch <code>transactionFound</code> fail and the write be refused. Steps 5 and 7 verify whatever hash sits in this field.</p>
+        </div>
+        <div class="step__ctl">
+          <button class="btn btn--go" id="s4-btn" type="button">Confirm claim</button>
+        </div>
+        <p class="blocked" id="s4-blocked" hidden></p>
+        <div class="result" id="s4-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s4-raw" hidden><summary><span id="s4-raw-t">Raw response</span></summary><pre id="s4-raw-pre"></pre></details>
+      </div>
+    </article>
+
+    <!-- STEP 5 -->
+    <article class="step" id="step-5" data-state="blocked">
+      <div class="step__spine"><span class="step__num">5</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Verify against the chain</h3>
+          <span class="ep"><span class="ep__m" data-m="GET">GET</span><span class="ep__p">/verify?address=&amp;eventId=&amp;txHash=</span></span>
+        </div>
+        <div class="step__lane">verifier <b>→</b> api <b>→</b> xrp ledger</div>
+        <p class="prose">
+          The index is not consulted here. <code>/verify</code> replays the attendance transaction
+          against the ledger every time it is called, which is why it answers <code>200</code> even
+          when <code>attended</code> is <code>false</code> — that is an answer, not an error.
+        </p>
+        <div class="step__ctl">
+          <button class="btn btn--go" id="s5-btn" type="button">Verify attendance</button>
+        </div>
+        <p class="blocked" id="s5-blocked" hidden></p>
+        <div class="result" id="s5-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s5-raw" hidden><summary><span id="s5-raw-t">Raw response</span></summary><pre id="s5-raw-pre"></pre></details>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= PHASE 4 ================= -->
+  <section class="phase">
+    <div class="phase__hd">
+      <span class="phase__n">Phase 4</span>
+      <h2 class="phase__t">Destroy the badge</h2>
+      <span class="phase__note">The point of the whole project is what happens next.</span>
+    </div>
+
+    <!-- STEP 6 -->
+    <article class="step" id="step-6" data-state="blocked">
+      <div class="step__spine"><span class="step__num">6</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Burn the badge</h3>
+          <span class="ep"><span class="ep__m" data-m="POST">POST</span><span class="ep__p">/demo/burn</span></span>
+        </div>
+        <div class="step__lane">issuer <b>→</b> xrp ledger · <span style="color:var(--vermilion)">destructive · irreversible</span></div>
+        <p class="prose">
+          Badges are minted with <code>tfBurnable</code>, so a badge issued in error can be revoked.
+          This destroys the NFToken. After it lands, <code>account_nfts</code> for the attendee
+          returns <strong>0</strong> — the query that looks like it answers "did they attend" and
+          returns zero for someone who demonstrably did.
+        </p>
+        <div class="step__ctl">
+          <button class="btn btn--danger" id="s6-btn" type="button">Burn the badge</button>
+        </div>
+        <p class="blocked" id="s6-blocked" hidden></p>
+        <div class="result" id="s6-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s6-raw" hidden><summary><span id="s6-raw-t">Raw response</span></summary><pre id="s6-raw-pre"></pre></details>
+      </div>
+    </article>
+
+    <!-- STEP 7 -->
+    <article class="step" id="step-7" data-state="blocked">
+      <div class="step__spine"><span class="step__num">7</span><span class="step__line"></span></div>
+      <div class="step__body">
+        <div class="step__hd">
+          <h3 class="step__t">Verify again — the payoff</h3>
+          <span class="ep"><span class="ep__m" data-m="GET">GET</span><span class="ep__p">/verify?address=&amp;eventId=&amp;txHash=</span></span>
+        </div>
+        <div class="step__lane">verifier <b>→</b> api <b>→</b> xrp ledger</div>
+        <p class="prose">
+          The same call as step 5, against a badge that no longer exists. Everything the five checks
+          need is still on the ledger: the accept transaction is still retrievable, its
+          <code>meta.nftoken_id</code> is intact, and <code>nft_info</code> still reports issuer and
+          taxon for a burned token.
+        </p>
+        <div class="step__ctl">
+          <button class="btn btn--go" id="s7-btn" type="button">Verify a burned badge</button>
+        </div>
+        <p class="blocked" id="s7-blocked" hidden></p>
+        <div id="s7-payoff"></div>
+        <div class="result" id="s7-result" hidden aria-live="polite"></div>
+        <details class="raw" id="s7-raw" hidden><summary><span id="s7-raw-t">Raw response</span></summary><pre id="s7-raw-pre"></pre></details>
+      </div>
+    </article>
+  </section>
+
+  <!-- ================= READS ================= -->
+  <section class="phase" aria-labelledby="reads-t">
+    <div class="phase__hd">
+      <span class="phase__n">Read paths</span>
+      <h2 class="phase__t" id="reads-t">Two ways to ask who attended</h2>
+      <span class="phase__note">One costs a Clio round trip. One does not touch the ledger.</span>
+    </div>
+    <div class="reads">
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__src panel__src--chain">Chain read</span>
+          <h3 class="panel__t">Roster</h3>
+          <p class="panel__d">
+            <code>nfts_by_issuer</code> with the event taxon — a Clio-only method that walks every
+            badge ever minted for the event. Deliberately the expensive path: organiser tooling and
+            "is the index lying to me?", never a page load.
+          </p>
+          <div class="step__ctl">
+            <button class="btn" id="roster-btn" type="button">Load roster</button>
+            <span class="ep"><span class="ep__m" data-m="GET">GET</span><span class="ep__p" id="roster-path">/events/{eventId}/roster</span></span>
+          </div>
+        </div>
+        <div class="panel__body">
+          <p class="blocked" id="roster-blocked" hidden></p>
+          <div id="roster-result" aria-live="polite"><p class="empty">Not loaded. This one is on demand only.</p></div>
+          <details class="raw" id="roster-raw" hidden><summary><span id="roster-raw-t">Raw response</span></summary><pre id="roster-raw-pre"></pre></details>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel__hd">
+          <span class="panel__src panel__src--index">Index read</span>
+          <h3 class="panel__t">Attendance index</h3>
+          <p class="panel__d">
+            The local table. It never calls the gateway and never touches the ledger. The ledger is
+            still the source of truth — this is an index over it, and it is what a page load should use.
+          </p>
+          <div class="step__ctl">
+            <button class="btn" id="idx-btn" type="button">Reload index</button>
+            <span class="ep"><span class="ep__m" data-m="GET">GET</span><span class="ep__p" id="idx-path">/events/{eventId}/attendance?limit=25&amp;offset=0</span></span>
+          </div>
+        </div>
+        <div class="panel__body">
+          <p class="blocked" id="idx-blocked" hidden></p>
+          <div id="idx-result" aria-live="polite"><p class="empty">Loading…</p></div>
+          <details class="raw" id="idx-raw" hidden><summary><span id="idx-raw-t">Raw response</span></summary><pre id="idx-raw-pre"></pre></details>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================= WIRE LOG ================= -->
+  <section class="wire" aria-labelledby="wire-t">
+    <div class="phase__hd" style="border-bottom-width:1px">
+      <span class="phase__n">Evidence</span>
+      <h2 class="phase__t" id="wire-t">Request log</h2>
+      <span class="phase__note">Every HTTP call this page has made, in order.</span>
+    </div>
+    <div class="wire__box" id="wire-box"><div class="wire__row"><span class="wire__t">—</span><span class="wire__m"></span><span class="wire__p" style="font-family:inherit">Nothing sent yet.</span><span></span><span></span></div></div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      <b>Testnet only.</b> Every address on this page is a throwaway funded from the XRPL testnet
+      faucet. The XRP is not money. No seed, secret or private key is ever requested by, displayed
+      in, or stored by this page — the issuer seed lives server-side and is absent from responses,
+      logs and errors by design.
+    </p>
+    <p style="margin-top:10px">
+      <b>What is asserted rather than called:</b> this page never calls <code>account_nfts</code>,
+      because nothing in this system ever should. The "0" shown at step 7 is the measured result
+      from <code>npm run e2e:burn</code> (13 assertions, 0 failed) and <code>docs/ground-truth.md</code>,
+      quoted here to make the contrast visible. Everything else on this page is a live response
+      from the API running at this origin.
+    </p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------------------------------------------------------------------
+  // Client state. `state` mirrors GET /demo/state; `run` is what only this
+  // browser knows (the accept hash, before the index has it).
+  // ---------------------------------------------------------------------
+  var state = null;
+  var stateProblem = "Waiting for GET /demo/state…";
+  var offline = false;
+  var claim = null;            // last successful claim response body
+  var armTimers = {};
+  var TX_KEY = "poap-demo:txhash";
+
+  var CHECKS = [
+    ["transactionFound", "the hash is on the ledger"],
+    ["isAcceptOffer", "it is an NFTokenAcceptOffer"],
+    ["submittedByAddress", "the attendee submitted it"],
+    ["succeeded", "engine result was tesSUCCESS"],
+    ["issuerAndTaxonMatch", "our issuer, our taxon"]
+  ];
+
+  // ---------------------------------------------------------------------
+  // Tiny DOM helpers
+  // ---------------------------------------------------------------------
+  function $(id) { return document.getElementById(id); }
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function setText(id, s) { var n = $(id); if (n) n.textContent = s; }
+  function short(s, head, tail) {
+    s = String(s || "");
+    head = head || 8; tail = tail || 6;
+    return s.length > head + tail + 2 ? s.slice(0, head) + "…" + s.slice(-tail) : s;
+  }
+  function esc(s) {
+    return String(s).replace(/[&<>]/g, function (c) {
+      return c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;";
+    });
+  }
+
+  /** Escape first, then colourise. The inserted text is already escaped. */
+  function jsonHtml(value) {
+    var raw;
+    try { raw = JSON.stringify(value, null, 2); } catch (e) { raw = String(value); }
+    if (raw === undefined) raw = "(empty body)";
+    return esc(raw).replace(
+      /("(?:\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g,
+      function (m) {
+        var cls = "j-num";
+        if (m.charAt(0) === '"') cls = /:\s*$/.test(m) ? "j-key" : "j-str";
+        else if (m === "true" || m === "false") cls = "j-bool";
+        else if (m === "null") cls = "j-null";
+        return '<span class="' + cls + '">' + m + "</span>";
+      }
+    );
+  }
+
+  function copyBtn(text) {
+    var b = node("button", "copy", "copy");
+    b.type = "button";
+    b.addEventListener("click", function () {
+      var done = function () { b.textContent = "copied"; setTimeout(function () { b.textContent = "copy"; }, 1200); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { b.textContent = "failed"; });
+      } else { b.textContent = "n/a"; }
+    });
+    return b;
+  }
+
+  /** The only two external URLs on this page. Testnet explorers. */
+  function explorerLinks(hash) {
+    var wrap = node("span", "links");
+    if (!state || state.network !== "testnet") return wrap;
+    var targets = [
+      ["bithomp", "https://test.bithomp.com/explorer/" + encodeURIComponent(hash)],
+      ["xrpl.org", "https://testnet.xrpl.org/transactions/" + encodeURIComponent(hash)]
+    ];
+    for (var i = 0; i < targets.length; i++) {
+      var a = node("a", "link", targets[i][0]);
+      a.href = targets[i][1];
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      wrap.appendChild(a);
+    }
+    return wrap;
+  }
+
+  function kv(label, value, opts) {
+    opts = opts || {};
+    var row = node("div", "kv");
+    row.appendChild(node("span", "kv__k", label));
+    var v = node("span", "kv__v" + (opts.tone ? " tone-" + opts.tone : ""));
+    var text = (value === undefined || value === null || value === "") ? "—" : String(value);
+    v.appendChild(node("code", "val", text));
+    if (text !== "—" && opts.copy) v.appendChild(copyBtn(text));
+    if (text !== "—" && opts.explore) v.appendChild(explorerLinks(text));
+    row.appendChild(v);
+    return row;
+  }
+
+  function checksList(checks, failedCheck) {
+    var box = node("div", "checks");
+    for (var i = 0; i < CHECKS.length; i++) {
+      var key = CHECKS[i][0];
+      var pass = !!(checks && checks[key]);
+      var isFail = failedCheck === key;
+      var row = node("div", "check " + (pass ? "check--ok" : "check--no"));
+      row.appendChild(node("span", "check__m", pass ? "✓" : "✗"));
+      row.appendChild(node("span", "check__n", key));
+      row.appendChild(node("span", "check__d", isFail ? CHECKS[i][1] + " — first failure" : CHECKS[i][1]));
+      box.appendChild(row);
+    }
+    return box;
+  }
+
+  // ---------------------------------------------------------------------
+  // Wire log — visible proof that the real API is being exercised
+  // ---------------------------------------------------------------------
+  var wireCount = 0;
+  function logWire(method, path, status, ms) {
+    var box = $("wire-box");
+    if (wireCount === 0) clear(box);
+    wireCount++;
+    var row = node("div", "wire__row");
+    var d = new Date();
+    var t = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+    row.appendChild(node("span", "wire__t", t));
+    row.appendChild(node("span", "wire__m", method));
+    row.appendChild(node("span", "wire__p", path));
+    row.appendChild(node("span", "wire__s " + (status >= 200 && status < 300 ? "ok" : "err"), status === 0 ? "NET" : String(status)));
+    row.appendChild(node("span", "wire__ms", Math.round(ms) + "ms"));
+    box.insertBefore(row, box.firstChild);
+    while (box.childNodes.length > 60) box.removeChild(box.lastChild);
+  }
+
+  // ---------------------------------------------------------------------
+  // fetch wrapper. Never throws; always returns a describable outcome.
+  // ---------------------------------------------------------------------
+  function call(method, path, body) {
+    var t0 = (window.performance && performance.now) ? performance.now() : Date.now();
+    var init = { method: method, headers: { accept: "application/json" } };
+    if (body !== undefined) {
+      init.headers["content-type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+        var elapsed = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
+        logWire(method, path, res.status, elapsed);
+        setOffline(false);
+        return {
+          network: true, ok: res.ok, status: res.status, statusText: res.statusText || "",
+          method: method, path: path, json: json, text: text
+        };
+      });
+    }, function (err) {
+      var elapsed = ((window.performance && performance.now) ? performance.now() : Date.now()) - t0;
+      logWire(method, path, 0, elapsed);
+      setOffline(true);
+      return {
+        network: false, ok: false, status: 0, statusText: "network error",
+        method: method, path: path, json: null,
+        text: String((err && err.message) || err)
+      };
+    });
+  }
+
+  function setOffline(v) {
+    if (offline === v) return;
+    offline = v;
+    $("banner-offline").hidden = !v;
+  }
+
+  function errorOf(r) {
+    if (!r.network) {
+      return {
+        code: "NETWORK_UNREACHABLE",
+        message: "The request never reached a server: " + r.text,
+        hint: "This page is served by the API itself, so a failed fetch means the process is down or restarting. Start it and press Refresh — the step stays retryable."
+      };
+    }
+    var e = r.json && r.json.error;
+    if (e && typeof e === "object") {
+      return { code: String(e.code || "ERROR"), message: String(e.message || ""), details: e.details };
+    }
+    return {
+      code: "HTTP_" + r.status,
+      message: (r.text || r.statusText || "Request failed").slice(0, 500)
+    };
+  }
+
+  // ---------------------------------------------------------------------
+  // Per-step rendering
+  // ---------------------------------------------------------------------
+  function busy(step, on) {
+    var b = $("s" + step + "-btn");
+    if (!b) return;
+    b.setAttribute("aria-busy", on ? "true" : "false");
+    b.disabled = !!on;
+  }
+
+  function stateOf(step, s) {
+    var el = $("step-" + step);
+    if (el) el.setAttribute("data-state", s);
+  }
+
+  function showRaw(step, r) {
+    var d = $("s" + step + "-raw");
+    if (!d) return;
+    d.hidden = false;
+    var line = r.method + " " + r.path + "  ·  " + (r.network ? r.status + " " + r.statusText : "network error");
+    setText("s" + step + "-raw-t", "Raw response · " + line);
+    $("s" + step + "-raw-pre").innerHTML = jsonHtml(r.json !== null ? r.json : r.text);
+  }
+
+  function resultShell(step, r, okLabel) {
+    var box = $("s" + step + "-result");
+    box.hidden = false;
+    clear(box);
+    var hd = node("div", "result__hd");
+    var good = r.ok;
+    hd.appendChild(node("span", "status " + (good ? "status--ok" : "status--err"),
+      (r.network ? r.status + " " + (r.statusText || "") : "no response").trim()));
+    var ep = node("span", "ep");
+    var m = node("span", "ep__m", r.method);
+    m.setAttribute("data-m", r.method);
+    ep.appendChild(m);
+    ep.appendChild(node("span", "ep__p", r.path));
+    hd.appendChild(ep);
+    if (okLabel) hd.appendChild(node("span", "label", okLabel));
+    box.appendChild(hd);
+    var body = node("div", "result__body");
+    box.appendChild(body);
+    return body;
+  }
+
+  function fail(step, r, hint) {
+    var body = resultShell(step, r, null);
+    var e = errorOf(r);
+    var eb = node("div", "errbox");
+    eb.appendChild(node("div", "errbox__code", e.code));
+    eb.appendChild(node("div", "errbox__msg", e.message));
+    if (hint || e.hint) eb.appendChild(node("div", "errbox__hint", hint || e.hint));
+    body.appendChild(eb);
+    if (e.details && e.details.checks) {
+      body.appendChild(node("p", "reading", "The five checks, as the ledger answered them:"));
+      body.appendChild(checksList(e.details.checks, e.details.failedCheck));
+    }
+    if (e.details) {
+      var det = node("div", "kv");
+      det.appendChild(node("span", "kv__k", "details"));
+      var dv = node("span", "kv__v");
+      var pre = node("pre");
+      pre.style.margin = "0";
+      pre.style.fontSize = "11.5px";
+      pre.style.overflowX = "auto";
+      pre.innerHTML = jsonHtml(e.details);
+      dv.appendChild(pre);
+      det.appendChild(dv);
+      body.appendChild(det);
+    }
+    body.appendChild(node("p", "reading", "The step is still armed — fix the cause and press it again."));
+    stateOf(step, "error");
+    showRaw(step, r);
+  }
+
+  function ok(step, r, rows, reading, extra) {
+    var body = resultShell(step, r, null);
+    for (var i = 0; i < rows.length; i++) if (rows[i]) body.appendChild(rows[i]);
+    if (extra) body.appendChild(extra);
+    if (reading) {
+      var p = node("p", "reading");
+      p.appendChild(node("span", "label", "reading  "));
+      p.appendChild(document.createTextNode(reading));
+      body.appendChild(p);
+    }
+    stateOf(step, "done");
+    showRaw(step, r);
+  }
+
+  // ---------------------------------------------------------------------
+  // Header / run-state painting
+  // ---------------------------------------------------------------------
+  function paintHeader() {
+    if (!state) {
+      setText("hdr-network", "unknown");
+      setText("hdr-endpoint", "unknown");
+      setText("hdr-issuer", "unknown");
+      setText("hdr-event", "unknown");
+      return;
+    }
+    setText("hdr-network", state.network || "?");
+    setText("hdr-endpoint", state.endpoint || "?");
+    setText("hdr-issuer", state.issuer ? state.issuer.address : "?");
+    setText("hdr-event", String(state.eventId));
+    $("hdr-endpoint").title = state.endpoint || "";
+    $("hdr-issuer").title = (state.issuer && state.issuer.address) || "";
+    var hero = $("hero-net-text");
+    if (state.network === "testnet") {
+      hero.textContent = "Testnet · faucet XRP · no real money is at risk";
+    } else {
+      hero.textContent = "Network: " + state.network + " · check what this account is spending";
+    }
+  }
+
+  function yesno(id, v, burnTone) {
+    var n = $(id);
+    n.textContent = v ? "yes" : "no";
+    n.className = "chip__v " + (v ? (burnTone ? "is-burn" : "is-yes") : "is-no");
+  }
+
+  function paintRun() {
+    if (!state) {
+      var ids = ["rs-attendee", "rs-activated", "rs-nft", "rs-offer", "rs-accepted", "rs-burned", "rs-indexed", "rs-issuer-bal"];
+      for (var i = 0; i < ids.length; i++) { $(ids[i]).textContent = "—"; $(ids[i]).className = "chip__v"; }
+      return;
+    }
+    var a = state.attendee, b = state.badge, at = state.attendance || {};
+    var an = $("rs-attendee");
+    an.textContent = a ? short(a.address, 10, 6) : "none";
+    an.className = "chip__v " + (a ? "" : "is-no");
+    if (a) an.title = a.address;
+    yesno("rs-activated", !!(a && a.activated));
+    var nf = $("rs-nft");
+    nf.textContent = b && b.nftokenId ? short(b.nftokenId, 10, 6) : "none";
+    nf.className = "chip__v " + (b && b.nftokenId ? "" : "is-no");
+    if (b && b.nftokenId) nf.title = b.nftokenId;
+    var of = $("rs-offer");
+    of.textContent = b && b.offerId ? short(b.offerId, 10, 6) : "none";
+    of.className = "chip__v " + (b && b.offerId ? "" : "is-no");
+    if (b && b.offerId) of.title = b.offerId;
+    yesno("rs-accepted", !!(b && b.accepted));
+    yesno("rs-burned", !!(b && b.burned), true);
+    yesno("rs-indexed", !!at.recorded);
+    $("rs-issuer-bal").textContent = state.issuer && state.issuer.balanceXrp != null
+      ? state.issuer.balanceXrp + " XRP" : "—";
+  }
+
+  // ---------------------------------------------------------------------
+  // Preconditions. Every disabled step says why, in words.
+  // ---------------------------------------------------------------------
+  function txHash() {
+    var f = $("s4-hash");
+    return f ? f.value.trim() : "";
+  }
+  function setTxHash(h) {
+    var f = $("s4-hash");
+    if (!f || !h) return;
+    f.value = h;
+    try { sessionStorage.setItem(TX_KEY, h); } catch (e) { /* private mode */ }
+  }
+
+  function gates() {
+    var g = {};
+    if (!state) {
+      for (var i = 1; i <= 7; i++) g[i] = stateProblem;
+      g.roster = stateProblem;
+      g.index = stateProblem;
+      return g;
+    }
+    var demoOff = state.enabled === false
+      ? "The demo helper routes are switched off on this server, so the harness cannot drive this step. The real endpoints (steps 2, 4, 5 and both read panels) still work."
+      : null;
+    var a = state.attendee;
+    var b = state.badge;
+    var hash = txHash();
+
+    g[1] = demoOff || (a
+      ? "An attendee wallet already exists for this run (" + short(a.address, 10, 6) + "). Press Reset in the header to start a fresh event with a new wallet."
+      : null);
+
+    g[2] = !a
+      ? "No attendee wallet yet — run step 1. The claim endpoint needs an address to lock the offer's Destination to."
+      : null;
+
+    g[3] = demoOff || (!a
+      ? "No attendee wallet yet — run step 1."
+      : (!b || !b.offerId
+        ? "There is no open offer to accept — run step 2 first."
+        : (b.accepted
+          ? "This offer has already been accepted on the ledger; the badge is with the attendee. Only one accept is possible."
+          : null)));
+
+    g[4] = !a
+      ? "No attendee wallet yet — run step 1."
+      : (!b || !b.offerId
+        ? "No offer id to confirm against — run step 2."
+        : (!hash
+          ? "No attendance transaction hash. Run step 3, or paste the hash of the attendee's NFTokenAcceptOffer into the field above."
+          : null));
+
+    g[5] = !a
+      ? "No attendee wallet yet — run step 1."
+      : (!hash
+        ? "GET /verify needs the attendance tx hash, and there is not one yet — run step 3."
+        : null);
+
+    g[6] = demoOff || (!b || !b.nftokenId
+      ? "There is no badge to burn — run step 2."
+      : (!b.accepted
+        ? "Nothing worth burning yet: the attendee has not accepted the badge, so it is still sitting with the issuer. Run step 3."
+        : (b.burned
+          ? "This badge is already burned. Its NFTokenID no longer exists on the ledger — and step 7 still verifies."
+          : null)));
+
+    g[7] = !a || !hash
+      ? "Needs a wallet and an attendance hash — run steps 1 to 3."
+      : (!(b && b.burned)
+        ? "Burn the badge first (step 6). This step exists to prove that destroying the badge did not destroy the attendance, so it is only interesting after the burn."
+        : null);
+
+    g.roster = null;
+    g.index = null;
+    return g;
+  }
+
+  function applyGates() {
+    var g = gates();
+    for (var i = 1; i <= 7; i++) {
+      var btn = $("s" + i + "-btn");
+      var msg = $("s" + i + "-blocked");
+      var reason = g[i];
+      if (btn) {
+        btn.disabled = !!reason;
+        if (reason) btn.setAttribute("aria-describedby", "s" + i + "-blocked");
+        else btn.removeAttribute("aria-describedby");
+      }
+      if (msg) {
+        msg.hidden = !reason;
+        msg.textContent = reason || "";
+      }
+      var el = $("step-" + i);
+      if (el && el.getAttribute("data-state") !== "done" && el.getAttribute("data-state") !== "error") {
+        el.setAttribute("data-state", reason ? "blocked" : "ready");
+      }
+    }
+    var eid = state ? state.eventId : "{eventId}";
+    var offerId = (state && state.badge && state.badge.offerId) || (claim && claim.offerId) || "{offerId}";
+    setText("s2-path", "/events/" + eid + "/claims");
+    setText("s4-path", "/events/" + eid + "/claims/" + short(String(offerId), 8, 6) + "/confirm");
+    setText("roster-path", "/events/" + eid + "/roster");
+    setText("idx-path", "/events/" + eid + "/attendance?limit=25&offset=0");
+
+    var rb = $("roster-btn"), ib = $("idx-btn");
+    rb.disabled = !state;
+    ib.disabled = !state;
+    $("roster-blocked").hidden = !g.roster;
+    $("roster-blocked").textContent = g.roster || "";
+    $("idx-blocked").hidden = !g.index;
+    $("idx-blocked").textContent = g.index || "";
+
+    var demoBanner = $("banner-demo");
+    if (state && state.enabled === false) {
+      demoBanner.hidden = false;
+      setText("banner-demo-msg", "GET /demo/state reports enabled:false. Steps 1, 3 and 6 drive the demo-only helper routes (wallet creation, attendee-side signing, burn) and are disabled. The real endpoints are unaffected.");
+    } else if (!state && stateProblem.indexOf("404") !== -1) {
+      demoBanner.hidden = false;
+      setText("banner-demo-msg", stateProblem);
+    } else {
+      demoBanner.hidden = true;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // GET /demo/state
+  // ---------------------------------------------------------------------
+  function refresh() {
+    return call("GET", "/demo/state").then(function (r) {
+      var d = $("raw-state");
+      d.hidden = false;
+      var st = $("raw-state-status");
+      st.textContent = r.network ? String(r.status) : "no response";
+      st.className = "status " + (r.ok ? "status--ok" : "status--err");
+      $("raw-state-pre").innerHTML = jsonHtml(r.json !== null ? r.json : r.text);
+
+      if (!r.network) {
+        state = null;
+        stateProblem = "The API at this origin is not answering. This page is served by that same process, so it is down or restarting. Start it and press Refresh.";
+      } else if (r.status === 404) {
+        state = null;
+        stateProblem = "GET /demo/state returned 404 — the demo helper routes are not mounted on this server build. Every step below needs them for state.";
+      } else if (!r.ok) {
+        var e = errorOf(r);
+        state = null;
+        stateProblem = "GET /demo/state failed with " + r.status + " " + e.code + ": " + e.message;
+      } else {
+        state = r.json || null;
+        stateProblem = "";
+        if (state && state.attendance && state.attendance.txHash && !txHash()) setTxHash(state.attendance.txHash);
+        if (!txHash()) {
+          try {
+            var stored = sessionStorage.getItem(TX_KEY);
+            if (stored) $("s4-hash").value = stored;
+          } catch (e2) { /* ignore */ }
+        }
+      }
+      paintHeader();
+      paintRun();
+      applyGates();
+      if (state) return loadIndex(true);
+      return null;
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Step 1 — POST /demo/attendee
+  // ---------------------------------------------------------------------
+  var MODE_NOTES = {
+    funded: "The faucet activates the account with test XRP. It has an account root, so it can own an NFTokenPage and receive the badge directly.",
+    unactivated: "A key pair the ledger has never seen. account_nfts on it answers actNotFound, and an NFT cannot be delivered to an address with no account root. Claiming will take the sponsorship branch — a base-reserve Payment booked before it is sent — or fail with ACCOUNT_NOT_FOUND if sponsorship is off. Both outcomes are worth seeing."
+  };
+  function paintModeNote() {
+    var sel = document.querySelector('input[name="fundmode"]:checked');
+    setText("s1-mode-note", MODE_NOTES[sel ? sel.value : "funded"]);
+  }
+
+  function doAttendee() {
+    var sel = document.querySelector('input[name="fundmode"]:checked');
+    var funded = !sel || sel.value === "funded";
+    busy(1, true);
+    return call("POST", "/demo/attendee", { funded: funded }).then(function (r) {
+      busy(1, false);
+      if (!r.ok) { fail(1, r); return refresh(); }
+      var d = r.json || {};
+      ok(1, r, [
+        kv("address", d.address, { copy: true }),
+        kv("balance", d.balanceXrp != null ? d.balanceXrp + " XRP" : "0 XRP"),
+        kv("activated", String(!!d.activated), { tone: d.activated ? "ok" : "warn" })
+      ], d.activated
+        ? "The wallet exists on the ledger with a funded account root, so it can receive an NFT. Nothing has been minted yet."
+        : "This address is not on the ledger. There is no account root, so no NFT can be delivered to it — which is exactly the condition the claim endpoint's sponsorship branch exists to fix.");
+      return refresh();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Step 2 — POST /events/{eventId}/claims   (the real endpoint)
+  // ---------------------------------------------------------------------
+  function payloadCard(accept, destination) {
+    var card = node("div", "payload");
+    var hd = node("div", "payload__hd");
+    hd.appendChild(node("span", "label", "unsigned · what the attendee signs"));
+    hd.appendChild(node("span", "hint", "exactly three fields"));
+    card.appendChild(hd);
+    var pre = node("pre");
+    pre.innerHTML = jsonHtml(accept);
+    card.appendChild(pre);
+    var ft = node("div", "payload__ft");
+    ft.appendChild(node("b", null, "No Fee, no Memos, no Destination override. "));
+    ft.appendChild(document.createTextNode(
+      "Nothing the attendee did not agree to. The offer this consumes was created by the issuer with "
+    ));
+    ft.appendChild(node("code", "tick", "Destination = " + (destination || "the attendee")));
+    ft.appendChild(document.createTextNode(
+      " — without that field the offer is open to the whole network and anyone watching the ledger could accept it and take the badge."
+    ));
+    card.appendChild(ft);
+    return card;
+  }
+
+  function doClaim() {
+    if (!state || !state.attendee) return Promise.resolve();
+    var addr = state.attendee.address;
+    var uri = $("s2-uri").value.trim();
+    var body = { address: addr };
+    if (uri) body.metadataUri = uri;
+    var path = "/events/" + encodeURIComponent(String(state.eventId)) + "/claims";
+    busy(2, true);
+    return call("POST", path, body).then(function (r) {
+      busy(2, false);
+      if (!r.ok) {
+        var hintText = null;
+        var code = (r.json && r.json.error && r.json.error.code) || "";
+        if (code === "ACCOUNT_NOT_FOUND") {
+          hintText = "This is the unactivated-wallet path with sponsorship switched off. The address has no account root, so there is nothing to deliver an NFT to. Reset and create a funded wallet, or enable sponsorship on the server.";
+        } else if (code === "DUPLICATE_CLAIM") {
+          hintText = "The slot guard did its job: one badge per address per event, and it refuses rather than minting a second.";
+        } else if (code === "INVALID_INPUT") {
+          hintText = "Routes never pin metadata themselves. Put a URI in the optional metadataUri field above and claim again.";
+        }
+        fail(2, r, hintText);
+        return refresh();
+      }
+      var d = r.json || {};
+      claim = d;
+      var reused = d.reusedExistingOffer === true;
+      ok(2, r, [
+        kv("nftokenId", d.nftokenId, { copy: true }),
+        kv("offerId", d.offerId, { copy: true }),
+        kv("destination", addr, { tone: "ok" }),
+        reused ? kv("reusedExistingOffer", "true", { tone: "warn" }) : null,
+        d.xaman ? kv("xaman", "a sign request was also created for the phone path") : null
+      ], reused
+        ? "200, not 201 — nothing new was minted. A live claim already held the (eventId, address) slot, so the API handed back the offer that already exists. This is the guard that stops six retries producing six badges and locking 1.2 XRP in six offers."
+        : "One soulbound badge was minted with NFTokenTaxon = " + state.eventId + " and a single sell offer for 0 was created lazily, locked to the attendee. The issuer has now spent everything it is going to spend: a mint fee plus 0.2 XRP of owner reserve held for as long as the offer stays open.",
+        d.accept ? payloadCard(d.accept, addr) : null);
+      return refresh();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Step 3 — POST /demo/accept
+  // ---------------------------------------------------------------------
+  function doAccept() {
+    busy(3, true);
+    return call("POST", "/demo/accept").then(function (r) {
+      busy(3, false);
+      if (!r.ok) { fail(3, r); return refresh(); }
+      var d = r.json || {};
+      if (d.txHash) setTxHash(d.txHash);
+      ok(3, r, [
+        kv("txHash", d.txHash, { copy: true, explore: true }),
+        kv("ledgerIndex", d.ledgerIndex)
+      ], "That hash is the attendance record. It is the attendee's own NFTokenAcceptOffer, submitted by the attendee's account, and it stays on the ledger permanently — burning the badge later does not remove it. Everything from here on is reading, never writing to the chain.");
+      return refresh();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Step 4 — POST /events/{eventId}/claims/{offerId}/confirm
+  // ---------------------------------------------------------------------
+  function doConfirm() {
+    if (!state || !state.attendee) return Promise.resolve();
+    var offerId = (state.badge && state.badge.offerId) || (claim && claim.offerId);
+    if (!offerId) return Promise.resolve();
+    var hash = txHash();
+    var path = "/events/" + encodeURIComponent(String(state.eventId)) +
+               "/claims/" + encodeURIComponent(offerId) + "/confirm";
+    busy(4, true);
+    return call("POST", path, { address: state.attendee.address, txHash: hash }).then(function (r) {
+      busy(4, false);
+      if (!r.ok) {
+        fail(4, r, r.status === 422
+          ? "422 and nothing was written. Verification runs before the index, so a claim the ledger does not support cannot become a row."
+          : null);
+        return refresh();
+      }
+      var d = r.json || {};
+      var v = d.verification || {};
+      var rec = d.record || {};
+      ok(4, r, [
+        kv("attended", String(v.attended), { tone: v.attended ? "ok" : "burn" }),
+        kv("status", v.status, { tone: "ok" }),
+        kv("alreadyRecorded", String(!!d.alreadyRecorded)),
+        kv("nftokenId", v.nftokenId || rec.nftokenId, { copy: true }),
+        kv("nftokenIdSource", v.nftokenIdSource),
+        kv("sellOfferId", v.sellOfferId, { copy: true }),
+        kv("ledgerIndex", v.ledgerIndex != null ? v.ledgerIndex : rec.ledgerIndex),
+        v.degraded ? kv("degraded", "true — issuer and taxon decoded from the NFTokenID itself", { tone: "warn" }) : null
+      ], d.alreadyRecorded
+        ? "Already indexed, and the API said so instead of writing a second row. Confirm is idempotent; a webhook and a browser can both arrive and the unique index decides."
+        : "All five checks passed against the chain, so one row was written to the attendance index. Note the offer id stored is the one the accept transaction actually consumed, read off the ledger — not the one this page put in the URL.",
+        checksList(v.checks, v.failedCheck));
+      return refresh();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Steps 5 and 7 — GET /verify
+  // ---------------------------------------------------------------------
+  function verifyRows(v) {
+    return [
+      kv("attended", String(v.attended), { tone: v.attended ? "ok" : "burn" }),
+      kv("status", v.status, { tone: v.attended ? "ok" : "burn" }),
+      kv("isBurned", v.isBurned === undefined ? "unknown" : String(v.isBurned), { tone: v.isBurned ? "burn" : "" }),
+      kv("nftokenId", v.nftokenId, { copy: true }),
+      kv("nftokenIdSource", v.nftokenIdSource),
+      kv("sellOfferId", v.sellOfferId, { copy: true }),
+      kv("currentOwner", v.currentOwner, { copy: true }),
+      v.failedCheck ? kv("failedCheck", v.failedCheck, { tone: "burn" }) : null,
+      v.reason ? kv("reason", v.reason) : null,
+      v.degraded ? kv("degraded", "true — no Clio on this endpoint; issuer and taxon were decoded from the NFTokenID, so burn status is unknown rather than false", { tone: "warn" }) : null
+    ];
+  }
+
+  function verifyPath() {
+    var q = "address=" + encodeURIComponent(state.attendee.address) +
+            "&eventId=" + encodeURIComponent(String(state.eventId)) +
+            "&txHash=" + encodeURIComponent(txHash());
+    return "/verify?" + q;
+  }
+
+  function doVerify() {
+    if (!state || !state.attendee) return Promise.resolve();
+    busy(5, true);
+    return call("GET", verifyPath()).then(function (r) {
+      busy(5, false);
+      if (!r.ok) { fail(5, r); return null; }
+      var v = r.json || {};
+      ok(5, r, verifyRows(v), v.attended
+        ? "attended: true. Nothing in that answer came from the local index — the API pulled the transaction off the ledger, checked it five ways, and asked nft_info for the issuer and taxon. The badge currently sits with the attendee."
+        : "attended: false, returned as a 200 because a negative verdict is an answer, not an error. The named failed check is the reason.",
+        checksList(v.checks, v.failedCheck));
+      return null;
+    });
+  }
+
+  function payoffPanel(v) {
+    var wrap = node("div", "payoff is-live");
+    var hd = node("div", "payoff__hd");
+    hd.appendChild(node("span", "label", "the payoff"));
+    hd.appendChild(node("span", "hint", "same wallet · same event · badge destroyed"));
+    wrap.appendChild(hd);
+
+    var grid = node("div", "payoff__grid");
+
+    var trap = node("div", "payoff__cell payoff__cell--trap");
+    trap.appendChild(node("div", "payoff__k", "account_nfts for this wallet"));
+    trap.appendChild(node("div", "payoff__big", "0"));
+    var tsub = node("div", "payoff__sub");
+    tsub.textContent = "The query that looks like it answers “did they attend”. It returns zero for someone who demonstrably did. Nothing in this system ever calls it — measured in npm run e2e:burn, quoted here, not fetched.";
+    trap.appendChild(tsub);
+    grid.appendChild(trap);
+
+    grid.appendChild(node("div", "payoff__rule"));
+
+    var truth = node("div", "payoff__cell payoff__cell--truth");
+    truth.appendChild(node("div", "payoff__k", "GET /verify says"));
+    truth.appendChild(node("div", "payoff__big", "attended: " + String(v.attended)));
+    truth.appendChild(node("div", "payoff__status", "status: " + String(v.status)));
+    var vsub = node("div", "payoff__sub");
+    vsub.textContent = "Re-derived from the ledger just now, from the accept transaction hash.";
+    truth.appendChild(vsub);
+    grid.appendChild(truth);
+
+    wrap.appendChild(grid);
+
+    var ft = node("div", "payoff__ft");
+    ft.appendChild(node("b", null, "The badge is gone. The attendance is not. "));
+    ft.appendChild(document.createTextNode(
+      "Verification never asked who holds the token, so the burn was irrelevant to it. nft_info still reports the issuer and the taxon for a burned NFTokenID, the accept transaction is still retrievable, and meta.nftoken_id on it is intact. That is what “attendance is an event, not a state” buys you."
+    ));
+    wrap.appendChild(ft);
+    return wrap;
+  }
+
+  function doVerifyAgain() {
+    if (!state || !state.attendee) return Promise.resolve();
+    busy(7, true);
+    return call("GET", verifyPath()).then(function (r) {
+      busy(7, false);
+      var host = $("s7-payoff");
+      clear(host);
+      if (!r.ok) { fail(7, r); return null; }
+      var v = r.json || {};
+      host.appendChild(payoffPanel(v));
+      ok(7, r, verifyRows(v), v.status === "attended_badge_burned"
+        ? "status: attended_badge_burned. isBurned is true and the token is off the attendee's account, and the verdict is still attended: true. The five checks read the accept transaction, not the current owner."
+        : (v.attended
+          ? "attended: true. If the status is not attended_badge_burned, this endpoint could not confirm the burn — check degraded, which means the node has no Clio and burn status is unknown rather than false."
+          : "attended: false. That is not what this step is supposed to show — check the tx hash in step 4 and the failed check below."),
+        checksList(v.checks, v.failedCheck));
+      return null;
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Step 6 — POST /demo/burn
+  // ---------------------------------------------------------------------
+  function doBurn() {
+    busy(6, true);
+    return call("POST", "/demo/burn").then(function (r) {
+      busy(6, false);
+      if (!r.ok) { fail(6, r); return refresh(); }
+      var d = r.json || {};
+      ok(6, r, [
+        kv("txHash", d.txHash, { copy: true, explore: true, tone: "burn" })
+      ], "The NFToken is destroyed. account_nfts for that wallet now returns 0 and the badge cannot be shown to anyone ever again. The attendance transaction from step 3 is untouched — run step 7.");
+      return refresh();
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Read-only panels
+  // ---------------------------------------------------------------------
+  function count(n, k) {
+    var c = node("div", "count");
+    c.appendChild(node("div", "count__n", n === undefined || n === null ? "—" : String(n)));
+    c.appendChild(node("div", "count__k", k));
+    return c;
+  }
+
+  function panelRaw(prefix, r) {
+    var d = $(prefix + "-raw");
+    d.hidden = false;
+    setText(prefix + "-raw-t", "Raw response · " + r.method + " " + r.path + " · " +
+      (r.network ? r.status + " " + r.statusText : "network error"));
+    $(prefix + "-raw-pre").innerHTML = jsonHtml(r.json !== null ? r.json : r.text);
+  }
+
+  function panelError(prefix, r) {
+    var host = $(prefix + "-result");
+    clear(host);
+    var e = errorOf(r);
+    var eb = node("div", "errbox");
+    eb.appendChild(node("div", "errbox__code", (r.network ? r.status + " · " : "") + e.code));
+    eb.appendChild(node("div", "errbox__msg", e.message));
+    if (e.hint) eb.appendChild(node("div", "errbox__hint", e.hint));
+    host.appendChild(eb);
+    panelRaw(prefix, r);
+  }
+
+  function loadRoster() {
+    if (!state) return Promise.resolve();
+    var path = "/events/" + encodeURIComponent(String(state.eventId)) + "/roster";
+    var btn = $("roster-btn");
+    btn.disabled = true; btn.setAttribute("aria-busy", "true");
+    return call("GET", path).then(function (r) {
+      btn.disabled = false; btn.setAttribute("aria-busy", "false");
+      if (!r.ok) { panelError("roster", r); return null; }
+      var d = r.json || {};
+      var host = $("roster-result");
+      clear(host);
+      var counts = node("div", "counts");
+      counts.appendChild(count(d.minted, "minted"));
+      counts.appendChild(count(d.claimed, "claimed"));
+      counts.appendChild(count(d.burned, "burned"));
+      counts.appendChild(count(d.ownerUnknown, "owner ?"));
+      host.appendChild(counts);
+      var rows = node("div", "rows");
+      var entries = d.entries || [];
+      if (!entries.length) {
+        rows.appendChild(node("p", "empty", "No badges minted for this taxon yet."));
+      }
+      for (var i = 0; i < entries.length && i < 25; i++) {
+        var e = entries[i];
+        var row = node("div", "row");
+        row.appendChild(node("b", null, short(e.nftokenId, 12, 8)));
+        row.appendChild(document.createTextNode(
+          "  · serial " + e.serial + " · owner " + (e.owner ? short(e.owner, 8, 5) : "unknown")
+        ));
+        if (e.isBurned) {
+          row.appendChild(document.createTextNode(" · "));
+          row.appendChild(node("span", "flag", "BURNED — still listed by the issuer, with the owner intact"));
+        }
+        rows.appendChild(row);
+      }
+      host.appendChild(rows);
+      host.appendChild(node("p", "hint", "Issuer " + (d.issuer || "?") + " · taxon " + d.eventId +
+        ". A burned badge stays in this answer with is_burned true and its owner still reported — which is how verification survives it."));
+      panelRaw("roster", r);
+      return null;
+    });
+  }
+
+  function loadIndex(quiet) {
+    if (!state) return Promise.resolve();
+    var path = "/events/" + encodeURIComponent(String(state.eventId)) + "/attendance?limit=25&offset=0";
+    var btn = $("idx-btn");
+    if (!quiet) { btn.disabled = true; btn.setAttribute("aria-busy", "true"); }
+    return call("GET", path).then(function (r) {
+      btn.disabled = false; btn.setAttribute("aria-busy", "false");
+      if (!r.ok) { panelError("idx", r); return null; }
+      var d = r.json || {};
+      var host = $("idx-result");
+      clear(host);
+      var counts = node("div", "counts");
+      counts.appendChild(count(d.total, "rows"));
+      counts.appendChild(count(d.limit, "limit"));
+      counts.appendChild(count(d.offset, "offset"));
+      host.appendChild(counts);
+      var rows = node("div", "rows");
+      var recs = d.records || [];
+      if (!recs.length) {
+        rows.appendChild(node("p", "empty", "No rows. Nothing is indexed until the chain says the attendee accepted."));
+      }
+      for (var i = 0; i < recs.length; i++) {
+        var rec = recs[i];
+        var row = node("div", "row");
+        row.appendChild(node("b", null, short(rec.address, 10, 6)));
+        row.appendChild(document.createTextNode("  · tx "));
+        var link = node("span", null, short(rec.txHash, 10, 8));
+        row.appendChild(link);
+        row.appendChild(document.createTextNode(" · ledger " + rec.ledgerIndex));
+        if (rec.txHash) row.appendChild(explorerLinks(rec.txHash));
+        rows.appendChild(row);
+      }
+      host.appendChild(rows);
+      host.appendChild(node("p", "hint", "Zero ledger calls were made to produce this. The rows survive a burn because they are an index over what happened, not a picture of who holds what."));
+      panelRaw("idx", r);
+      return null;
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Reset, theme, arming
+  // ---------------------------------------------------------------------
+  function arm(btn, key, label, run) {
+    if (btn.getAttribute("data-armed") === "1") {
+      btn.setAttribute("data-armed", "0");
+      btn.textContent = label;
+      clearTimeout(armTimers[key]);
+      run();
+      return;
+    }
+    btn.setAttribute("data-armed", "1");
+    btn.textContent = "Press again to confirm";
+    clearTimeout(armTimers[key]);
+    armTimers[key] = setTimeout(function () {
+      btn.setAttribute("data-armed", "0");
+      btn.textContent = label;
+    }, 6000);
+  }
+
+  function doReset() {
+    var btn = $("btn-reset");
+    btn.disabled = true;
+    return call("POST", "/demo/reset").then(function (r) {
+      btn.disabled = false;
+      if (!r.ok) {
+        var e = errorOf(r);
+        setText("banner-demo-msg", "POST /demo/reset failed: " + e.code + " — " + e.message);
+        $("banner-demo").hidden = false;
+        return null;
+      }
+      claim = null;
+      try { sessionStorage.removeItem(TX_KEY); } catch (e2) { /* ignore */ }
+      $("s4-hash").value = "";
+      $("s2-uri").value = "";
+      for (var i = 1; i <= 7; i++) {
+        var res = $("s" + i + "-result");
+        var raw = $("s" + i + "-raw");
+        if (res) { res.hidden = true; clear(res); }
+        if (raw) { raw.hidden = true; raw.open = false; }
+        stateOf(i, "blocked");
+      }
+      clear($("s7-payoff"));
+      clear($("roster-result"));
+      $("roster-result").appendChild(node("p", "empty", "Not loaded. This one is on demand only."));
+      $("roster-raw").hidden = true;
+      return refresh();
+    });
+  }
+
+  function initTheme() {
+    var saved = null;
+    try { saved = localStorage.getItem("poap-demo:theme"); } catch (e) { /* ignore */ }
+    if (saved === "light" || saved === "dark") document.documentElement.setAttribute("data-theme", saved);
+    $("btn-theme").addEventListener("click", function () {
+      var cur = document.documentElement.getAttribute("data-theme");
+      var next;
+      if (cur === "dark") next = "light";
+      else if (cur === "light") next = "dark";
+      else next = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches ? "light" : "dark";
+      document.documentElement.setAttribute("data-theme", next);
+      try { localStorage.setItem("poap-demo:theme", next); } catch (e) { /* ignore */ }
+    });
+  }
+
+  // ---------------------------------------------------------------------
+  // Boot
+  // ---------------------------------------------------------------------
+  function boot() {
+    initTheme();
+    paintModeNote();
+
+    var radios = document.querySelectorAll('input[name="fundmode"]');
+    for (var i = 0; i < radios.length; i++) radios[i].addEventListener("change", paintModeNote);
+
+    $("s1-btn").addEventListener("click", doAttendee);
+    $("s2-btn").addEventListener("click", doClaim);
+    $("s3-btn").addEventListener("click", doAccept);
+    $("s4-btn").addEventListener("click", doConfirm);
+    $("s5-btn").addEventListener("click", doVerify);
+    $("s6-btn").addEventListener("click", function () {
+      arm($("s6-btn"), "burn", "Burn the badge", doBurn);
+    });
+    $("s7-btn").addEventListener("click", doVerifyAgain);
+
+    $("s4-hash").addEventListener("input", function () {
+      try { sessionStorage.setItem(TX_KEY, txHash()); } catch (e) { /* ignore */ }
+      applyGates();
+    });
+
+    $("roster-btn").addEventListener("click", loadRoster);
+    $("idx-btn").addEventListener("click", function () { loadIndex(false); });
+    $("btn-refresh").addEventListener("click", function () { refresh(); });
+    $("btn-reset").addEventListener("click", function () {
+      arm($("btn-reset"), "reset", "Reset", doReset);
+    });
+
+    applyGates();
+    refresh();
+  }
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

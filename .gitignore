@@ -1,0 +1,11 @@
+node_modules/
+dist/
+coverage/
+
+# Secrets. The issuer seed must never reach the repo, the bundle, or logs.
+.env
+.env.*
+!.env.example
+*.seed
+secrets/
+out/

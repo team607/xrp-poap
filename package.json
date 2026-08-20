@@ -1,0 +1,43 @@
+{
+  "name": "xrpl-nft-layer",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "POAP-style attendance badges on XRP Ledger: mint, claim, verify.",
+  "engines": { "node": ">=20" },
+  "exports": { ".": "./dist/index.js" },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node -e \"require('node:fs').cpSync('src/api/public','dist/api/public',{recursive:true})\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "dev": "tsx watch src/api/server.ts",
+    "start": "node dist/api/server.js",
+    "keygen": "tsx scripts/generate-issuer.ts",
+    "e2e:testnet": "tsx scripts/01-testnet-e2e.ts",
+    "e2e:burn": "tsx scripts/02-burn-test.ts",
+    "e2e:mainnet": "tsx scripts/03-mainnet-rehearsal.ts",
+    "migrate": "tsx scripts/migrate.ts",
+    "reap:offers": "tsx scripts/reap-offers.ts",
+    "demo": "tsx scripts/demo.ts",
+    "check:cutover": "tsx scripts/check-cutover.ts"
+  },
+  "dependencies": {
+    "@fastify/rate-limit": "^10.3.0",
+    "dotenv": "^17.2.3",
+    "fastify": "^5.12.1",
+    "pg": "^8.16.3",
+    "xrpl": "^5.0.0",
+    "xumm-sdk": "^1.11.2",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.11"
+  }
+}
