@@ -25,6 +25,9 @@
  *
  *   attendee  POST /demo/wallet                     -> address + handle token
  *   attendee  (renders the address as a QR code)
+ *   either    GET  /demo/art?address=...            -> the badge, as an SVG.
+ *             The same bytes that get pinned to IPFS, so both screens can show
+ *             the badge before one exists. See "Badge artwork" below.
  *   volunteer GET  /demo/lookup?address=...         -> the whole scan verdict
  *   volunteer POST /demo/sponsor                    -> activate an empty wallet
  *   volunteer POST /events/:eventId/claims          -> THE REAL ROUTE. Mints.
@@ -48,6 +51,7 @@
  * And every attendee seed lives in a `#private` Map inside DemoState for the
  * life of the process. None is ever written to disk, returned, or logged.
  */
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -55,7 +59,14 @@ import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Wallet, isValidClassicAddress } from "xrpl";
 import { z } from "zod";
 import { SponsorshipDeniedError, XrplLayerError } from "../../errors.js";
+import { renderBadgeArt } from "../../metadata/badge-art.js";
+import {
+  artLabel,
+  badgeManifestPath,
+  loadBadgeManifest,
+} from "../../metadata/badge-uri-resolver.js";
 import type { AttendanceRecord, ClaimRecord, EventId } from "../../types.js";
+import { assertValidAddress, assertValidTaxon } from "../../xrpl/encoding.js";
 import {
   DEMO_PAGE_FILES,
   DEMO_PUBLIC_REPO_DIR,
@@ -127,6 +138,22 @@ type LookupQuery = z.infer<typeof lookupQuerySchema>;
 
 const sponsorBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
 type SponsorBody = z.infer<typeof sponsorBodySchema>;
+
+/**
+ * The artwork query. Both fields are plain strings ON PURPOSE, unlike every
+ * other route in this file: the handler checks them with `assertValidAddress`
+ * and `assertValidTaxon`, so a refusal carries `INVALID_ADDRESS` or
+ * `INVALID_TAXON` rather than a generic `BAD_REQUEST`, and the two are exactly
+ * the distinction a page needs — "that is not a wallet" and "that is not an
+ * event" are different things to say to a volunteer.
+ *
+ * `address` is required; `eventId` is not (see `parseArtEventId`).
+ */
+const artQuerySchema = z.object({
+  address: z.string(),
+  eventId: z.string().optional(),
+});
+type ArtQuery = z.infer<typeof artQuerySchema>;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -239,6 +266,204 @@ async function readAddressFacts(
     pending:
       offerId && !accepted ? { offerId, nftokenId: claim?.nftokenId ?? null } : null,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Badge artwork
+//
+// ┌─ WHY THIS ENDPOINT EXISTS, rather than the pages fetching ipfs.io ────────┐
+// │ `renderBadgeArt` is a PURE DETERMINISTIC FUNCTION of (address, eventId):   │
+// │ the same attendee at the same event always produces the same bytes. The    │
+// │ pinner calls it with those same two values, so the SVG served from         │
+// │ /demo/art is BYTE-IDENTICAL to the SVG pinned to IPFS for that attendee —  │
+// │ not a stand-in for it, the same image, computed here instead of fetched.   │
+// │                                                                            │
+// │ That is worth a route because it collapses three problems at once. A page  │
+// │ can paint the badge the instant it knows an address: no gateway round      │
+// │ trip, no CID to wait for, and nothing minted yet — the art exists before   │
+// │ the badge does. And it still gets to prove the pin is real, because        │
+// │ `art.gatewayUrl` on /status and /lookup links at the actual pinned file;   │
+// │ anyone who doubts the preview can open both and compare.                   │
+// │                                                                            │
+// │ The one way the two copies can drift is the caption, which is the only     │
+// │ input that is not derived from the address. See `demoArtCaption`.          │
+// └────────────────────────────────────────────────────────────────────────────┘
+// ---------------------------------------------------------------------------
+
+/**
+ * A year, and `immutable`, on a route that a demo harness serves. Deliberate,
+ * and safe for one specific reason: THE BODY IS A PURE FUNCTION OF THE URL.
+ *
+ * There is no wallet behind it, no claim, no attendance row and no ledger read
+ * — nothing that could change underneath a cached copy, so a year-old entry and
+ * a fresh render are the same bytes. Nor does the pinned copy drift away from
+ * it: IPFS is content-addressed, so the CID pinned for this attendee names the
+ * bytes it was pinned with forever. Regenerating the artwork would be a re-pin
+ * under a NEW CID, which is a different badge, not a stale cache.
+ *
+ * The failure this shape has to avoid is caching a FAILURE. A bad address is a
+ * 400 JSON body and never a rendered "error badge": an image held for a year
+ * that looks like a real badge is the one bug immutable caching could cause,
+ * and the validation below is what makes it impossible.
+ */
+const BADGE_ART_CACHE_CONTROL = "public, max-age=31536000, immutable";
+
+/** What both pages need to show a badge and to check the pin behind it. */
+export interface DemoBadgeArtLinks {
+  /** Renders now, from the address alone. No wallet, no claim, no badge. */
+  previewUrl: string;
+  /** ipfs:// artwork. Absent until this attendee has been pinned for this event. */
+  imageUri?: string;
+  /** ipfs:// metadata JSON — what NFTokenMint carries. Absent likewise. */
+  metadataUri?: string;
+  /** `imageUri` through the configured gateway. Absent whenever `imageUri` is. */
+  gatewayUrl?: string;
+}
+
+/**
+ * The caption the pinner would have used, or nothing at all.
+ *
+ * Mirrors PinningBadgeUriResolver, including the empty case: `artLabel` strips
+ * XML metacharacters, so a name made entirely of them collapses to `""`, and
+ * `renderBadgeArt` only falls back to `EVENT <id>` for `undefined`. Passing
+ * `""` would leave the badge captionless here and captioned there, and the two
+ * copies would no longer match.
+ */
+function demoArtCaption(demo: DemoOptions): string | undefined {
+  const eventName = demo.eventName;
+  if (eventName === undefined) return undefined;
+  // Operator input on its way into an SVG text node. artLabel removes the
+  // metacharacters and pre-trims on a code point boundary so the generator's
+  // own slice cannot cut a surrogate pair in half.
+  const caption = artLabel(eventName);
+  return caption === "" ? undefined : caption;
+}
+
+/** The one place the preview URL is spelled, so no page has to guess it. */
+function badgeArtPreviewUrl(address: string, eventId: EventId): string {
+  return `/demo/art?address=${encodeURIComponent(address)}&eventId=${eventId}`;
+}
+
+/**
+ * `ipfs://CID/path` -> `<gateway>/ipfs/CID/path`.
+ *
+ * Anything that is not an `ipfs://` URI yields undefined rather than a guess: a
+ * link that 404s is worse than no link, because the page would be inviting
+ * somebody to verify a pin and handing them a dead end.
+ */
+function ipfsGatewayUrl(uri: string | undefined, gateway: string): string | undefined {
+  if (uri === undefined || !uri.startsWith("ipfs://")) return undefined;
+  const path = uri.slice("ipfs://".length);
+  if (path === "") return undefined;
+  return `${gateway.replace(/\/+$/, "")}/ipfs/${path}`;
+}
+
+/**
+ * Where the badge manifest for one event lives.
+ *
+ * Asks the resolver first when it can answer: PinningBadgeUriResolver may be
+ * pinned to an explicit path, and reading the default file instead would report
+ * "not pinned" for an attendee who is. Falls back to `badgeManifestPath`, which
+ * is what the pre-pin script writes.
+ */
+function manifestPathFor(deps: ApiDeps, eventId: EventId): string {
+  const resolver = deps.badgeUris as { manifestPathFor?: unknown } | undefined;
+  if (typeof resolver?.manifestPathFor === "function") {
+    try {
+      const path = (resolver.manifestPathFor as (id: EventId) => unknown)(eventId);
+      if (typeof path === "string" && path !== "") return path;
+    } catch {
+      // A resolver that cannot say where its cache is does not get to fail a
+      // poll. The default location is a fine answer.
+    }
+  }
+  return badgeManifestPath(eventId);
+}
+
+/**
+ * The art block that hangs off /status and /lookup. NEVER THROWS.
+ *
+ * `previewUrl` is computed from the address and is therefore always there. The
+ * two ipfs:// URIs are read out of the pre-pin manifest, and missing, corrupt
+ * and unreadable all mean the same thing to a page — this attendee has not been
+ * pinned — which at a demo desk is the ordinary case, not an error. A poll that
+ * 500'd because a cache file was half-written would be absurd.
+ */
+async function readBadgeArtLinks(
+  deps: ApiDeps,
+  eventId: EventId,
+  address: string,
+): Promise<DemoBadgeArtLinks> {
+  const previewUrl = badgeArtPreviewUrl(address, eventId);
+
+  try {
+    const manifest = await loadBadgeManifest(manifestPathFor(deps, eventId), {
+      eventId,
+      // loadBadgeManifest already survives everything; silencing its default
+      // console.warn only keeps it out of stdout, where pino's stream lives.
+      onWarn: () => undefined,
+    });
+
+    const entry = manifest.entries[address];
+    if (entry === undefined) return { previewUrl };
+
+    const gatewayUrl = ipfsGatewayUrl(entry.imageUri, deps.config.pinata.gateway);
+    return {
+      previewUrl,
+      ...(entry.imageUri ? { imageUri: entry.imageUri } : {}),
+      ...(entry.metadataUri ? { metadataUri: entry.metadataUri } : {}),
+      ...(gatewayUrl ? { gatewayUrl } : {}),
+    };
+  } catch {
+    // loadBadgeManifest is documented never to throw. This is the belt to that
+    // brace: the preview does not depend on the manifest, so nothing here is
+    // worth an error response.
+    return { previewUrl };
+  }
+}
+
+/**
+ * A STRONG validator over the bytes, not over the inputs that made them.
+ *
+ * Hashing (address, eventId) would be cheaper and wrong: it would keep matching
+ * after a change to `renderBadgeArt`, and every cache in the path would go on
+ * serving artwork the generator no longer produces — with `immutable` set, for
+ * a year. Hashing the SVG means a changed generator is a changed ETag.
+ */
+function svgEtag(svg: string): string {
+  return `"${createHash("sha256").update(svg).digest("base64url")}"`;
+}
+
+/**
+ * `If-None-Match`, per RFC 9110: a comma-separated list, possibly `*`, and
+ * possibly weakened in transit by an intermediary. For a body that is identical
+ * by construction, `W/"x"` and `"x"` mean the same thing.
+ */
+function ifNoneMatchHits(header: string | string[] | undefined, etag: string): boolean {
+  if (header === undefined) return false;
+  const raw = Array.isArray(header) ? header.join(",") : header;
+  for (const candidate of raw.split(",")) {
+    const tag = candidate.trim();
+    if (tag === "") continue;
+    if (tag === "*" || tag.replace(/^W\//, "") === etag) return true;
+  }
+  return false;
+}
+
+/**
+ * `?eventId=` -> the number `assertValidTaxon` will judge.
+ *
+ * Absent and empty both mean "the event this demo is running on", which is what
+ * lets a page ask for artwork with nothing but an address. Anything else is
+ * returned AS A NUMBER, `NaN` included, so that one function decides what a
+ * legal event id is: `eventId=tomorrow` and `eventId=99999999999` then fail
+ * identically, with INVALID_TAXON, instead of one being a zod message about
+ * coercion and the other being about a bound.
+ */
+function parseArtEventId(raw: string | undefined, current: EventId): number {
+  const value = raw?.trim();
+  if (value === undefined || value === "") return current;
+  return Number(value);
 }
 
 /** 409 in the one shape the UI already handles. */
@@ -415,6 +640,61 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
         attendance: { recorded: record !== null, ...(txHash ? { txHash } : {}) },
       });
     });
+
+    /**
+     * GET /demo/art?address=r...&eventId=900001 — the badge, as an image.
+     *
+     * The whole badge, rendered from the address alone. NO WALLET, NO CLAIM AND
+     * NO BADGE ARE REQUIRED: the artwork is a function of who you are and which
+     * event it is, so a page can show an attendee what they are about to
+     * receive before a volunteer has issued anything. And because the bytes are
+     * the same ones that get pinned (see the block comment above), showing this
+     * is not a preview-then-swap — the image never changes when the real one
+     * arrives.
+     *
+     * `eventId` is optional and defaults to the demo's current event.
+     *
+     * 200 image/svg+xml | 304 If-None-Match | 400 INVALID_ADDRESS/INVALID_TAXON
+     */
+    scope.get<{ Querystring: ArtQuery }>(
+      "/demo/art",
+      { schema: { querystring: artQuerySchema } },
+      async (request, reply) => {
+        const address = request.query.address.trim();
+
+        // Typed ValidationErrors, so the error handler renders the usual
+        // { error: { code, message } } with INVALID_ADDRESS or INVALID_TAXON.
+        // NEVER a rendered "error badge": with `immutable` set below, a bad
+        // request would be cached for a year, and it would look like a badge.
+        assertValidAddress(address, "attendee address");
+        const eventId = parseArtEventId(request.query.eventId, state.eventId);
+        assertValidTaxon(eventId);
+
+        const caption = demoArtCaption(demo);
+        const { svg } = renderBadgeArt({
+          address,
+          eventId,
+          ...(caption === undefined ? {} : { eventName: caption }),
+        });
+
+        const etag = svgEtag(svg);
+        // Set before the 304 branch: RFC 9110 wants the validator and the
+        // freshness information on the not-modified response too, or the cache
+        // it just revalidated has nothing to store against the entry.
+        reply.header("ETag", etag);
+        reply.header("Cache-Control", BADGE_ART_CACHE_CONTROL);
+        // SVG is a document format, not just pixels. Nothing generated here
+        // contains script and every operator string is escaped, but a sniffing
+        // proxy deciding this is HTML is not a thing to leave to chance.
+        reply.header("X-Content-Type-Options", "nosniff");
+
+        if (ifNoneMatchHits(request.headers["if-none-match"], etag)) {
+          return reply.code(304).send();
+        }
+
+        return reply.code(200).type("image/svg+xml; charset=utf-8").send(svg);
+      },
+    );
 
     // -- the walkthrough ----------------------------------------------------
 
@@ -604,9 +884,12 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
       { schema: { params: walletParamsSchema } },
       async (request, reply) => {
         const { address } = request.params;
-        const [{ balanceXrp, activated }, facts] = await Promise.all([
+        const [{ balanceXrp, activated }, facts, art] = await Promise.all([
           liveAccount(deps, demo, address),
           readAddressFacts(deps, state, address),
+          // Never gates the poll: a manifest that is missing or unreadable
+          // costs the two ipfs:// fields and nothing else.
+          readBadgeArtLinks(deps, state.eventId, address),
         ]);
 
         return reply.code(200).send({
@@ -619,6 +902,9 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
           accepted: facts.accepted,
           attended: facts.attendance !== null,
           ...(facts.txHash ? { txHash: facts.txHash } : {}),
+          // `art.previewUrl` renders whatever else is true here — including
+          // "nothing has been issued to this wallet yet".
+          art,
         });
       },
     );
@@ -744,12 +1030,18 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
             claim: null,
             attended: false,
             alreadyHasBadge: false,
+            // NULL, not an object, and this is the only response that says so.
+            // Badge art is a function of an address, and there is no address
+            // here — a `previewUrl` built from a mis-scan would point at a 400
+            // and a page would render it as a broken image.
+            art: null,
           });
         }
 
-        const [{ balanceXrp, activated }, facts] = await Promise.all([
+        const [{ balanceXrp, activated }, facts, art] = await Promise.all([
           liveAccount(deps, demo, scanned),
           readAddressFacts(deps, state, scanned),
+          readBadgeArtLinks(deps, state.eventId, scanned),
         ]);
 
         const attended = facts.attendance !== null;
@@ -778,6 +1070,9 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
           // has not signed. POST /claims hands that same offer back rather than
           // minting twice, so the volunteer may still press issue.
           alreadyHasBadge: attended || facts.claim?.status === "claimed",
+          // The volunteer sees the same image the attendee's phone does, from
+          // the same URL, before anything is issued.
+          art,
         });
       },
     );

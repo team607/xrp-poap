@@ -491,6 +491,26 @@ async function run(): Promise<void> {
     // -- 6 ------------------------------------------------------------------
     r.step(6, "[6] Metadata JSON resolves from a public IPFS gateway");
 
+    // Before asking whether a CID resolves, ask whether we can make one at all.
+    // A Pinata key with no scopes returns 200 from testAuthentication and 403
+    // from every pin, so the failure surfaces as identical artwork on every
+    // badge rather than as an error. Check the capability, not the credential.
+    if (cfg.pinata.jwt === undefined || cfg.pinata.jwt === "") {
+      r.skip("[6] Pinata key can pin", "PINATA_JWT is unset — badges use one shared image");
+    } else {
+      const { checkPinataUsable } = await import("../src/metadata/pinata.js");
+      const usable = await checkPinataUsable({ jwt: cfg.pinata.jwt });
+      r.check(
+        "[6] Pinata key can pin",
+        usable.usable,
+        usable.usable ? `verified against the pinning endpoint` : `${usable.reason ?? usable.status ?? "failed"} — ${usable.message}`,
+      );
+      if (!usable.usable) {
+        r.note("testAuthentication returns 200 for a key with no scopes, so it is not");
+        r.note("evidence of anything. This probe hits the endpoint that matters.");
+      }
+    }
+
     if (metadataUri === undefined) {
       r.skip("[6] metadata resolves over a public gateway", "pass --metadata-uri=ipfs://<CID>/metadata.json");
     } else {

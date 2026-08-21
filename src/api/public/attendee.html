@@ -410,6 +410,131 @@ code,.mono{font-family:var(--font-mono)}
 .foot{margin:20px 0 34px; padding-top:16px; border-top:1px solid var(--rule); font-size:13px; color:var(--ink-3)}
 .foot b{color:var(--ink-2); font-weight:600}
 
+/* ---- the badge artwork ---------------------------------------------------
+   /demo/art returns a 512-square SVG of near-black with luminous strokes. It
+   is a pure function of (address, eventId), so it can be shown before anything
+   is minted — and it is the same bytes that get pinned to IPFS.
+
+   That artwork has its own gravity and would float on bone paper, so it gets a
+   mount: a board the colour of the ticket's sunk panel, a hairline keyline, and
+   a bed painted the artwork's OWN outer black (#080a0c, the outer stop of its
+   radial). The seam between bed and image therefore disappears, and what is
+   left reads as a photograph pasted onto a ticket.
+
+   The bed is fixed in both themes for the same reason the QR plate is: the
+   artwork is an object, not a skin. Anything drawn on top of it — placeholder,
+   retry — is coloured for that black, not for the page. */
+:root{
+  --art-bed:#080a0c;
+  --art-mount:var(--sunk);
+  --art-edge:var(--rule-2);
+  --art-keyline:rgba(24,17,5,.6);
+  --art-shadow:0 16px 32px -24px rgba(30,20,6,.85);
+  --art-dim:#7f8a92;
+  --art-bright:#e4ded1;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    /* On a dark page a sunk panel would swallow the art; a raised one holds it. */
+    --art-mount:var(--surface-2);
+    --art-keyline:rgba(236,230,218,.15);
+    --art-shadow:0 20px 38px -28px rgba(0,0,0,.95);
+  }
+}
+
+.art{margin:0}
+.art__mount{
+  position:relative; padding:9px; border-radius:3px;
+  background:var(--art-mount); border:1px solid var(--art-edge);
+  box-shadow:var(--art-shadow);
+}
+.art__bed{
+  position:relative; aspect-ratio:1/1; overflow:hidden;
+  background:var(--art-bed); border:1px solid var(--art-keyline);
+}
+/* Square, always. width:100% + height:auto inside a square bed — the SVG is
+   never asked to stretch to a box it was not drawn for. */
+.art__img{display:block; width:100%; height:auto}
+.art__img[data-in="0"]{opacity:0}
+.art__img[data-in="1"]{opacity:1}
+
+/* Placeholder and retry, both sitting ON the bed. */
+.art__ph{
+  position:absolute; inset:0; width:100%; margin:0; padding:12px;
+  display:grid; align-content:center; justify-items:center; gap:7px;
+  border:0; background:var(--art-bed); color:var(--art-dim); text-align:center;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; line-height:1.6;
+}
+.art__ph--load{animation:art-wait 1.9s ease-in-out infinite}
+@keyframes art-wait{0%,100%{opacity:.5}50%{opacity:.95}}
+button.art__ph{cursor:pointer; color:var(--art-bright)}
+button.art__ph:focus-visible{outline:2px solid #e0a24a; outline-offset:-4px}
+.art__ph-b{
+  display:inline-block; padding:7px 12px; border:1px solid rgba(255,255,255,.28);
+  border-radius:2px; color:#f4eee2; font-weight:700;
+}
+button.art__ph:hover .art__ph-b{border-color:rgba(255,255,255,.5); background:rgba(255,255,255,.07)}
+
+.art__cap{margin:0; min-width:0}
+.art__prov{font-size:13px; line-height:1.5; color:var(--ink-2); margin:0}
+
+/* -- state 2: a preview beside the QR, never instead of it ------------------ */
+.art--preview{
+  display:grid; grid-template-columns:88px minmax(0,1fr); gap:14px; align-items:center;
+  margin-top:16px; padding-top:15px; border-top:1px dashed var(--rule-2); text-align:left;
+}
+.art--preview .art__mount{padding:5px; border-radius:2px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
+.art--preview .art__cap .label{display:block; margin-bottom:5px}
+.art--preview .art__prov{font-size:12.5px; line-height:1.45; color:var(--ink-3)}
+.art--preview .art__ph{padding:7px; font-size:8.5px; letter-spacing:.09em; gap:5px; line-height:1.5}
+.art--preview .art__ph-b{padding:3px 6px}
+
+/* -- states 4 and 6: the badge IS the page ----------------------------------
+   State 4 is the moment of the decision and state 6 is the moment it landed.
+   Both deserve the artwork at the size of what is happening, so they share one
+   treatment. At 375px the mount lands around 316px square and the whole thing
+   clears the fold; the Accept button is in the fixed dock, never below it. */
+.art--big{margin:20px auto; max-width:380px}
+.art--hero{margin-bottom:22px}
+.art--offer{margin-bottom:18px}
+/* Crop marks: eight hairlines, one pseudo-element, no extra DOM. A print
+   artefact rather than the QR's amber viewfinder — same ticket, different job. */
+.art--big .art__mount::after{
+  content:""; position:absolute; inset:-8px; pointer-events:none;
+  background:
+    linear-gradient(var(--art-edge),var(--art-edge)) left top/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left top/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right top/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right top/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left bottom/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left bottom/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right bottom/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right bottom/14px 1px no-repeat;
+}
+.art--big .art__cap{margin-top:13px; padding-top:11px; border-top:1px solid var(--rule)}
+.art--big .art__cap .links{margin-top:2px}
+/* A caption footnote, not a button: the badge above it is the loudest thing on
+   this screen and must stay that way. Still a 40px row to press. */
+.art--big .art__cap .link{
+  border:0; padding:10px 0; letter-spacing:.12em;
+  text-decoration:underline; text-underline-offset:4px; text-decoration-color:var(--signal-2);
+}
+.art--big .art__cap .link:hover{text-decoration-color:var(--signal)}
+/* One transition: the badge is placed, and settles. Fired on the image's load
+   event so the reveal shows artwork rather than an empty frame. */
+.art--big .art__img[data-in="1"]{animation:art-place .78s cubic-bezier(.18,.72,.24,1) both}
+@keyframes art-place{from{opacity:0; transform:translateY(-9px) scale(1.045)}to{opacity:1; transform:none}}
+
+/* The ids stay, in full, but they stop being the headline. */
+.rows--quiet .row__k{font-size:9px}
+.rows--quiet .row__v{font-size:11.5px; color:var(--ink-2)}
+.rows--quiet .row__v.ok{color:var(--jade)}
+.face__eyebrow--mid{margin-top:22px}
+
+@media (min-width:560px){
+  .art--preview{grid-template-columns:112px minmax(0,1fr); gap:18px}
+}
+
 @media (min-width:560px){
   .wrap{padding:0 20px}
   .face{padding:26px 24px 24px}
@@ -521,6 +646,9 @@ code,.mono{font-family:var(--font-mono)}
           <span class="dot" aria-hidden="true"></span><span id="watching-text">watching the ledger</span>
         </span>
       </div>
+      <!-- The badge that is already decided. Below the plate, and a third its
+           size: the QR is still the job at this moment. -->
+      <div class="art-slot" id="art-preview" hidden></div>
       <div id="wait-err"></div>
     </div>
 
@@ -528,11 +656,15 @@ code,.mono{font-family:var(--font-mono)}
     <div class="face" data-face="pending" hidden>
       <div class="face__eyebrow"><span class="label">The desk has minted it</span></div>
       <h1>A badge is <em>waiting</em> for you.</h1>
+      <!-- The thing being decided about, at the size of the decision. The Accept
+           button lives in the fixed dock, so this can never push it off screen. -->
+      <div class="art-slot" id="art-offer" hidden></div>
       <p class="prose">
         It is on the ledger already, locked to your address by a zero-price offer nobody else can take.
         Nothing is yours until you accept it.
       </p>
-      <div class="rows" id="pending-rows"></div>
+      <div class="face__eyebrow face__eyebrow--mid"><span class="label">the offer</span></div>
+      <div class="rows rows--quiet" id="pending-rows"></div>
       <p class="note" style="margin-top:16px">
         <b>In production you would approve this in Xaman</b>, on your own device, with a key the issuer
         never sees. There is no phone in this loop, so the demo signs the <code>NFTokenAcceptOffer</code>
@@ -565,11 +697,13 @@ code,.mono{font-family:var(--font-mono)}
     <div class="face" data-face="done" hidden>
       <div class="face__eyebrow"><span class="label">Recorded on the ledger</span></div>
       <h1>It's <em>yours</em>.</h1>
+      <div class="art-slot" id="art-hero" hidden></div>
       <p class="prose" id="done-lede">
         The chain was asked five questions about that transaction and answered yes to all five, so the
         attendance index has a row for you.
       </p>
-      <div class="rows" id="done-rows"></div>
+      <div class="face__eyebrow face__eyebrow--mid"><span class="label">the record</span></div>
+      <div class="rows rows--quiet" id="done-rows"></div>
       <p class="note" style="margin-top:18px">
         <b>That transaction is the attendance record — not the badge.</b> Verification never asks who
         holds the token now; it replays your <code>NFTokenAcceptOffer</code>. Burn the badge tomorrow and
@@ -1042,7 +1176,12 @@ code,.mono{font-family:var(--font-mono)}
     inFlight: false,
     sawActivated: null,  /* for the false -> true moment */
     lastBalance: null,
-    qrFor: null
+    qrFor: null,
+    art: null,           /* status.art, when the server sends one */
+    /* "unknown" until a status response has been parsed. A server built before
+       the art endpoint sends no `art` key at all; that is "off", and it must
+       degrade to no artwork rather than to an error. */
+    artState: "unknown"
   };
 
   /* ---- storage: a phone reload mid-flow must not dead-end ---- */
@@ -1064,6 +1203,8 @@ code,.mono{font-family:var(--font-mono)}
     ssDel(SS_ADDRESS);
     app.address = null; app.token = null; app.offerId = null; app.status = null;
     app.nftokenId = null; app.sawActivated = null; app.lastBalance = null; app.qrFor = null;
+    app.art = null; app.artState = "unknown";
+    resetArt();
   }
 
   /* ---- tiny DOM helpers ---- */
@@ -1344,6 +1485,226 @@ code,.mono{font-family:var(--font-mono)}
 
 
   /* ======================================================================
+     C2. THE BADGE ARTWORK
+
+     GET /demo/art?address=<classic address>&eventId=<taxon> -> image/svg+xml.
+
+     The art is a pure function of those two values, and the server derives it
+     with the same function it used for the copy it pinned to IPFS. Two things
+     follow, and both are the point:
+
+       · it can be shown BEFORE anything is minted — the attendee's address is
+         the whole input, so the badge exists the moment the wallet does;
+       · what is on screen is not a picture OF the pinned file, it is the same
+         bytes, so "view the pinned file" is a comparison, not a hyperlink.
+
+     An <img> is enough — it is an SVG document served over HTTP. Fetching and
+     inlining it would buy nothing and cost the browser's own caching.
+     ====================================================================== */
+
+  /* Server-supplied strings end up in src= and href=. Parse them rather than
+     trust them: only http(s), and only same-origin where same-origin is the
+     only thing that makes sense. */
+  function safeUrl(value, sameOriginOnly) {
+    if (typeof value !== "string" || value === "") return null;
+    var u;
+    try { u = new URL(value, window.location.href); } catch (e) { return null; }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (sameOriginOnly) {
+      return u.origin === window.location.origin ? u.pathname + u.search : null;
+    }
+    return u.href;
+  }
+
+  function currentEventId() {
+    var st = app.status;
+    if (st && st.eventId !== undefined && st.eventId !== null && st.eventId !== "") return st.eventId;
+    var d = app.demo;
+    if (d && d.eventId !== undefined && d.eventId !== null && d.eventId !== "") return d.eventId;
+    return null;
+  }
+
+  /** The contract path, built here so the preview can exist before the first
+      status response does. */
+  function artUrl() {
+    var id = currentEventId();
+    if (!app.address || id === null) return null;
+    return "/demo/art?address=" + encodeURIComponent(app.address) +
+           "&eventId=" + encodeURIComponent(String(id));
+  }
+
+  /** The server's own previewUrl wins when it is present and same-origin.
+      Identical to the line above by construction; deferring to it means a
+      server that changes the path does not have to change this page. */
+  function artSrc() {
+    if (app.artState === "off") return null;
+    if (app.art) {
+      var given = safeUrl(app.art.previewUrl, true);
+      if (given) return given;
+    }
+    return artUrl();
+  }
+
+  /** Present only once this attendee's art has actually been pinned. */
+  function artGateway() {
+    return app.art ? safeUrl(app.art.gatewayUrl, false) : null;
+  }
+
+  /* Three placements, one image URL. State 4 and 6 are the same figure at the
+     same size; only the caption differs, and the second and third loads are
+     cache hits off the state-2 preview, so neither flashes. */
+  var artSlots = {
+    preview: { host: "art-preview", sig: null },
+    offer:   { host: "art-offer",   sig: null },
+    hero:    { host: "art-hero",    sig: null }
+  };
+  function resetArt() {
+    artSlots.preview.sig = null;
+    artSlots.offer.sig = null;
+    artSlots.hero.sig = null;
+  }
+
+  /** Loading / failed states live on the bed, over the image, so they inherit
+      the artwork's black rather than the page's paper. */
+  function artPlaceholder(bed, state, variant, onRetry) {
+    var old = bed.querySelector(".art__ph");
+    if (old) bed.removeChild(old);
+    if (state === "ok") return;
+
+    if (state === "load") {
+      var d = node("div", "art__ph art__ph--load");
+      d.appendChild(node("span", null, variant === "hero" ? "rendering the badge" : "rendering"));
+      bed.appendChild(d);
+      return;
+    }
+    /* A broken-image icon says nothing and cannot be acted on. The whole bed
+       becomes the retry target instead — 88px square at its smallest. */
+    var b = node("button", "art__ph");
+    b.type = "button";
+    b.appendChild(node("span", null, variant === "hero" ? "the artwork did not load" : "no image"));
+    b.appendChild(node("span", "art__ph-b", variant === "hero" ? "tap to retry" : "retry"));
+    b.addEventListener("click", onRetry);
+    bed.appendChild(b);
+  }
+
+  /* `failed` matters: a sentence describing an image that is not on screen is a
+     claim the attendee cannot check, which is the one thing this page does not
+     do. The pinned link stays either way — it is most useful precisely then. */
+  function artCaption(cap, variant, failed) {
+    clear(cap);
+    /* State 4 says everything it needs to in the h1 above and the prose below.
+       A caption between the badge and the Accept button would only be one more
+       thing to read at the moment of deciding. */
+    if (variant === "offer") return false;
+    if (variant === "preview") {
+      cap.appendChild(node("span", "label", "your badge, already decided"));
+      cap.appendChild(node("p", "art__prov", failed
+        ? "Drawn from your address, so it already exists — this page just could not fetch it to show you."
+        : "Drawn from your address, so it exists before anything is minted. The desk will issue this exact image."));
+      return true;
+    }
+    var gw = artGateway();
+    cap.appendChild(node("p", "art__prov", failed
+      ? (gw
+          ? "This page could not draw it. The pinned copy is still reachable, and it is the same file."
+          : "This page could not draw it. Nothing is lost — the image derives from your address.")
+      : (gw
+          ? "Drawn from your address, not fetched — and byte-identical to the copy pinned on IPFS."
+          : "Drawn from your address alone: a pure function of it, so the same bytes come out every time.")));
+    if (gw) {
+      var box = node("div", "links");
+      var a = node("a", "link", "view the pinned file");
+      a.href = gw;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      box.appendChild(a);
+      cap.appendChild(box);
+    }
+    return true;
+  }
+
+  function paintArtSlot(variant) {
+    var slot = artSlots[variant];
+    var host = $(slot.host);
+    if (!host) return;
+
+    var src = artSrc();
+    if (!src) {
+      /* Either there is nothing to address yet, or the server sent no `art` at
+         all. Both are silent: no artwork, no error, no empty frame. */
+      slot.sig = null;
+      clear(host);
+      host.hidden = true;
+      return;
+    }
+
+    /* applyStatus runs every 2.5s. Rebuilding the figure on each pass would
+       re-request the image and replay the reveal, so only a real change does. */
+    var sig = variant + "|" + src + "|" + (variant === "hero" ? (artGateway() || "") : "");
+    if (slot.sig === sig) { host.hidden = false; return; }
+    slot.sig = sig;
+
+    clear(host);
+    var big = variant !== "preview";
+    var fig = node("figure", "art art--" + variant + (big ? " art--big" : ""));
+    var mount = node("div", "art__mount");
+    var bed = node("div", "art__bed");
+    var img = document.createElement("img");
+    var cap = node("figcaption", "art__cap");
+
+    img.className = "art__img";
+    img.setAttribute("data-in", "0");
+    img.setAttribute("width", "512");
+    img.setAttribute("height", "512");
+    img.setAttribute("decoding", "async");
+    img.alt = (variant === "hero"
+      ? "Your attendance badge, generated from the address "
+      : "Preview of the attendance badge for ") + String(app.address || "");
+
+    var settled = false;
+    function settle(okay) {
+      if (settled) return;
+      settled = true;
+      img.setAttribute("data-in", okay ? "1" : "0");
+      if (!okay) artCaption(cap, variant, true);
+      artPlaceholder(bed, okay ? "ok" : "err", variant, function () {
+        /* Same URL, fresh element. A load that failed is not a cached answer,
+           so this genuinely re-requests — and the path stays the contract's. */
+        slot.sig = null;
+        paintArtSlot(variant);
+      });
+    }
+    img.addEventListener("load", function () { settle(true); });
+    img.addEventListener("error", function () { settle(false); });
+
+    bed.appendChild(img);
+    artPlaceholder(bed, "load", variant);
+    mount.appendChild(bed);
+    fig.appendChild(mount);
+    if (artCaption(cap, variant)) fig.appendChild(cap);
+
+    img.src = src;
+    host.appendChild(fig);
+    host.hidden = false;
+
+    /* Cache hits still fire `load` asynchronously per spec, but a browser that
+       resolved it before the listener attached must not be left saying
+       "rendering" forever. */
+    if (img.complete && img.naturalWidth > 0) settle(true);
+  }
+
+  /** The preview is painted whenever an address exists — its host lives inside
+      the wait face, so it stays warm through the later states and costs one
+      request. The big two are painted only when their face is up, so the reveal
+      happens on a visible element rather than inside a display:none subtree. */
+  function paintArt() {
+    paintArtSlot("preview");
+    if (app.face === "pending") paintArtSlot("offer");
+    if (app.face === "done") paintArtSlot("hero");
+  }
+
+
+  /* ======================================================================
      D. The flow
      ====================================================================== */
 
@@ -1411,6 +1772,7 @@ code,.mono{font-family:var(--font-mono)}
       paintQr();
       paintStrip();
       paintStub();
+      paintArt();          /* the address is the whole input — nothing to wait for */
       showFace("wait");
       startPolling();
       return d;
@@ -1445,8 +1807,18 @@ code,.mono{font-family:var(--font-mono)}
     if (st.pending && st.pending.offerId) {
       remember(null, null, st.pending.offerId, st.pending.nftokenId);
     }
+    /* `art` is additive: a server without it is not broken, it just has no
+       artwork to offer, and this page must not invent an error out of that. */
+    if (st.art && typeof st.art === "object") {
+      app.art = st.art;
+      app.artState = "on";
+    } else {
+      app.art = null;
+      app.artState = "off";
+    }
     paintStrip();
     paintStub();
+    paintArt();
 
     /* State 3 — the volunteer sponsored the wallet. Make it land. */
     if (wasActivated === false && st.activated === true) {
@@ -1507,6 +1879,7 @@ code,.mono{font-family:var(--font-mono)}
       clearError("pending-err");
     }
     showFace("pending");
+    paintArtSlot("offer");
   }
 
   function markCall(n, s) {
@@ -1613,11 +1986,19 @@ code,.mono{font-family:var(--font-mono)}
     var ledger = v.ledgerIndex !== undefined && v.ledgerIndex !== null ? v.ledgerIndex : rec.ledgerIndex;
     if (ledger !== undefined && ledger !== null) host.appendChild(row("ledger", ledger));
 
+    /* Only once the art is actually pinned. `metadataUri` is the value that
+       went into NFTokenMint's URI field, so it belongs with the ids. */
+    if (app.artState === "on" && app.art) {
+      if (app.art.metadataUri) host.appendChild(row("metadata uri", app.art.metadataUri));
+      if (app.art.imageUri) host.appendChild(row("image uri", app.art.imageUri));
+    }
+
     if (confirmBody && confirmBody.alreadyRecorded) {
       setText("done-lede",
         "Already in the attendance index — the API said so instead of writing a second row. Confirm is idempotent on purpose.");
     }
     showFace("done");
+    paintArtSlot("hero");
   }
 
 
@@ -1731,6 +2112,7 @@ code,.mono{font-family:var(--font-mono)}
       if (!app.address) { showFace("new"); return null; }
       paintQr();
       paintStub();
+      paintArt();
       showFace("wait");
       startPolling();
       return null;

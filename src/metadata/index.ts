@@ -45,3 +45,26 @@ export {
   type PublishBadgeInput,
   type PublishBadgeResult,
 } from "./publish.js";
+
+export { renderBadgeArt, type BadgeArt, type BadgeArtInput } from "./badge-art.js";
+
+export {
+  DEFAULT_MANIFEST_DIR,
+  PinningBadgeUriResolver,
+  StaticBadgeUriResolver,
+  TRAIT_ART_CORE,
+  TRAIT_ART_DENSITY,
+  TRAIT_ART_PALETTE,
+  TRAIT_ART_TRACES,
+  TRAIT_ATTENDEE,
+  artLabel,
+  badgeManifestPath,
+  emptyBadgeManifest,
+  loadBadgeManifest,
+  saveBadgeManifest,
+  type BadgeManifest,
+  type BadgeManifestEntry,
+  type LoadBadgeManifestOptions,
+  type ManifestWarn,
+  type PinningBadgeUriResolverOptions,
+} from "./badge-uri-resolver.js";

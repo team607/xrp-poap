@@ -191,6 +191,19 @@ export interface DemoOptions {
    * Overridable so a test can point at a directory that is deliberately empty.
    */
   htmlDir?: string;
+  /**
+   * Event label printed on the badge artwork. Absent means the generator's own
+   * `EVENT <id>` caption, which is the default and the safe one.
+   *
+   * IT MUST MATCH WHATEVER THE PINNING RESOLVER WAS CONFIGURED WITH. The badge
+   * art is a pure function of (address, eventId, caption), and `/demo/art`
+   * exists precisely because that makes the served SVG byte-identical to the
+   * one pinned to IPFS. A caption set here and not there — or there and not
+   * here — silently breaks that equality: the page would show one image and the
+   * gateway would serve another. Operator input, so it goes through
+   * `artLabel()` before it reaches the generator.
+   */
+  eventName?: string;
 }
 
 // ---------------------------------------------------------------------------

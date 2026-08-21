@@ -15,6 +15,8 @@ import { XrplLayerError } from "../errors.js";
 import type {
   AttendanceRecord,
   AttendanceRepository,
+  BadgeUri,
+  BadgeUriResolver,
   ClaimRecord,
   ClaimRepository,
   EventId,
@@ -53,6 +55,14 @@ const MINT_TX = "C31F96F645E7BDFDE9D28B2612A8C9442C4CB2DA3B05A5F8EA32F2A1BE2F32B
 const FAKE_SEED = "sEdV6Xn3bRq9J2wY4tK8mZpL1cH7dQa";
 
 const METADATA_URI = "ipfs://bafkreigh2akiscaildcqabsyg3dfr6chu3fgpregiymsck7e7aqa4s52zy/meta.json";
+
+/** Per-attendee artwork, as the resolver would hand it back. Deliberately not METADATA_URI. */
+const ATTENDEE_METADATA_URI =
+  "ipfs://bafkreic7q2u3xj4hwvpn5nnkl3rvqfmt6a2zvzq7q4bxhk2m7uv3gy4wxa/meta.json";
+const ATTENDEE_IMAGE_URI = "ipfs://bafkreib5g3jz2vkq7hxsdfe4o6l2npymu7cwq4t3nzr6xk4hbwzvq2mtwe";
+/** A walk-up: nobody pre-pinned this one, so the claim itself pinned it. */
+const WALKUP_METADATA_URI =
+  "ipfs://bafkreid4vsn3rk6jqz7pt2mhx5w4cybgu6ftz2eo3l7qkxaj5nwrvh2yqi/meta.json";
 
 const ALL_CHECKS_PASS: VerificationChecks = {
   transactionFound: true,
@@ -313,6 +323,30 @@ function makeChainMocks() {
 }
 
 type ChainMocks = ReturnType<typeof makeChainMocks>;
+
+/**
+ * A per-attendee badge URI resolver, faked.
+ *
+ * Deliberately NOT the real PinningBadgeUriResolver, and deliberately not
+ * importing src/metadata at all: what these tests are about is what the claim
+ * route does when the resolver is slow, angry or missing, and that has to be
+ * assertable without Pinata, without a manifest on disk, and without the
+ * resolver module having been written yet.
+ *
+ * The default implementation is the happy pre-pinned path. A test that wants a
+ * failure reaches for `.mockRejectedValueOnce()` / `.mockImplementationOnce()`,
+ * which leaves the retry behind it succeeding — which is the half of "the slot
+ * was released" worth proving.
+ */
+function fakeBadgeUris(): { resolve: ReturnType<typeof vi.fn<BadgeUriResolver["resolve"]>> } {
+  return {
+    resolve: vi.fn<BadgeUriResolver["resolve"]>(async (): Promise<BadgeUri> => ({
+      metadataUri: ATTENDEE_METADATA_URI,
+      imageUri: ATTENDEE_IMAGE_URI,
+      pinnedOnDemand: false,
+    })),
+  };
+}
 
 interface Harness {
   app: FastifyInstance;
@@ -657,6 +691,222 @@ describe("POST /events/:eventId/claims", () => {
     // Reads stay on the global bucket.
     const health = await h.app.inject({ method: "GET", url: "/health" });
     expect(health.statusCode).toBe(200);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Per-attendee badge artwork — and what happens when Pinata will not play
+// ---------------------------------------------------------------------------
+
+/**
+ * The precedence is body URI > per-attendee resolver > event-wide default > 400,
+ * and the interesting half is the second step: it can pin to Pinata inside the
+ * claim, so it can be slow, rate-limited or simply down while a volunteer holds
+ * an attendee's phone. Every failure below is measured on two things — does the
+ * attendee still get a badge, and is the claim slot still theirs afterwards.
+ */
+describe("POST /events/:eventId/claims — per-attendee badge artwork", () => {
+  const claim = (app: FastifyInstance, address = ATTENDEE, payload: Record<string, unknown> = {}) =>
+    app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims`,
+      payload: { address, ...payload },
+    });
+
+  /** A Pinata failure in the shape the real pinner throws it. */
+  const pinFailure = () =>
+    new XrplLayerError("PIN_FAILED", "Pinata /pinning/pinJSONToIPFS responded 429 Too Many Requests", {
+      path: "/pinning/pinJSONToIPFS",
+      status: 429,
+    });
+
+  it("prefers an explicit metadataUri in the body and never calls the resolver", async () => {
+    const badgeUris = fakeBadgeUris();
+    const h = harness({ deps: { badgeUris } });
+
+    const res = await claim(h.app, ATTENDEE, { metadataUri: METADATA_URI });
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.mint.mock.calls[0]?.[1]).toEqual({ eventId: EVENT_ID, uri: METADATA_URI });
+    // The caller already pinned it and said where. Nothing to resolve, nothing
+    // to pay Pinata for, nothing that can time out.
+    expect(badgeUris.resolve).not.toHaveBeenCalled();
+    // Nothing was resolved, so there is nothing honest to say about pinning.
+    expect(res.json().pinnedOnDemand).toBeUndefined();
+  });
+
+  it("resolves per attendee when the body carries no URI, and mints what it returns", async () => {
+    const badgeUris = fakeBadgeUris();
+    const h = harness({ deps: { badgeUris } });
+
+    const res = await claim(h.app);
+
+    expect(res.statusCode).toBe(201);
+    expect(badgeUris.resolve).toHaveBeenCalledTimes(1);
+    expect(badgeUris.resolve.mock.calls[0]?.[0]).toEqual({ eventId: EVENT_ID, address: ATTENDEE });
+    // The resolver's URI is what lands on the ledger — not the event-wide one,
+    // which is configured on this harness and would otherwise win by accident.
+    expect(h.chain.mint.mock.calls[0]?.[1]).toEqual({
+      eventId: EVENT_ID,
+      uri: ATTENDEE_METADATA_URI,
+    });
+  });
+
+  it("gives each attendee their own artwork", async () => {
+    const badgeUris = fakeBadgeUris();
+    const h = harness({ deps: { badgeUris } });
+
+    await claim(h.app, ATTENDEE);
+    await claim(h.app, OTHER);
+
+    expect(badgeUris.resolve.mock.calls.map((call) => call[0]?.address)).toEqual([ATTENDEE, OTHER]);
+  });
+
+  it("reports pinnedOnDemand: true so a console can show a walk-up being pinned live", async () => {
+    const badgeUris = fakeBadgeUris();
+    badgeUris.resolve.mockResolvedValueOnce({
+      metadataUri: WALKUP_METADATA_URI,
+      imageUri: ATTENDEE_IMAGE_URI,
+      pinnedOnDemand: true,
+    });
+    const h = harness({ deps: { badgeUris } });
+
+    const walkup = await claim(h.app, ATTENDEE);
+
+    expect(walkup.statusCode).toBe(201);
+    expect(walkup.json().pinnedOnDemand).toBe(true);
+    expect(h.chain.mint.mock.calls[0]?.[1]?.uri).toBe(WALKUP_METADATA_URI);
+    // The existing shape is untouched: pinnedOnDemand rides alongside it.
+    expect(walkup.json()).toMatchObject({ offerId: OFFER_ID, nftokenId: NFTOKEN_ID });
+
+    // And the pre-pinned roster path says so too, rather than staying silent.
+    const prePinned = await claim(h.app, OTHER);
+    expect(prePinned.json().pinnedOnDemand).toBe(false);
+  });
+
+  it("falls back to the event-wide badge when the resolver throws, and warns", async () => {
+    const badgeUris = fakeBadgeUris();
+    badgeUris.resolve.mockRejectedValueOnce(pinFailure());
+    const h = loggingHarness({ deps: { badgeUris } });
+
+    const res = await claim(h.app);
+
+    // A generic badge beats no badge at a live desk.
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.mint.mock.calls[0]?.[1]).toEqual({ eventId: EVENT_ID, uri: METADATA_URI });
+    expect(h.claims.rows).toHaveLength(1);
+    expect(h.claims.rows[0]?.offerId).toBe(OFFER_ID);
+
+    // Silent degradation is the failure mode that gets discovered from the
+    // badges, so the fallback is loud in the log even though it is quiet on
+    // the wire. 40 is pino's warn.
+    expect(h.log()).toContain('"level":40');
+    expect(h.log()).toContain("Pinata");
+    expect(h.log()).toContain(METADATA_URI);
+  });
+
+  it("502s naming Pinata when the resolver throws and there is nothing to fall back to", async () => {
+    const badgeUris = fakeBadgeUris();
+    badgeUris.resolve.mockRejectedValueOnce(pinFailure());
+    const h = harness({ deps: { badgeUris, metadataUriForEvent: undefined } });
+    const released = vi.spyOn(h.claims, "delete");
+
+    const res = await claim(h.app);
+
+    // 502, not 500: an upstream failed, the caller can retry, and an operator
+    // reading this needs to know it was the pinning service and not the ledger.
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error.code).toBe("PIN_FAILED");
+    expect(res.json().error.message).toMatch(/Pinata/);
+    expect(h.chain.mint).not.toHaveBeenCalled();
+
+    // THE SLOT IS BACK. A Pinata outage must not cost the attendee their claim
+    // on top of their artwork.
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(released).toHaveBeenCalledWith("claim-1");
+    expect(h.claims.rows).toHaveLength(0);
+
+    // Which is only worth anything if the retry then works.
+    const retried = await claim(h.app);
+    expect(retried.statusCode).toBe(201);
+    expect(h.chain.mint.mock.calls[0]?.[1]?.uri).toBe(ATTENDEE_METADATA_URI);
+    expect(h.claims.rows).toHaveLength(1);
+  });
+
+  it("stops waiting on a resolver that never answers, and falls back", async () => {
+    const badgeUris = fakeBadgeUris();
+    // Pinata accepted the socket and then said nothing. No rejection is ever
+    // coming, so only a timeout ends this claim.
+    badgeUris.resolve.mockImplementationOnce(() => new Promise<BadgeUri>(() => {}));
+    const h = loggingHarness({ deps: { badgeUris, badgeUriTimeoutMs: 25 } });
+
+    const res = await claim(h.app);
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.mint.mock.calls[0]?.[1]).toEqual({ eventId: EVENT_ID, uri: METADATA_URI });
+    expect(h.log()).toContain("25ms");
+  });
+
+  it("502s and releases the slot when a hung resolver has no fallback either", async () => {
+    const badgeUris = fakeBadgeUris();
+    badgeUris.resolve.mockImplementationOnce(() => new Promise<BadgeUri>(() => {}));
+    const h = harness({
+      deps: { badgeUris, metadataUriForEvent: undefined, badgeUriTimeoutMs: 25 },
+    });
+    const released = vi.spyOn(h.claims, "delete");
+
+    const res = await claim(h.app);
+
+    expect(res.statusCode).toBe(502);
+    expect(res.json().error.message).toMatch(/Pinata/);
+    expect(released).toHaveBeenCalledTimes(1);
+    expect(h.claims.rows).toHaveLength(0);
+    expect((await claim(h.app)).statusCode).toBe(201);
+  });
+
+  it("keeps the event-wide path exactly as it was when no resolver is wired", async () => {
+    const h = harness();
+
+    const res = await claim(h.app);
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.mint.mock.calls[0]?.[1]).toEqual({ eventId: EVENT_ID, uri: METADATA_URI });
+    expect(res.json().pinnedOnDemand).toBeUndefined();
+  });
+
+  it("never puts a Pinata error's own text in the response body", async () => {
+    const badgeUris = fakeBadgeUris();
+    badgeUris.resolve.mockRejectedValueOnce(
+      new XrplLayerError("PIN_FAILED", `Pinata rejected Bearer ${FAKE_SEED}-ish-jwt-value`, {
+        jwt: "eyJhbGciOiJIUzI1NiJ9.super-secret",
+      }),
+    );
+    const h = harness({ deps: { badgeUris, metadataUriForEvent: undefined } });
+
+    const res = await claim(h.app);
+
+    expect(res.statusCode).toBe(502);
+    // The upstream message rides on `cause`, which the response never
+    // serialises: a third party's error text is not something to echo at an
+    // attendee, and it is exactly where a leaked credential would hide.
+    const body = res.payload;
+    expect(body).not.toContain("super-secret");
+    expect(body).not.toContain(FAKE_SEED);
+    expect(body).not.toContain("Bearer");
+  });
+
+  it("keeps the upstream reason in the log, where an operator can still read it", async () => {
+    const badgeUris = fakeBadgeUris();
+    badgeUris.resolve.mockRejectedValueOnce(pinFailure());
+    const h = loggingHarness({ deps: { badgeUris, metadataUriForEvent: undefined } });
+
+    const res = await claim(h.app);
+
+    expect(res.statusCode).toBe(502);
+    // Not in the body — but "the pin failed" with no reason is a 3am support
+    // ticket, so the cause is carried to the sink and scrubbed there.
+    expect(res.payload).not.toContain("429 Too Many Requests");
+    expect(h.log()).toContain("429 Too Many Requests");
   });
 });
 

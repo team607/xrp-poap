@@ -184,6 +184,83 @@ export class PinataPinner implements IpfsPinner {
   }
 }
 
+/**
+ * Can this JWT actually pin, or is it merely a real key?
+ *
+ * `GET /data/testAuthentication` returns 200 for a key with ZERO permissions,
+ * which is exactly how a badge pipeline ends up silently minting the fallback
+ * image for every attendee: auth "passes", every pin 403s, and the only signal
+ * is a warning in a log nobody is reading.
+ *
+ * So probe the endpoint that actually matters. Pinata checks the key's scope
+ * BEFORE it validates the request body, so a structurally valid but unstorable
+ * request separates the cases without creating a pin:
+ *
+ *   no Authorization header      -> 401
+ *   malformed / unknown token    -> 401  INVALID_CREDENTIALS
+ *   real key, no scopes attached -> 403  NO_SCOPES_FOUND
+ *   real key, revoked            -> 403  API_KEY_REVOKED
+ *   real key WITH pinning scope  -> 400  (cidVersion 99 rejected — nothing stored)
+ *
+ * Measured against the live API, all five. Do NOT "simplify" this to a
+ * well-formed body: a request Pinata accepts leaves a stray pin on the
+ * operator's account every time the server boots. And do not use a malformed
+ * JSON body either — parsing precedes auth, so it returns 400 even for a
+ * garbage token and would report every broken key as healthy.
+ */
+export interface PinataUsableResult {
+  usable: boolean;
+  status?: number;
+  /** Pinata's machine-readable reason, when it gave one. */
+  reason?: string;
+  /** Operator-facing explanation with the fix. */
+  message: string;
+}
+
+export async function checkPinataUsable(
+  options: { jwt: string; baseUrl?: string; fetchImpl?: typeof fetch; timeoutMs?: number },
+): Promise<PinataUsableResult> {
+  const doFetch = options.fetchImpl ?? fetch;
+  const base = stripTrailingSlash(options.baseUrl ?? PINATA_API_BASE);
+  let res: Response;
+  try {
+    res = await doFetch(`${base}${PIN_JSON_PATH}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${options.jwt}`, "Content-Type": "application/json" },
+      // Valid JSON, and cidVersion 99 does not exist, so this can never be stored.
+      body: JSON.stringify({ pinataContent: { probe: 1 }, pinataOptions: { cidVersion: 99 } }),
+      signal: AbortSignal.timeout(options.timeoutMs ?? 10_000),
+    });
+  } catch (err) {
+    return {
+      usable: false,
+      message: `Could not reach Pinata to check the key: ${(err as Error).message}`,
+    };
+  }
+
+  if (res.status !== 401 && res.status !== 403) {
+    return { usable: true, status: res.status, message: "Pinata key can pin." };
+  }
+
+  let reason: string | undefined;
+  try {
+    const body = (await res.json()) as { error?: { reason?: string } };
+    reason = body.error?.reason;
+  } catch {
+    /* body is not the shape we expect; the status alone is enough */
+  }
+
+  const fix =
+    res.status === 401
+      ? "PINATA_JWT is not a valid token. Copy the JWT (not the API key or secret) from Pinata."
+      : reason === "API_KEY_REVOKED"
+        ? "This Pinata key has been revoked. Create a new one."
+        : "This Pinata key has NO SCOPES. Recreate it with pinFileToIPFS and pinJSONToIPFS enabled — " +
+          "a key with no permissions still passes testAuthentication, which is why this is easy to miss.";
+
+  return { usable: false, status: res.status, ...(reason ? { reason } : {}), message: fix };
+}
+
 export interface GatewayCheckResult {
   ok: boolean;
   status?: number;

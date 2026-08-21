@@ -36,6 +36,13 @@ export interface AppConfig {
    * rather than quietly disabling itself.
    */
   demoEnabled: boolean;
+  /**
+   * Label drawn on the badge artwork. Feeds BOTH the locally-rendered preview
+   * and the copy pinned to IPFS — they must be the same string or the two stop
+   * being byte-identical, which is the guarantee the UI makes to attendees.
+   * Read once here so there is no second place to set it inconsistently.
+   */
+  eventName?: string;
   api: {
     port: number;
     host: string;
@@ -183,6 +190,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     databaseUrl: env("DATABASE_URL"),
     defaultMetadataUri: env("EVENT_METADATA_URI"),
     demoEnabled: bool("DEMO_ENABLED", false),
+    eventName: env("EVENT_NAME"),
     api: {
       port: int("PORT", 3000),
       host: env("HOST") ?? "127.0.0.1",
@@ -208,6 +216,7 @@ export function describeConfig(cfg: AppConfig): Record<string, unknown> {
     databaseUrl: cfg.databaseUrl ? "[redacted]" : "[unset]",
     defaultMetadataUri: cfg.defaultMetadataUri ?? "[unset]",
     demoEnabled: cfg.demoEnabled,
+    eventName: cfg.eventName ?? "[unset]",
     api: cfg.api,
   };
 }

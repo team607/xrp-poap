@@ -9,3 +9,8 @@ coverage/
 *.seed
 secrets/
 out/
+
+# Editor / IDE
+.idea/
+.vscode/
+*.swp

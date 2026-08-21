@@ -51,6 +51,18 @@ const CLAIM_RATE_LIMIT = { max: 5, timeWindow: "1 minute" } as const;
 /** How long a claim slot is held before scripts/reap-offers.ts may reclaim it. */
 const CLAIM_SLOT_TTL_MS = CLAIM_PAYLOAD_EXPIRE_MINUTES * 60_000;
 
+/**
+ * How long `deps.badgeUris.resolve()` may take before the claim gives up on it.
+ *
+ * Ten seconds because it is the shortest bound that does not fail a pin that
+ * was merely going to be slow: a Pinata `pinJSONToIPFS` for a few KB of badge
+ * art is normally well under a second, and its own rate-limited retries are the
+ * only thing that pushes it into seconds. Anything longer is not patience, it
+ * is a volunteer holding a phone at a desk while a socket that is never going
+ * to answer stays open. Overridable via `ApiDeps.badgeUriTimeoutMs`.
+ */
+const BADGE_URI_TIMEOUT_MS = 10_000;
+
 // ---------------------------------------------------------------------------
 // Schemas
 // ---------------------------------------------------------------------------
@@ -244,6 +256,162 @@ async function xamanHandles(
   }
 }
 
+// ---------------------------------------------------------------------------
+// Which artwork this badge points at
+// ---------------------------------------------------------------------------
+
+/** What one claim decided to mint, and how it got there. */
+interface ResolvedBadgeUri {
+  /** Goes straight into NFTokenMint.URI. Points at metadata JSON, not an image. */
+  uri: string;
+  /**
+   * Present only when the per-attendee resolver produced the URI. `true` means
+   * the artwork was pinned during this request rather than before the event —
+   * the slow path, and the one a volunteer console should be able to show.
+   */
+  pinnedOnDemand?: boolean;
+}
+
+/**
+ * Bound a promise that has no bound of its own.
+ *
+ * `BadgeUriResolver.resolve()` takes no timeout and an HTTP call to a third
+ * party has no natural one, so a Pinata socket that never answers would
+ * otherwise hold this claim open until something further out gives up. A
+ * non-positive `ms` disables the wrapper.
+ */
+function withTimeout<T>(work: Promise<T>, ms: number, onTimeout: () => Error): Promise<T> {
+  if (!Number.isFinite(ms) || ms <= 0) return work;
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const expiry = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => reject(onTimeout()), ms);
+  });
+
+  // Promise.race subscribes to `work` immediately, so a rejection that arrives
+  // after the timeout is already handled and never surfaces as an unhandled
+  // rejection. The pending call itself is simply abandoned — there is nothing
+  // to cancel behind the interface.
+  return Promise.race([work, expiry]).finally(() => {
+    if (timer !== undefined) clearTimeout(timer);
+  });
+}
+
+/**
+ * `metadataUriForEvent`, with a throw treated as "no fallback" rather than as
+ * the error the caller sees.
+ *
+ * Only used on the recovery path. The failure worth reporting there is the
+ * resolver's; losing it behind a second failure in the safety net would report
+ * the wrong one.
+ */
+async function eventWideUri(
+  deps: ApiDeps,
+  log: FastifyBaseLogger,
+  eventId: EventId,
+): Promise<string | undefined> {
+  try {
+    return (await deps.metadataUriForEvent?.(eventId)) ?? undefined;
+  } catch (err) {
+    log.warn({ err, eventId }, "the event-wide metadata URI could not be read either");
+    return undefined;
+  }
+}
+
+/**
+ * The URI this badge is minted with, in precedence order:
+ *
+ *   1. `metadataUri` in the request body. The caller pinned it themselves and
+ *      named it; there is nothing to resolve and nothing to fail.
+ *   2. `deps.badgeUris.resolve({ eventId, address })` — per-attendee artwork,
+ *      looked up from the roster pinned before the event, or pinned on demand
+ *      for a walk-up who was never on it.
+ *   3. `deps.metadataUriForEvent(eventId)` — one image for the whole event.
+ *   4. None of the above: a 400, because a mint needs a URI.
+ *
+ * 2 IS THE ONLY STEP THAT CAN FAIL SLOWLY, and it sits between an attendee and
+ * their badge. Two rules cover that, in this order:
+ *
+ *   - it is bounded (see withTimeout), so a hung Pinata costs one attendee
+ *     `badgeUriTimeoutMs` rather than the life of the socket;
+ *   - a failure — thrown or timed out — falls through to 3 with a warning when
+ *     3 is configured. A generic badge beats no badge at a live desk. With no
+ *     fallback there is nothing to mint, and the caller gets a 502 that names
+ *     Pinata rather than a shrug.
+ *
+ * Every throw out of here happens inside the route's one try, whose catch
+ * releases the claim slot: a Pinata outage must not cost the attendee their
+ * slot on top of their artwork.
+ */
+async function resolveBadgeUri(
+  deps: ApiDeps,
+  log: FastifyBaseLogger,
+  input: { eventId: EventId; address: string; requestedUri?: string },
+): Promise<ResolvedBadgeUri> {
+  const { eventId, address, requestedUri } = input;
+
+  // 1. The request said where the metadata lives. Unchanged behaviour.
+  if (requestedUri) return { uri: requestedUri };
+
+  // 2. Per-attendee artwork.
+  if (deps.badgeUris) {
+    const timeoutMs = deps.badgeUriTimeoutMs ?? BADGE_URI_TIMEOUT_MS;
+    try {
+      const badge = await withTimeout(
+        deps.badgeUris.resolve({ eventId, address }),
+        timeoutMs,
+        () =>
+          new XrplLayerError(
+            "PIN_FAILED",
+            `Resolving badge artwork took longer than ${timeoutMs}ms.`,
+            { eventId, address, timeoutMs },
+          ),
+      );
+      return { uri: badge.metadataUri, pinnedOnDemand: badge.pinnedOnDemand };
+    } catch (err) {
+      const fallback = await eventWideUri(deps, log, eventId);
+
+      if (fallback) {
+        log.warn(
+          { err, eventId, address, fallbackUri: fallback },
+          "per-attendee badge artwork could not be resolved (Pinata); minting the event-wide " +
+            "badge instead so the claim still completes",
+        );
+        return { uri: fallback };
+      }
+
+      // Nothing generic to fall back to. 502 rather than 500: this is an
+      // upstream failing, the caller can retry, and an operator reading it
+      // needs to know it was Pinata and not the ledger. The upstream detail
+      // rides on `cause` — the log serializer follows and scrubs it, the
+      // response body never serialises it, and a third-party message is not
+      // something to echo to an attendee.
+      const failure = new XrplLayerError(
+        "PIN_FAILED",
+        `Could not resolve badge artwork for ${address} on event ${eventId}: the IPFS pin ` +
+          "(Pinata) did not complete, and no event-wide badge is configured to fall back to. " +
+          "Nothing was minted and the claim slot has been released — retry, or send an explicit " +
+          "`metadataUri`.",
+        { eventId, address },
+      );
+      failure.cause = err;
+      throw failure;
+    }
+  }
+
+  // 3. One image for the whole event.
+  const shared = await deps.metadataUriForEvent?.(eventId);
+  if (shared) return { uri: shared };
+
+  // 4. Nothing to mint.
+  throw new ValidationError(
+    "INVALID_INPUT",
+    "No badge metadata URI for this claim: send `metadataUri`, or configure a per-event " +
+      "default. Routes do not pin metadata themselves.",
+    { eventId },
+  );
+}
+
 /**
  * Hand the slot back after a failed claim.
  *
@@ -432,6 +600,7 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
       let offerId: string;
       let nftokenId: string;
       let mintedNftokenId: string | undefined;
+      let pinnedOnDemand: boolean | undefined;
 
       try {
         // 3. An unactivated address cannot receive an NFT (brief 5.4).
@@ -461,16 +630,18 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
           );
         }
 
-        // 4. Mint, then create the offer.
-        const uri = metadataUri ?? (await deps.metadataUriForEvent?.(eventId));
-        if (!uri) {
-          throw new ValidationError(
-            "INVALID_INPUT",
-            "No badge metadata URI for this claim: send `metadataUri`, or configure a per-event " +
-              "default. Routes do not pin metadata themselves.",
-            { eventId },
-          );
-        }
+        // 4. Decide what artwork this badge points at, then mint, then create
+        //    the offer. resolveBadgeUri() owns the precedence and the Pinata
+        //    failure modes; it is INSIDE this try because the resolver can pin
+        //    on demand, and a pin that fails must cost the attendee neither
+        //    their badge nor their claim slot.
+        const badge = await resolveBadgeUri(deps, request.log, {
+          eventId,
+          address,
+          ...(metadataUri ? { requestedUri: metadataUri } : {}),
+        });
+        const uri = badge.uri;
+        pinnedOnDemand = badge.pinnedOnDemand;
 
         const minted = await deps.chain.mint(deps.gateway, { eventId, uri });
         mintedNftokenId = minted.nftokenId;
@@ -518,6 +689,11 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
         offerId,
         nftokenId,
         accept,
+        // Only meaningful when the per-attendee resolver produced the URI, so
+        // absent otherwise rather than a misleading `false`. `true` says this
+        // attendee was a walk-up whose artwork was pinned during the claim —
+        // the slow path, and worth surfacing on a volunteer console.
+        ...(pinnedOnDemand === undefined ? {} : { pinnedOnDemand }),
         ...(xaman ? { xaman } : {}),
       });
     },

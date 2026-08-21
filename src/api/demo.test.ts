@@ -20,10 +20,13 @@ import { describe, expect, it, vi } from "vitest";
 import { MockGateway } from "../../test/helpers/mock-gateway.js";
 import type { AppConfig } from "../config.js";
 import { AccountNotFoundError, ConfigError, SponsorshipDeniedError } from "../errors.js";
+import { renderBadgeArt } from "../metadata/badge-art.js";
+import { artLabel } from "../metadata/badge-uri-resolver.js";
 import {
   MAX_TAXON,
   type AttendanceRecord,
   type AttendanceRepository,
+  type BadgeUriResolver,
   type ClaimRecord,
   type ClaimRepository,
   type EventId,
@@ -98,6 +101,7 @@ const DEMO_ROUTES = [
   ["POST", `/demo/wallet/${ISSUER}/accept`],
   ["GET", `/demo/lookup?address=${ISSUER}`],
   ["POST", "/demo/sponsor"],
+  ["GET", `/demo/art?address=${ISSUER}`],
 ] as const;
 
 function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
@@ -265,6 +269,8 @@ function makeDeps(
      * so a demo route that reaches for the real ledger by accident fails loudly.
      */
     chain?: Partial<ChainOps>;
+    /** Where the badge manifest lives. Absent means the default `out/` path. */
+    badgeUris?: ApiDeps["badgeUris"];
   } = {},
 ): Harness {
   const state = new DemoState();
@@ -324,6 +330,7 @@ function makeDeps(
         },
       },
     },
+    ...(options.badgeUris ? { badgeUris: options.badgeUris } : {}),
     ...(options.demo === false ? {} : { demo }),
   };
 
@@ -1644,5 +1651,389 @@ describe("the attendee's phone and the volunteer's screen", () => {
     });
     expect((await status())).toMatchObject({ attended: true, txHash: ACCEPT_TX });
     expect((await lookup())).toMatchObject({ attended: true, alreadyHasBadge: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /demo/art — the badge, as an image
+//
+// The property everything else here rests on: the artwork is a PURE FUNCTION of
+// (address, eventId), so what this route serves is byte-for-byte the SVG that
+// gets pinned to IPFS for that attendee. That is what lets a page paint the
+// badge with no gateway round trip and still link at the pinned file, and it is
+// what makes a year-long immutable cache correct rather than reckless.
+// ---------------------------------------------------------------------------
+
+/** An address this process has never heard of. No wallet, no claim, no badge. */
+function strangerAddress(): string {
+  return Wallet.generate().classicAddress;
+}
+
+/** GET /demo/art for one address, with whatever extra query a test needs. */
+function art(h: ReturnType<typeof harness>, address: string, query = "") {
+  return h.app.inject({ method: "GET", url: `/demo/art?address=${address}${query}` });
+}
+
+describe("GET /demo/art", () => {
+  it("serves the badge as an SVG naming the attendee", async () => {
+    const h = harness();
+    const address = strangerAddress();
+
+    const res = await art(h, address);
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers["content-type"]).toBe("image/svg+xml; charset=utf-8");
+    expect(res.body.startsWith("<svg")).toBe(true);
+    // The head and tail are what a person compares against their own wallet.
+    expect(res.body).toContain(address.slice(0, 6));
+    expect(res.body).toContain(address.slice(-6));
+    expect(res.body).toContain(`TAXON ${h.state.eventId}`);
+  });
+
+  it("serves exactly the bytes the pinner would have pinned", async () => {
+    const h = harness();
+    const address = strangerAddress();
+
+    const res = await art(h, address, `&eventId=${h.state.eventId}`);
+
+    // THE WHOLE POINT. Same generator, same two inputs, same bytes — so the
+    // preview is not a stand-in for the pinned artwork, it is that artwork.
+    // If this ever fails, a page is showing one image and the IPFS gateway
+    // behind `art.gatewayUrl` is serving another.
+    expect(res.body).toBe(renderBadgeArt({ address, eventId: h.state.eventId }).svg);
+  });
+
+  it("is byte-identical on a second request, and different for a different event", async () => {
+    const h = harness();
+    const address = strangerAddress();
+
+    const first = await art(h, address, `&eventId=${h.state.eventId}`);
+    const again = await art(h, address, `&eventId=${h.state.eventId}`);
+    const elsewhere = await art(h, address, `&eventId=${h.state.eventId + 1}`);
+
+    expect(again.body).toBe(first.body);
+    expect(elsewhere.statusCode).toBe(200);
+    expect(elsewhere.body).not.toBe(first.body);
+  });
+
+  it("defaults to the event the demo is running, and follows a reset", async () => {
+    const h = harness();
+    const address = strangerAddress();
+
+    const before = h.state.eventId;
+    expect((await art(h, address)).body).toBe((await art(h, address, `&eventId=${before}`)).body);
+
+    await h.app.inject({ method: "POST", url: "/demo/reset" });
+
+    const after = await art(h, address);
+    expect(h.state.eventId).toBe(before + 1);
+    expect(after.body).toBe(renderBadgeArt({ address, eventId: before + 1 }).svg);
+  });
+
+  it("renders from the address alone: no wallet, no claim, no badge, no ledger", async () => {
+    const h = harness();
+
+    // Never registered here, never funded, nothing minted to it, and not even
+    // an account on the ledger. A page must be able to show someone their badge
+    // before a volunteer has issued anything.
+    const res = await art(h, strangerAddress());
+
+    expect(res.statusCode).toBe(200);
+    expect(h.state.walletCount).toBe(0);
+    expect(h.claims.rows).toHaveLength(0);
+    expect(h.ops.getAccountBalanceXrp).not.toHaveBeenCalled();
+    expect((h.deps.gateway as MockGateway).submits).toHaveLength(0);
+  });
+
+  it("400s a bad address as JSON rather than rendering an error image", async () => {
+    const h = harness();
+
+    for (const scanned of ["nonsense", NOT_AN_ADDRESS, ISSUER.slice(0, -1)]) {
+      const res = await art(h, encodeURIComponent(scanned));
+
+      expect(res.statusCode, scanned).toBe(400);
+      // An SVG would be cached for a year by the headers below and would look
+      // like a real badge to everyone who saw it afterwards.
+      expect(res.headers["content-type"], scanned).toMatch(/application\/json/);
+      expect(res.body.startsWith("<svg"), scanned).toBe(false);
+      expect(res.json().error.code, scanned).toBe("INVALID_ADDRESS");
+      expect(res.json().error.message, scanned).toBeTypeOf("string");
+      expect(res.headers["cache-control"], scanned).toBeUndefined();
+    }
+
+    // And a query with no address at all is a request-shape failure.
+    const bare = await h.app.inject({ method: "GET", url: "/demo/art" });
+    expect(bare.statusCode).toBe(400);
+    expect(bare.json().error.code).toBe("BAD_REQUEST");
+  });
+
+  it("400s an event id that is not one, or is past the taxon boundary", async () => {
+    const h = harness();
+    const address = strangerAddress();
+
+    for (const eventId of ["tomorrow", String(MAX_TAXON + 1), "-1", "1.5", "1e999"]) {
+      const res = await art(h, address, `&eventId=${encodeURIComponent(eventId)}`);
+
+      expect(res.statusCode, eventId).toBe(400);
+      expect(res.json().error.code, eventId).toBe("INVALID_TAXON");
+      expect(res.body.startsWith("<svg"), eventId).toBe(false);
+    }
+
+    // An empty value is "not supplied", not "supplied wrongly": a page building
+    // the URL from an unset variable gets the current event, not a 400.
+    const empty = await art(h, address, "&eventId=");
+    expect(empty.statusCode).toBe(200);
+    expect(empty.body).toBe(renderBadgeArt({ address, eventId: h.state.eventId }).svg);
+  });
+
+  it("caches immutably and answers If-None-Match with an empty 304", async () => {
+    const h = harness();
+    const address = strangerAddress();
+
+    const first = await art(h, address);
+    const etag = first.headers.etag as string;
+
+    // Immutable is only safe because the body cannot change for this URL: it is
+    // a pure function of the address and the event, with no ledger, claim or
+    // attendance state behind it.
+    expect(first.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+    expect(first.headers["x-content-type-options"]).toBe("nosniff");
+    // A STRONG validator: quoted, and not prefixed with W/.
+    expect(etag).toMatch(/^"[A-Za-z0-9_-]+"$/);
+
+    const revalidated = await h.app.inject({
+      method: "GET",
+      url: `/demo/art?address=${address}`,
+      headers: { "if-none-match": etag },
+    });
+
+    expect(revalidated.statusCode).toBe(304);
+    expect(revalidated.body).toBe("");
+    // The cache it just revalidated has to be able to store the entry again.
+    expect(revalidated.headers.etag).toBe(etag);
+    expect(revalidated.headers["cache-control"]).toBe("public, max-age=31536000, immutable");
+
+    // A validator for other bytes, and a list, and a weakened form.
+    const stale = await h.app.inject({
+      method: "GET",
+      url: `/demo/art?address=${address}`,
+      headers: { "if-none-match": '"not-this-one"' },
+    });
+    expect(stale.statusCode).toBe(200);
+
+    for (const header of [`"not-this-one", ${etag}`, `W/${etag}`, "*"]) {
+      const hit = await h.app.inject({
+        method: "GET",
+        url: `/demo/art?address=${address}`,
+        headers: { "if-none-match": header },
+      });
+      expect(hit.statusCode, header).toBe(304);
+    }
+
+    // The ETag is over the bytes, so a different badge cannot share one.
+    const other = await art(h, strangerAddress());
+    expect(other.headers.etag).not.toBe(etag);
+  });
+
+  it("puts an operator's event label through artLabel before the SVG", async () => {
+    const name = "Rock & Roll <2026>";
+    const h = harness({ demoOverrides: { eventName: name } });
+    const address = strangerAddress();
+
+    const res = await art(h, address, `&eventId=${h.state.eventId}`);
+
+    expect(res.statusCode).toBe(200);
+    // Still the pinner's bytes: it captions with artLabel(eventName) too, and a
+    // caption applied on one side only would break the equality this route
+    // exists for.
+    expect(res.body).toBe(
+      renderBadgeArt({ address, eventId: h.state.eventId, eventName: artLabel(name) }).svg,
+    );
+    expect(res.body).toContain(">ROCK ROLL 2026</text>");
+    // SVG is XML. An unescaped metacharacter from an operator's event name
+    // would make the whole document unparseable.
+    expect(res.body).not.toContain("&");
+  });
+
+  it("is covered by the same guards as every other demo route", async () => {
+    // Both sweeps at the top of this file walk DEMO_ROUTES, so this is really
+    // an assertion that the route was added to that list rather than tested
+    // into existence beside it.
+    expect(DEMO_ROUTES.map(([, url]) => url)).toContain(`/demo/art?address=${ISSUER}`);
+
+    const off = harness({ demo: false });
+    expect((await art(off, ISSUER)).statusCode).toBe(404);
+
+    const on = harness();
+    expect((await art(on, ISSUER)).statusCode).toBe(200);
+    on.deps.config.network = "mainnet";
+    const refused = await art(on, ISSUER);
+    expect(refused.statusCode).toBe(403);
+    expect(refused.json().error.code).toBe("NETWORK_GUARD");
+    // A refusal, not a picture of one.
+    expect(refused.body.startsWith("<svg")).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// art{} on GET /demo/wallet/:address/status and GET /demo/lookup
+// ---------------------------------------------------------------------------
+
+const IMAGE_URI = "ipfs://bafybeigdyrartimagecid/badge-900001.svg";
+const METADATA_URI = "ipfs://bafybeigdyrartmetacid/badge-900001.json";
+
+/**
+ * A resolver that only knows where its manifest lives.
+ *
+ * The routes ask the resolver for that path so the API and the pre-pin script
+ * cannot disagree about which file to read. Nothing in the art path may pin,
+ * hence the resolve() that explodes.
+ */
+function manifestResolver(
+  path: string,
+): BadgeUriResolver & { manifestPathFor: (eventId: EventId) => string } {
+  return {
+    manifestPathFor: () => path,
+    resolve: async () => {
+      throw new Error("reading badge art links must never pin anything");
+    },
+  };
+}
+
+/** One pre-pinned attendee, in the shape `npm run prepin` writes. */
+function writeManifest(path: string, eventId: EventId, entries: Record<string, unknown>): void {
+  writeFileSync(
+    path,
+    JSON.stringify({ eventId, createdAt: "2026-01-01T00:00:00.000Z", entries }),
+    "utf8",
+  );
+}
+
+describe("badge art links on the two screens", () => {
+  it("gives both screens a previewUrl that renders, for any address", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+    const expected = `/demo/art?address=${address}&eventId=${h.state.eventId}`;
+
+    const status = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+    const lookup = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+    expect(status.json().art.previewUrl).toBe(expected);
+    expect(lookup.json().art.previewUrl).toBe(expected);
+
+    // Not a string that merely looks right: following it is a badge.
+    const rendered = await h.app.inject({ method: "GET", url: expected });
+    expect(rendered.statusCode).toBe(200);
+    expect(rendered.body).toBe(renderBadgeArt({ address, eventId: h.state.eventId }).svg);
+  });
+
+  it("omits the ipfs fields for an attendee who has not been pinned", async () => {
+    const h = harness();
+    const { address } = await newWallet(h);
+
+    const status = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+    const lookup = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+    for (const res of [status, lookup]) {
+      expect(res.statusCode).toBe(200);
+      expect(res.json().art.previewUrl).toBeTypeOf("string");
+      // The ordinary case at a demo desk, not an error.
+      expect(res.json().art.imageUri).toBeUndefined();
+      expect(res.json().art.metadataUri).toBeUndefined();
+      expect(res.json().art.gatewayUrl).toBeUndefined();
+    }
+  });
+
+  it("surfaces the pinned URIs, and a gateway link to the real file", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xrpl-demo-manifest-"));
+    const path = join(dir, "badge-manifest.json");
+
+    try {
+      const h = harness({ badgeUris: manifestResolver(path) });
+      const { address } = await newWallet(h);
+      writeManifest(path, h.state.eventId, {
+        [address]: {
+          metadataUri: METADATA_URI,
+          imageUri: IMAGE_URI,
+          pinnedAt: "2026-01-01T00:00:00.000Z",
+        },
+        // Somebody else's badge, which must not follow this address around.
+        [ISSUER]: { metadataUri: "ipfs://other/x.json", imageUri: "ipfs://other/x.svg" },
+      });
+
+      const status = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+      const lookup = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+      for (const res of [status, lookup]) {
+        expect(res.statusCode).toBe(200);
+        expect(res.json().art).toEqual({
+          previewUrl: `/demo/art?address=${address}&eventId=${h.state.eventId}`,
+          imageUri: IMAGE_URI,
+          metadataUri: METADATA_URI,
+          // ipfs:// is not a scheme a browser can follow. This is what a page
+          // links so a person can open the pinned artwork and compare it with
+          // the preview it just rendered.
+          gatewayUrl: `https://gateway.pinata.cloud/ipfs/bafybeigdyrartimagecid/badge-900001.svg`,
+        });
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let a corrupt or foreign manifest break either screen", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "xrpl-demo-manifest-"));
+    const path = join(dir, "badge-manifest.json");
+
+    try {
+      const h = harness({ badgeUris: manifestResolver(path) });
+      const { address } = await newWallet(h);
+      const previewUrl = `/demo/art?address=${address}&eventId=${h.state.eventId}`;
+
+      const bodies = [
+        // Half-written JSON.
+        "{ not json at all",
+        // Valid JSON, wrong shape.
+        JSON.stringify({ hello: "world" }),
+        // Right shape, another event's artwork.
+        JSON.stringify({
+          eventId: h.state.eventId + 7,
+          entries: { [address]: { metadataUri: METADATA_URI, imageUri: IMAGE_URI } },
+        }),
+        // Right event, malformed entry.
+        JSON.stringify({ eventId: h.state.eventId, entries: { [address]: { imageUri: 42 } } }),
+      ];
+
+      for (const body of bodies) {
+        writeFileSync(path, body, "utf8");
+
+        const status = await h.app.inject({ method: "GET", url: `/demo/wallet/${address}/status` });
+        const lookup = await h.app.inject({ method: "GET", url: `/demo/lookup?address=${address}` });
+
+        for (const res of [status, lookup]) {
+          expect(res.statusCode, body).toBe(200);
+          // The manifest is a cache. Losing it costs the two links and nothing
+          // else — the badge still renders, because it always could.
+          expect(res.json().art, body).toEqual({ previewUrl });
+        }
+      }
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("says art:null for a mis-scan rather than a URL that 400s", async () => {
+    const h = harness();
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: `/demo/lookup?address=${encodeURIComponent(NOT_AN_ADDRESS)}`,
+    });
+
+    // Still 200 — a mis-scan is a thing to render — but there is no address to
+    // draw a badge for, and an <img> pointed at a 400 would render as broken.
+    expect(res.statusCode).toBe(200);
+    expect(res.json().valid).toBe(false);
+    expect(res.json().art).toBeNull();
   });
 });

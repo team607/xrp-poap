@@ -91,7 +91,8 @@ Measured, not assumed:
 |---|---|---|
 | `wss://clio.altnet.rippletest.net:51233` | yes | work |
 | `wss://s.altnet.rippletest.net:51233` | no | `unknownCmd` |
-| `wss://xrplcluster.com` (mainnet) | yes | work |
+| `wss://s1.ripple.com` (mainnet) | yes | work |
+| `wss://xrplcluster.com` (mainnet) | **no** | **`unknownCmd`** |
 
 `.env.example` defaults to the Clio testnet server for that reason. Public Clio
 servers carry no SLA, so `XRPL_FALLBACK_ENDPOINTS` is not decorative.

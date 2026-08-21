@@ -5,6 +5,7 @@ import {
   PINATA_API_BASE,
   PinataPinner,
   checkGatewayResolves,
+  checkPinataUsable,
 } from "./pinata.js";
 
 const JWT = "eyJhbGciOiJIUzI1NiJ9.super-secret-pinata-jwt.signature";
@@ -285,5 +286,82 @@ describe("checkGatewayResolves", () => {
     }) as unknown as typeof fetch;
     await checkGatewayResolves(url, { fetchImpl: impl, timeoutMs: 50 });
     expect(seen).toBeInstanceOf(AbortSignal);
+  });
+
+  describe("checkPinataUsable", () => {
+    const jwt = "eyJhbGciOiJIUzI1NiJ9.scope-probe.sig";
+    const respond = (status: number, body: unknown) =>
+      (async () => new Response(JSON.stringify(body), { status })) as unknown as typeof fetch;
+
+    it("treats a non-401/403 as usable — the invalid option was rejected, nothing pinned", async () => {
+      const res = await checkPinataUsable({
+        jwt,
+        fetchImpl: respond(400, { error: { reason: "INVALID_CID_VERSION" } }),
+      });
+      expect(res.usable).toBe(true);
+      expect(res.status).toBe(400);
+    });
+
+    it("reports a scopeless key, the case testAuthentication cannot see", async () => {
+      const res = await checkPinataUsable({
+        jwt,
+        fetchImpl: respond(403, { error: { reason: "NO_SCOPES_FOUND" } }),
+      });
+      expect(res.usable).toBe(false);
+      expect(res.reason).toBe("NO_SCOPES_FOUND");
+      expect(res.message).toMatch(/pinFileToIPFS/);
+      expect(res.message).toMatch(/testAuthentication/);
+    });
+
+    it("reports a revoked key distinctly from a scopeless one", async () => {
+      const res = await checkPinataUsable({
+        jwt,
+        fetchImpl: respond(403, { error: { reason: "API_KEY_REVOKED" } }),
+      });
+      expect(res.usable).toBe(false);
+      expect(res.message).toMatch(/revoked/i);
+    });
+
+    it("reports a bad token as a credential problem, not a scope problem", async () => {
+      const res = await checkPinataUsable({
+        jwt,
+        fetchImpl: respond(401, { error: { reason: "INVALID_CREDENTIALS" } }),
+      });
+      expect(res.usable).toBe(false);
+      expect(res.message).toMatch(/not a valid token/i);
+      expect(res.message).not.toMatch(/scope/i);
+    });
+
+    it("sends a body that can never be stored, and never a well-formed pin", async () => {
+      let seen: RequestInit | undefined;
+      await checkPinataUsable({
+        jwt,
+        fetchImpl: (async (_u: string, init: RequestInit) => {
+          seen = init;
+          return new Response("{}", { status: 400 });
+        }) as unknown as typeof fetch,
+      });
+      const body = JSON.parse(String(seen?.body));
+      // cidVersion 99 does not exist, so Pinata rejects before storing anything.
+      expect(body.pinataOptions.cidVersion).toBe(99);
+      expect(seen?.method).toBe("POST");
+    });
+
+    it("never throws on a network failure", async () => {
+      const res = await checkPinataUsable({
+        jwt,
+        fetchImpl: (async () => { throw new Error("ECONNREFUSED"); }) as unknown as typeof fetch,
+      });
+      expect(res.usable).toBe(false);
+      expect(res.message).toMatch(/ECONNREFUSED/);
+    });
+
+    it("does not leak the jwt into the result", async () => {
+      const res = await checkPinataUsable({
+        jwt,
+        fetchImpl: respond(403, { error: { reason: "NO_SCOPES_FOUND" } }),
+      });
+      expect(JSON.stringify(res)).not.toContain(jwt);
+    });
   });
 });

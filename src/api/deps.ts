@@ -10,6 +10,7 @@ import type { FastifyServerOptions } from "fastify";
 import type { AppConfig, SponsorConfig } from "../config.js";
 import type {
   AttendanceRepository,
+  BadgeUriResolver,
   ClaimOffer,
   ClaimRepository,
   CreateClaimOfferInput,
@@ -274,8 +275,38 @@ export interface ApiDeps {
    * `metadataUri`. Routes never reach into the metadata/IPFS pipeline
    * themselves: pinning is a separate concern with its own failure modes
    * (brief 8 step 4), and a route is the wrong place to discover Pinata is down.
+   *
+   * ONE IMAGE FOR THE WHOLE EVENT. Still the fallback when `badgeUris` below is
+   * absent, and still the safety net when it is present but Pinata is not.
    */
   metadataUriForEvent?: (eventId: EventId) => string | undefined | Promise<string | undefined>;
+  /**
+   * Per-attendee badge artwork, resolved to the URI that goes in NFTokenMint.
+   *
+   * Absent by default, and absence is a supported mode, not a degraded one:
+   * without it every badge for an event points at `metadataUriForEvent` above.
+   * When present it takes precedence over that, and the request body's own
+   * `metadataUri` takes precedence over both — see resolveBadgeUri() in
+   * routes/claims.ts for the full order.
+   *
+   * THIS CALL SITS INSIDE A CLAIM. A roster pinned before the event makes the
+   * common path a lookup, but the walk-up who was never on the list is pinned
+   * on demand, which puts Pinata's latency and rate limits between an attendee
+   * and their badge. The route therefore bounds it (`badgeUriTimeoutMs`),
+   * prefers a generic badge to no badge when `metadataUriForEvent` is
+   * configured, and releases the claim slot on the way out when it is not.
+   */
+  badgeUris?: BadgeUriResolver;
+  /**
+   * How long `badgeUris.resolve()` may take before the claim gives up on it.
+   *
+   * `BadgeUriResolver` has no timeout of its own and an HTTP call to a third
+   * party has no natural bound, so the route imposes one; a hung Pinata must
+   * cost one attendee ten seconds, not hold a claim open until the socket dies.
+   * Defaults to BADGE_URI_TIMEOUT_MS in routes/claims.ts. Zero or negative
+   * disables the wrapper, which is only ever sensible in a test.
+   */
+  badgeUriTimeoutMs?: number;
   rateLimit?: RateLimitSettings;
   /**
    * Whether `X-Forwarded-For` may be believed when deriving `request.ip`.
@@ -339,6 +370,88 @@ export function parseTrustProxy(raw: string | undefined): boolean | string {
   return value;
 }
 
+// ---------------------------------------------------------------------------
+// Badge artwork: per-attendee, or one image for the whole event
+// ---------------------------------------------------------------------------
+
+/**
+ * `PINATA_JWT` -> per-attendee badge artwork. Unset -> one shared image.
+ *
+ * The JWT is the whole switch, and structurally so: PinningBadgeUriResolver
+ * needs an IpfsPinner, and PinataPinner refuses to construct without one. It is
+ * also the honest switch — the pre-pinned roster names artwork that only exists
+ * on Pinata, and the walk-up who was never on that roster is pinned during
+ * their claim. No credentials, no tier, and `metadataUriForEvent` is the entire
+ * story. Returning undefined here selects that mode — see ApiDeps.badgeUris.
+ *
+ * Imported dynamically for the same reason src/db is: nothing that merely
+ * imports this module should pay for the metadata pipeline, and a deployment
+ * with no Pinata credentials should not load it at all.
+ */
+async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolver | undefined> {
+  const jwt = config.pinata.jwt;
+  if (!jwt) return undefined;
+
+  const [{ PinataPinner, checkPinataUsable }, { PinningBadgeUriResolver }] = await Promise.all([
+    import("../metadata/pinata.js"),
+    import("../metadata/badge-uri-resolver.js"),
+  ]);
+
+  // A key that authenticates but cannot pin is the worst case: every claim
+  // quietly falls back to the shared image and the badges look plausible.
+  // Check once, at boot, and say so loudly. Not fatal — a running event should
+  // not be stopped by an IPFS problem — but it must never be silent.
+  const usable = await checkPinataUsable({ jwt });
+  if (!usable.usable) {
+    console.warn(
+      `[api] PINATA_JWT IS SET BUT CANNOT PIN — ${usable.message} ` +
+        `Every claim will fall back to the event-wide badge, so attendees get identical artwork.`,
+    );
+  }
+
+  // The JWT goes into the pinner and stops there. It is a `#private` field on
+  // PinataPinner, so it cannot be spread or JSON.stringify'd back off the
+  // resolver that now holds it.
+  return new PinningBadgeUriResolver({
+    pinner: new PinataPinner({ jwt, gateway: config.pinata.gateway }),
+    // Same source as the demo's preview label. If these two ever diverge the
+    // preview a page draws stops matching the bytes on IPFS.
+    ...(config.eventName ? { eventName: config.eventName } : {}),
+  });
+}
+
+/**
+ * Say which badge-art mode is live, once, at startup.
+ *
+ * Otherwise an operator discovers it from the badges: identical artwork across
+ * an event looks like a bug rather than a missing `PINATA_JWT`, and it is not
+ * something you want to find out after the event. Same reason, same voice, and
+ * same sink as the DATABASE_URL warning above.
+ */
+function announceBadgeArtMode(perAttendee: boolean, defaultMetadataUri?: string): void {
+  if (perAttendee) {
+    console.info(
+      "[api] badge art: PER-ATTENDEE. PINATA_JWT is set, so each attendee gets unique " +
+        "deterministic artwork; anyone not on the pre-pinned roster is pinned to Pinata during " +
+        "their claim, which is slower and is reported as `pinnedOnDemand` in the claim response. " +
+        (defaultMetadataUri
+          ? `If Pinata is slow or down, claims fall back to EVENT_METADATA_URI (${defaultMetadataUri}).`
+          : "EVENT_METADATA_URI is UNSET, so there is nothing to fall back to: a Pinata outage " +
+            "fails claims with a 502. Set it if a generic badge is better than no badge."),
+    );
+    return;
+  }
+
+  console.info(
+    "[api] badge art: ONE SHARED IMAGE. PINATA_JWT is unset, so every badge for an event points " +
+      (defaultMetadataUri
+        ? `at the same metadata (${defaultMetadataUri}). `
+        : "at whatever `metadataUri` each request carries — EVENT_METADATA_URI is unset too, so a " +
+          "request without one is a 400. ") +
+      "Set PINATA_JWT for unique per-attendee artwork.",
+  );
+}
+
 /**
  * Real wiring. Connects the gateway, picks durable storage when it is
  * configured, and constructs the Xaman service only when keys are present —
@@ -395,6 +508,8 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   // Without this, every claim request must carry its own `metadataUri`.
   const defaultMetadataUri = config.defaultMetadataUri;
 
+  const badgeUris = await buildBadgeUriResolver(config);
+
   /**
    * Demo wiring, built only when the switch is on. The faucet op closes over
    * the concrete XrplConnection because `client.fundWallet()` is not a submit
@@ -410,6 +525,8 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
         ]);
         return {
           enabled: true,
+          // Same string the badge resolver pins with — see buildBadgeUriResolver.
+          ...(config.eventName ? { eventName: config.eventName } : {}),
           ops: {
             fundWallet: async () => {
               const funded = await gateway.client.fundWallet();
@@ -434,8 +551,11 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     trustProxy: config.api.trustProxy,
     logger: buildLoggerOptions(),
     ...(defaultMetadataUri ? { metadataUriForEvent: () => defaultMetadataUri } : {}),
+    ...(badgeUris ? { badgeUris } : {}),
     ...(demo ? { demo } : {}),
   };
+
+  announceBadgeArtMode(Boolean(badgeUris), defaultMetadataUri);
 
   return {
     deps,

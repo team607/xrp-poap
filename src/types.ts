@@ -363,6 +363,31 @@ export interface PinResult {
   size?: number;
 }
 
+/**
+ * Per-attendee badge art, resolved to the URI that goes in NFTokenMint.
+ *
+ * Two tiers by design: a roster pinned ahead of the event, and an on-demand
+ * pin for the walk-up who was never on the list. The pre-pinned path is the
+ * one that matters at a desk — pinning inside a claim puts Pinata's latency
+ * and rate limits between an attendee and their badge.
+ */
+export interface BadgeUri {
+  /** ipfs:// URI of the metadata JSON. This goes in NFTokenMint.URI. */
+  metadataUri: string;
+  /** ipfs:// URI of the artwork the metadata points at. */
+  imageUri: string;
+  /** True when this was pinned during the claim rather than ahead of time. */
+  pinnedOnDemand: boolean;
+}
+
+export interface BadgeUriResolver {
+  /**
+   * The badge URI for one attendee. Must be idempotent per (eventId, address):
+   * a retried claim must not produce a second pin.
+   */
+  resolve(input: { eventId: EventId; address: string }): Promise<BadgeUri>;
+}
+
 /** Swappable so tests and offline runs do not hit Pinata. */
 export interface IpfsPinner {
   pinFile(input: {

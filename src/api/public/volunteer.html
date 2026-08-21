@@ -46,6 +46,14 @@
   --grid:rgba(93,74,44,.09);
   --grain-opacity:.055;
   --railh:64px;
+
+  /* Badge artwork. The art is a dark field in both themes, so the well stays
+     near-black either way; only the mount and the lift change. */
+  --mat:#0b0e10;
+  --mat-edge:#2b2721;
+  --plate-lift:0 14px 24px -18px rgba(40,28,10,.7);
+  --plate-w:clamp(112px,13vw,148px);
+  --thumb:32px;
 }
 
 @media (prefers-color-scheme: dark){
@@ -74,6 +82,9 @@
     --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
     --grid:rgba(224,214,190,.055);
     --grain-opacity:.04;
+
+    --mat-edge:#343b36;
+    --plate-lift:0 18px 30px -22px rgba(0,0,0,.95);
   }
 }
 :root[data-theme="dark"]{
@@ -101,6 +112,9 @@
   --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
   --grid:rgba(224,214,190,.055);
   --grain-opacity:.04;
+
+  --mat-edge:#343b36;
+  --plate-lift:0 18px 30px -22px rgba(0,0,0,.95);
 }
 
 *,*::before,*::after{box-sizing:border-box}
@@ -401,12 +415,101 @@ code,pre,.mono{font-family:var(--font-mono)}
 .wait__bd b{color:var(--ink)}
 @media (max-width:560px){ .wait__clock{margin-left:0} }
 
+/* ---------- badge artwork --------------------------------------------------- */
+/* GET /demo/art renders the same SVG that gets pinned for this attendee: a dark
+   field with luminous strokes. Dropped raw onto bone paper it reads as a hole
+   punched through the sheet, so it is mounted — near-black well, hairline
+   keyline, a paper mat, and corner ticks borrowed from the scanner reticle.
+   It answers one operational question at a glance ("is this a DIFFERENT badge
+   from the last one?"), so it must be legible without ever outweighing the
+   stamp beside it. */
+.plate{margin:0; flex:none; width:var(--plate-w); max-width:42%; display:flex; flex-direction:column; gap:9px}
+.plate__frame{
+  position:relative; aspect-ratio:1/1; overflow:hidden; border-radius:2px;
+  background:var(--mat); border:1px solid var(--mat-edge);
+  box-shadow:0 0 0 3px var(--surface), 0 0 0 4px var(--rule), var(--plate-lift);
+}
+/* contain, never cover: the art is square and must never be cropped or stretched. */
+.plate__frame img{position:absolute; inset:0; width:100%; height:100%; object-fit:contain; display:block; opacity:0; transition:opacity .28s ease}
+.plate__frame[data-art="ok"] img{opacity:1}
+.plate__frame[data-art="fail"] img{display:none}
+/* The well is near-black in both themes, so the placeholder greys against the
+   well rather than against the page. */
+.plate__ph{
+  position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:7px;
+  padding:6px; text-align:center;
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.16em; text-transform:uppercase; color:#7d7669;
+}
+.plate__ph::before{content:"\25CC"; font-size:16px; line-height:1; color:var(--signal-2); animation:blink 1.2s steps(2) infinite}
+.plate__ph::after{content:"rendering"}
+.plate__frame[data-art="ok"] .plate__ph{display:none}
+.plate__frame[data-art="fail"] .plate__ph::before{content:"[ ]"; color:#7d7669; animation:none}
+.plate__frame[data-art="fail"] .plate__ph::after{content:"no artwork"}
+.plate__marks{position:absolute; inset:6px; pointer-events:none}
+.plate__marks i{position:absolute; width:9px; height:9px; border:0 solid var(--signal-2); opacity:.75}
+.plate__marks i:nth-child(1){top:0; left:0; border-top-width:1px; border-left-width:1px}
+.plate__marks i:nth-child(2){top:0; right:0; border-top-width:1px; border-right-width:1px}
+.plate__marks i:nth-child(3){bottom:0; left:0; border-bottom-width:1px; border-left-width:1px}
+.plate__marks i:nth-child(4){bottom:0; right:0; border-bottom-width:1px; border-right-width:1px}
+.plate__cap{
+  display:flex; align-items:center; gap:4px 8px; flex-wrap:wrap;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+}
+.plate__pin{display:inline-flex; align-items:center; gap:5px; font-weight:700; cursor:help}
+.plate__dot{width:6px; height:6px; border-radius:50%; flex:none; font-style:normal}
+.plate__pin[data-pin="ipfs"]{color:var(--jade)}
+.plate__pin[data-pin="ipfs"] .plate__dot{background:var(--jade); box-shadow:0 0 0 2px var(--jade-wash)}
+.plate__pin[data-pin="local"]{color:var(--ink-3)}
+.plate__pin[data-pin="local"] .plate__dot{border:1px dashed currentColor}
+.plate__link{font-size:9px; letter-spacing:.1em; text-transform:uppercase}
+/* With a plate on the row, let the prose rejoin the line a little sooner. */
+.stampwrap--art .stampwrap__say{min-width:min(100%,200px)}
+
+/* Why this claim was slow. One line, only when the server says so. */
+.pinnote{
+  margin-top:13px; padding:9px 12px; border-left:3px solid var(--signal); background:var(--signal-wash);
+  border-radius:0 2px 2px 0; font-size:13.5px; color:var(--ink-2);
+  display:flex; gap:4px 10px; align-items:baseline; flex-wrap:wrap;
+}
+.pinnote .label{color:var(--signal); flex:none}
+.pinnote b{color:var(--ink); font-weight:600}
+
+/* Roster thumbnails. Down the column, twenty visibly different squares is the
+   fastest confirmation that per-attendee art is real. Small enough that a row
+   grows by a few pixels rather than doubling. */
+.thumb{
+  position:relative; display:block; width:var(--thumb); height:var(--thumb);
+  border-radius:2px; overflow:hidden; background:var(--mat);
+  border:1px solid var(--mat-edge); box-shadow:0 0 0 1px var(--rule);
+}
+/* The art's strokes are 1–2.5px against a 512px canvas, so at 32px they
+   anti-alias almost to nothing and the column reads as a row of black squares.
+   A modest lift restores the one thing a thumbnail is for — telling these
+   apart. The plate on the card is deliberately left unfiltered: that is the
+   faithful view, this is the contact sheet. */
+.thumb img{
+  width:100%; height:100%; display:block; object-fit:contain;
+  filter:saturate(1.25) brightness(1.28);
+  opacity:0; transition:opacity .25s ease;
+}
+.thumb[data-art="ok"] img{opacity:1}
+.thumb[data-art="fail"] img{display:none}
+.thumb::after{
+  content:""; position:absolute; left:50%; top:50%; width:8px; height:1px; margin:-1px 0 0 -4px;
+  background:#7d7669; opacity:.6;
+}
+.thumb[data-art="ok"]::after{display:none}
+.thumb[data-art="load"]::after{animation:blink 1.3s steps(2) infinite}
+
 /* ---------- work bench (rosters) ------------------------------------------- */
 .bench{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:clamp(14px,1.8vw,22px); margin-top:clamp(18px,2.6vw,26px)}
 @media (max-width:1040px){ .bench{grid-template-columns:minmax(0,1fr)} }
 
 .tablebox{overflow-x:auto}
-table{border-collapse:collapse; width:100%; min-width:520px}
+table{border-collapse:collapse; width:100%; min-width:556px}
+th.col-art,td.col-art{width:1%; white-space:nowrap; padding-right:4px}
+/* A 32px square next to an 11.5px line looks dropped unless the row centres. */
+#sess-rows td{vertical-align:middle}
 th{
   text-align:left; font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase;
   color:var(--ink-3); font-weight:600; padding:7px 10px; border-bottom:1px solid var(--rule-2); white-space:nowrap;
@@ -608,7 +711,7 @@ td .val{font-size:11.5px}
       <div class="tablebox">
         <table>
           <thead>
-            <tr><th>#</th><th>attendee</th><th>nftoken id</th><th>status</th><th>attendance tx</th></tr>
+            <tr><th>#</th><th class="col-art" id="sess-art-h">art</th><th>attendee</th><th>nftoken id</th><th>status</th><th>attendance tx</th></tr>
           </thead>
           <tbody id="sess-rows"></tbody>
         </table>
@@ -948,6 +1051,9 @@ td .val{font-size:11.5px}
         }
       }
       paintHeader();
+      // Roster thumbnails are addressed by (address, eventId), so a roster
+      // painted before the event id arrived has none. Rebuild it once it does.
+      if (artPainted !== eventId()) paintSession();
       // Only the empty card carries the console-state message. Repainting a
       // live card here would throw away the offer ids it is holding.
       if (verdict === "empty") paintDocket();
@@ -1190,6 +1296,13 @@ td .val{font-size:11.5px}
         return r;
       }
       look = r.json || null;
+      /* An older build sends no `art` block at all. Note it once, from a lookup
+         that actually had an address to describe, and stop drawing squares the
+         server cannot fill — rather than littering the roster with placeholders. */
+      if (look && look.valid !== false) {
+        var supported = !!(look.art && typeof look.art === "object");
+        if (supported !== artSupported) { artSupported = supported; paintSession(); }
+      }
       verdict = verdictOf(look);
       paintDocket();
       return r;
@@ -1204,6 +1317,142 @@ td .val{font-size:11.5px}
     if (l.needsSponsorship === true) return "sponsor";
     if (l.claim && l.claim.status === "pending" && (l.claim.offerId || l.claim.nftokenId)) return "claimed";
     return "ready";
+  }
+
+  /* =====================================================================
+     Badge artwork
+     ---------------------------------------------------------------------
+     GET /demo/art?address=…&eventId=… renders the same SVG that gets pinned
+     to IPFS for that attendee. It is a pure function of the two parameters,
+     so it costs one same-origin request and needs no claim, no badge and no
+     gateway. That makes it a real operational check at the desk: the
+     volunteer confirms this person is getting a DISTINCT badge rather than a
+     repeat of the last one, before anything is minted.
+     ===================================================================== */
+  var artSupported = true;   // a valid lookup with no `art` block turns this off
+  var artFailed = {};        // src -> true, so a repaint never re-requests a known-bad image
+  var artPainted = null;     // event id the roster thumbnails were built against
+  /* Where the art is allowed to appear: every state in which an address is
+     actually known. `empty` and `invalid` have nothing to render. */
+  var ART_STATES = { ready: 1, sponsor: 1, waiting: 1, claimed: 1, attended: 1 };
+
+  /** This page loads nothing from another origin. A previewUrl is documented
+      as a path on this server; anything else is ignored rather than fetched. */
+  function localPath(u) {
+    return (typeof u === "string" && u.charAt(0) === "/" && u.charAt(1) !== "/") ? u : "";
+  }
+  /** The pinned file lives on an IPFS gateway, so that one link is outbound —
+      but only ever as a link the volunteer clicks, never as a loaded resource. */
+  function webUrl(u) {
+    return (typeof u === "string" && /^https?:\/\/[^\s"'<>]+$/i.test(u)) ? u : "";
+  }
+
+  /** The contract, built by hand — used for roster rows, which have no lookup. */
+  function artUrl(address) {
+    var id = eventId();
+    if (id == null || !address) return "";
+    return "/demo/art?address=" + encodeURIComponent(address) +
+           "&eventId=" + encodeURIComponent(String(id));
+  }
+  function artOn() { return artSupported && eventId() != null; }
+
+  /**
+   * One <img>, wired so that a failure is a small quiet placeholder — never a
+   * broken-image icon, and never anything that stops a badge being issued.
+   */
+  function artImg(box, src, alt, lazy) {
+    if (artFailed[src]) { box.setAttribute("data-art", "fail"); return; }
+    box.setAttribute("data-art", "load");
+    var img = document.createElement("img");
+    // loading/decoding before src: the fetch starts the moment src is assigned.
+    if (lazy) img.setAttribute("loading", "lazy");
+    img.setAttribute("decoding", "async");
+    img.alt = alt || "";
+    img.addEventListener("load", function () { box.setAttribute("data-art", "ok"); });
+    img.addEventListener("error", function () {
+      artFailed[src] = true;
+      box.setAttribute("data-art", "fail");
+    });
+    img.src = src;
+    box.appendChild(img);
+    // A cached image can already be complete before the listener was attached.
+    if (img.complete && img.naturalWidth) box.setAttribute("data-art", "ok");
+  }
+
+  /**
+   * The plate: the badge this address is getting, mounted beside the verdict.
+   * Returns null when the server described no art at all — an older build,
+   * where silence is the right degradation, not an empty frame.
+   */
+  function artPlate() {
+    if (!ART_STATES[verdict]) return null;
+    var l = look || {};
+    var addr = l.address || current;
+    if (!addr || !ADDR_RE.test(addr)) return null;
+    var a = l.art;
+    if (!a || typeof a !== "object") return null;
+
+    var src = localPath(a.previewUrl) || artUrl(addr);
+    if (!src) return null;
+
+    var imageUri = (typeof a.imageUri === "string" && a.imageUri) ? a.imageUri : "";
+    var metaUri = (typeof a.metadataUri === "string" && a.metadataUri) ? a.metadataUri : "";
+    var gateway = webUrl(a.gatewayUrl);
+    /* `imageUri` present means this attendee's art is on IPFS. A claim that came
+       back carrying a pinnedOnDemand boolean says the same thing about a lookup
+       taken BEFORE that claim: either value means the per-attendee resolver ran
+       and pinned it. Without that, the card would keep saying "local render"
+       about a file we just watched get uploaded. */
+    var pinned = !!imageUri || !!(lastClaim && lastClaim.address === addr && lastClaim.pinned);
+
+    var fig = node("figure", "plate");
+    var frame = node("div", "plate__frame");
+    frame.title = "Badge artwork for " + addr;
+    artImg(frame, src, "Badge artwork for " + short(addr, 6, 6), false);
+    var ph = node("div", "plate__ph");
+    ph.setAttribute("aria-hidden", "true");
+    frame.appendChild(ph);
+    var marks = node("div", "plate__marks");
+    marks.setAttribute("aria-hidden", "true");
+    for (var i = 0; i < 4; i++) marks.appendChild(node("i"));
+    frame.appendChild(marks);
+    fig.appendChild(frame);
+
+    var cap = node("figcaption", "plate__cap");
+    var pin = node("span", "plate__pin");
+    pin.setAttribute("data-pin", pinned ? "ipfs" : "local");
+    pin.appendChild(node("em", "plate__dot"));
+    pin.appendChild(node("span", null, pinned ? "on ipfs" : "local render"));
+    pin.title = pinned
+      ? ("This attendee's artwork is pinned." + (imageUri ? "\nimage: " + imageUri : "") +
+         (metaUri ? "\nmetadata: " + metaUri : "") +
+         "\nThe square above is rendered here, so the desk never waits on a gateway.")
+      : ("Not pinned yet. The square above is a local render of the same deterministic " +
+         "artwork — identical bytes to whatever gets pinned for this attendee.");
+    cap.appendChild(pin);
+    if (gateway) {
+      var g = node("a", "link plate__link", "view pinned");
+      g.href = gateway;
+      g.target = "_blank";
+      g.rel = "noopener noreferrer";
+      g.title = gateway;
+      cap.appendChild(g);
+    }
+    fig.appendChild(cap);
+    return fig;
+  }
+
+  /** A roster row's square. Lazy: a long session must not fire fifty requests. */
+  function artThumb(address) {
+    if (!artOn() || !address) return null;
+    var src = artUrl(address);
+    if (!src) return null;
+    var box = node("span", "thumb");
+    box.title = "Badge artwork for " + address;
+    // alt is empty on purpose: the address sits in the very next cell, and
+    // twenty repetitions of it would be noise in a screen reader.
+    artImg(box, src, "", true);
+    return box;
   }
 
   /* =====================================================================
@@ -1231,6 +1480,14 @@ td .val{font-size:11.5px}
     w.appendChild(node("span", "stamp__c", s[2]));
     st.appendChild(w);
     wrap.appendChild(st);
+    /* The badge itself, beside the verdict — the stamp says what to do, the
+       plate says who it is for. Between them so that when the prose wraps to
+       its own line the pair stays together. */
+    var plate = artPlate();
+    if (plate) {
+      wrap.className = "stampwrap stampwrap--art";
+      wrap.appendChild(plate);
+    }
     if (say) {
       var p = node("div", "stampwrap__say");
       p.innerHTML = say;   // author-written copy only; never interpolated data
@@ -1577,6 +1834,16 @@ td .val{font-size:11.5px}
     wait.appendChild(wb);
     body.appendChild(wait);
 
+    // Why this one was slower than the last one. Only when the server says so.
+    if (opts.pinnedOnDemand) {
+      var pn = node("div", "pinnote");
+      pn.appendChild(node("span", "label", "pinned on demand"));
+      pn.appendChild(node("span", null,
+        "Not on the pre-pinned roster, so their artwork went up to IPFS during the claim — " +
+        "which is why this one took longer."));
+      body.appendChild(pn);
+    }
+
     var g = node("div", "grp grp--good");
     var gh = node("div", "grp__hd"); gh.appendChild(node("span", "label", "what was created")); g.appendChild(gh);
     var gb = node("div", "grp__bd");
@@ -1701,7 +1968,15 @@ td .val{font-size:11.5px}
       var j = r.json || {};
       var reused = (r.status === 200 && j.reusedExistingOffer === true);
       recordSession(addr, j.nftokenId, j.offerId, reused);
-      lastClaim = { address: addr, nftokenId: j.nftokenId, offerId: j.offerId, reused: reused, raw: r };
+      lastClaim = {
+        address: addr, nftokenId: j.nftokenId, offerId: j.offerId, reused: reused, raw: r,
+        /* `pinnedOnDemand` is only sent when the per-attendee resolver produced
+           the URI, so a boolean of EITHER value means this attendee's art is on
+           IPFS; `true` additionally means it was uploaded during this claim,
+           which is why that one took longer. */
+        pinned: typeof j.pinnedOnDemand === "boolean",
+        pinnedOnDemand: j.pinnedOnDemand === true
+      };
       verdict = "waiting";
       paintDocket(lastClaim);
       startWatch(addr);
@@ -1836,11 +2111,24 @@ td .val{font-size:11.5px}
     var tb = $("sess-rows");
     clear(tb);
     $("sess-empty").hidden = session.length > 0;
+    /* A column of twenty different squares is the fastest confirmation that
+       per-attendee art is genuinely per-attendee. Drop the whole column when
+       there is no event id or no art endpoint to ask. */
+    var withArt = artOn();
+    artPainted = eventId();
+    $("sess-art-h").hidden = !withArt;
     for (var i = 0; i < session.length; i++) {
       var s = session[i];
       var tr = node("tr");
       if (s.fresh) { tr.className = "is-new"; s.fresh = false; }
       tr.appendChild(node("td", null, String(i + 1)));
+
+      if (withArt) {
+        var tdArt = node("td", "col-art");
+        var thumb = artThumb(s.address);
+        if (thumb) tdArt.appendChild(thumb);
+        tr.appendChild(tdArt);
+      }
 
       var tdA = node("td");
       var a = node("code", "val", short(s.address, 10, 8));

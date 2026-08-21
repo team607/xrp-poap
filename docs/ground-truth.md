@@ -16,10 +16,20 @@ Raw responses: `out/probe-part1.json`, `out/probe-part2.json` (gitignored).
 | `wss://clio.altnet.rippletest.net:51233` | yes | works |
 | `wss://s.altnet.rippletest.net:51233` | no | `unknownCmd` |
 | `wss://testnet.xrpl-labs.com` | no | `unknownCmd` |
-| `wss://xrplcluster.com` (mainnet) | yes | works |
+| `wss://xrplcluster.com` (mainnet) | **no** | **`unknownCmd`** |
+| `wss://s1.ripple.com` (mainnet) | yes, Clio 2.7.1 | works |
+| `wss://s2.ripple.com` (mainnet) | yes, Clio 2.7.1 | works |
 
 The endpoint the brief lists for testnet in section 2 is the plain rippled one,
-which cannot answer any of the three verification queries. `.env.example`
+which cannot answer any of the three verification queries. **The mainnet
+endpoint it names is the same trap**: section 2 says `xrplcluster.com` "also
+serves Clio methods", but measured on 2026-08-20 it served Clio on **0 of 8**
+connections and answered `nfts_by_issuer` with `unknownCmd` every time. It is
+load balanced, so this is not even reliably wrong — it is a source of
+intermittent failure. Use `s1.ripple.com` / `s2.ripple.com` on mainnet.
+
+Live reserve values read from `server_info` at the same time, matching brief
+section 7: base reserve **1 XRP**, owner reserve **0.2 XRP**. `.env.example`
 therefore defaults to the Clio server and keeps the plain one as a fallback.
 `account_nfts` works on both.
 

@@ -21,6 +21,8 @@
     "e2e:mainnet": "tsx scripts/03-mainnet-rehearsal.ts",
     "migrate": "tsx scripts/migrate.ts",
     "reap:offers": "tsx scripts/reap-offers.ts",
+    "publish:badge": "tsx scripts/publish-badge.ts",
+    "prepin": "tsx scripts/prepin-badges.ts",
     "demo": "tsx scripts/demo.ts",
     "check:cutover": "tsx scripts/check-cutover.ts"
   },
