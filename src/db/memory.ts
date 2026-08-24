@@ -1,14 +1,24 @@
 /**
- * In-memory stand-ins for the attendance index, the sponsor ledger and the
- * claim slots.
+ * In-memory stand-ins for every store in this layer: the attendance index, the
+ * sponsor ledger, the claim slots, events, registrations and admin sessions.
  *
  * These exist so the API layer and local dev run with no Postgres at all, and
  * so the unit suite never needs a database. They are not a toy: the observable
  * semantics are meant to be identical to the pg implementations — same
  * ordering, same paging clamps, same DUPLICATE_CLAIM on a repeat
  * (event_id, address) *or* a repeat tx_hash, same exact-decimal XRP strings,
- * and the same atomicity. src/db/repo-contract.test.ts runs one shared suite
- * against both, which is the only thing that keeps that claim honest.
+ * the same sha256-hashed session ids, and the same atomicity.
+ * src/db/repo-contract.test.ts runs one shared suite against both, which is
+ * the only thing that keeps that claim honest.
+ *
+ * Where a Postgres constraint spans two tables — the events foreign key on
+ * registrations, the attendance count behind hasBadges() — the memory store
+ * takes the other store as a constructor argument rather than guessing. That
+ * is why those two constructors have required parameters, and why
+ * createMemoryStores() at the bottom of this file exists: a composition root
+ * that wires them by hand can wire them inconsistently, and a registration
+ * store with no events to check against would accept sign-ups for events that
+ * do not exist.
  *
  * ATOMICITY IN AN EVENT LOOP. A single-threaded runtime is not automatically
  * safe: every `await` is a yield, and a check-then-insert with an await in the
@@ -31,11 +41,39 @@ import type {
   ClaimRecord,
   ClaimRepository,
   EventId,
+  EventRecord,
+  EventRepository,
+  EventStatus,
+  RegistrationRecord,
+  RegistrationRepository,
+  SessionRecord,
+  SessionStore,
   SponsorLedger,
   SponsorReservation,
   SponsorReserveInput,
 } from "../types.js";
 import { normalizePaging } from "./attendance-repo.js";
+import {
+  assertNotRenumbering,
+  assertValidEvent,
+  assertValidEventId,
+  assertValidPatch,
+  assertValidStatus,
+  duplicateEventError,
+  EVENT_PATCH_COLUMNS,
+} from "./event-repo.js";
+import {
+  assertRegistrationAddress,
+  assertValidAddressProof,
+  duplicateRegistrationError,
+  unknownEventError,
+} from "./registration-repo.js";
+import {
+  assertValidSessionEmail,
+  hashSessionId,
+  newSessionId,
+  normalizeTtlMs,
+} from "./session-store.js";
 import { dropsToXrpString, xrpToDropsBigInt } from "./sponsor-ledger.js";
 
 /** Mirrors ORDER BY claimed_at ASC, id ASC. */
@@ -424,5 +462,406 @@ function clone(record: AttendanceRecord): AttendanceRecord {
   return {
     ...record,
     claimedAt: record.claimedAt ? new Date(record.claimedAt.getTime()) : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Events
+// ---------------------------------------------------------------------------
+
+/**
+ * Events, keyed by the taxon.
+ *
+ * hasBadges() needs the attendance index, so this takes it as a constructor
+ * argument. It is required rather than optional on purpose: the Postgres
+ * version counts real rows, and a memory version that always answered "no
+ * badges" would tell an admin UI that a destructive edit is safe when it is
+ * not. Wire it with createMemoryStores() unless you have a reason not to.
+ */
+export class MemoryEventRepository implements EventRepository {
+  private readonly rows = new Map<EventId, EventRecord>();
+
+  constructor(
+    private readonly attendance: Pick<AttendanceRepository, "countByEvent">,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  async create(input: Omit<EventRecord, "createdAt" | "updatedAt">): Promise<EventRecord> {
+    const status = input.status ?? "draft";
+    assertValidEvent({ ...input, status });
+
+    // ---- no await from here to the set --------------------------------------
+    if (this.rows.has(input.eventId)) throw duplicateEventError(input.eventId);
+
+    const at = this.now();
+    const record: EventRecord = {
+      eventId: input.eventId,
+      name: input.name,
+      description: input.description ?? null,
+      eventDate: input.eventDate ?? null,
+      venue: input.venue ?? null,
+      metadataUri: input.metadataUri ?? null,
+      status,
+      createdAt: at,
+      updatedAt: at,
+    };
+    this.rows.set(record.eventId, record);
+    // ---- end of critical section --------------------------------------------
+
+    return cloneEvent(record);
+  }
+
+  async update(
+    eventId: EventId,
+    patch: Partial<Omit<EventRecord, "eventId" | "createdAt" | "updatedAt">>,
+  ): Promise<EventRecord> {
+    assertValidEventId(eventId);
+    assertNotRenumbering(eventId, patch);
+    assertValidPatch(patch);
+
+    const row = this.rows.get(eventId);
+    if (!row) throw new NotFoundError(`No event ${eventId} to update.`, { eventId });
+
+    // Both implementations walk EVENT_PATCH_COLUMNS, so the pg SET list and
+    // this loop cannot drift: adding a field in one place adds it in both. The
+    // casts are the price of indexing two nominally different shapes — the
+    // record and the patch — by one shared key.
+    const target = row as unknown as Record<string, unknown>;
+    const source = patch as unknown as Record<string, unknown>;
+    let touched = false;
+    for (const key of Object.keys(EVENT_PATCH_COLUMNS)) {
+      const value = source[key];
+      if (value === undefined) continue;
+      target[key] = value;
+      touched = true;
+    }
+    // An empty patch is a read: nothing changed, so updated_at must not move.
+    if (touched) row.updatedAt = this.now();
+
+    return cloneEvent(row);
+  }
+
+  async find(eventId: EventId): Promise<EventRecord | null> {
+    const row = this.rows.get(eventId);
+    return row ? cloneEvent(row) : null;
+  }
+
+  /** Ordered by event_id, matching the pg ORDER BY: total, stable, never null. */
+  async list(opts?: {
+    status?: EventStatus;
+    limit?: number;
+    offset?: number;
+  }): Promise<EventRecord[]> {
+    const { limit, offset } = normalizePaging(opts);
+    if (opts?.status !== undefined) assertValidStatus(opts.status);
+
+    return [...this.rows.values()]
+      .filter((e) => opts?.status === undefined || e.status === opts.status)
+      .sort((a, b) => a.eventId - b.eventId)
+      .slice(offset, offset + limit)
+      .map(cloneEvent);
+  }
+
+  async hasBadges(eventId: EventId): Promise<boolean> {
+    return (await this.attendance.countByEvent(eventId)) > 0;
+  }
+
+  /** Test/dev affordance. Not part of EventRepository. */
+  clear(): void {
+    this.rows.clear();
+  }
+}
+
+function cloneEvent(record: EventRecord): EventRecord {
+  return {
+    ...record,
+    createdAt: record.createdAt ? new Date(record.createdAt.getTime()) : undefined,
+    updatedAt: record.updatedAt ? new Date(record.updatedAt.getTime()) : undefined,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Registrations
+// ---------------------------------------------------------------------------
+
+interface StoredRegistration {
+  seq: number;
+  record: RegistrationRecord;
+}
+
+/** Mirrors ORDER BY registered_at ASC, id ASC. */
+function byRegisteredAtThenId(a: StoredRegistration, b: StoredRegistration): number {
+  const delta =
+    (a.record.registeredAt?.getTime() ?? 0) - (b.record.registeredAt?.getTime() ?? 0);
+  return delta !== 0 ? delta : a.seq - b.seq;
+}
+
+/**
+ * Registrations.
+ *
+ * Takes the event store because 006 has a foreign key and this has to fail the
+ * same way: registering for an event that does not exist is a NOT_FOUND, not a
+ * row nobody can join to.
+ */
+export class MemoryRegistrationRepository implements RegistrationRepository {
+  private readonly rows: StoredRegistration[] = [];
+  private nextId = 1;
+
+  constructor(
+    private readonly events: Pick<EventRepository, "find">,
+    private readonly now: () => Date = () => new Date(),
+  ) {}
+
+  /**
+   * The foreign-key check is awaited FIRST, deliberately, so that the
+   * duplicate check and the push that follow run with no await between them.
+   * Two concurrent sign-ups for one (event, address) then produce exactly one
+   * row and one typed duplicate — the same outcome the unique index gives.
+   */
+  async create(
+    input: Omit<RegistrationRecord, "id" | "registeredAt" | "checkedInAt">,
+  ): Promise<RegistrationRecord> {
+    assertRegistrationAddress(input.address);
+    assertValidAddressProof(input.addressProof);
+
+    const event = await this.events.find(input.eventId);
+    if (!event) throw unknownEventError(input.eventId);
+
+    // ---- no await from here to the push -------------------------------------
+    if (this.findRow(input.eventId, input.address)) {
+      throw duplicateRegistrationError(input.eventId, input.address);
+    }
+
+    const seq = this.nextId++;
+    const stored: StoredRegistration = {
+      seq,
+      record: {
+        id: String(seq),
+        eventId: input.eventId,
+        // Verbatim: XRPL classic addresses are case-sensitive base58.
+        address: input.address,
+        addressProof: input.addressProof,
+        displayName: input.displayName ?? null,
+        email: input.email ?? null,
+        signinPayloadUuid: input.signinPayloadUuid ?? null,
+        registeredAt: this.now(),
+        checkedInAt: null,
+      },
+    };
+    this.rows.push(stored);
+    // ---- end of critical section --------------------------------------------
+
+    return cloneRegistration(stored.record);
+  }
+
+  async findByAddress(
+    eventId: EventId,
+    address: string,
+  ): Promise<RegistrationRecord | null> {
+    const hit = this.findRow(eventId, address);
+    return hit ? cloneRegistration(hit.record) : null;
+  }
+
+  async findById(id: string): Promise<RegistrationRecord | null> {
+    const hit = this.rows.find((r) => r.record.id === id);
+    return hit ? cloneRegistration(hit.record) : null;
+  }
+
+  async listByEvent(
+    eventId: EventId,
+    opts?: { limit?: number; offset?: number; checkedIn?: boolean },
+  ): Promise<RegistrationRecord[]> {
+    const { limit, offset } = normalizePaging(opts);
+    return this.rows
+      .filter((r) => {
+        if (r.record.eventId !== eventId) return false;
+        if (opts?.checkedIn === undefined) return true;
+        return opts.checkedIn ? r.record.checkedInAt != null : r.record.checkedInAt == null;
+      })
+      .sort(byRegisteredAtThenId)
+      .slice(offset, offset + limit)
+      .map((r) => cloneRegistration(r.record));
+  }
+
+  async countByEvent(eventId: EventId): Promise<{ total: number; checkedIn: number }> {
+    let total = 0;
+    let checkedIn = 0;
+    for (const r of this.rows) {
+      if (r.record.eventId !== eventId) continue;
+      total += 1;
+      if (r.record.checkedInAt != null) checkedIn += 1;
+    }
+    return { total, checkedIn };
+  }
+
+  /**
+   * Idempotent, exactly like the COALESCE in the pg statement: a second scan
+   * at the desk is a double-tap, and the first arrival is the one that counts.
+   */
+  async markCheckedIn(id: string, at?: Date): Promise<void> {
+    const row = this.rows.find((r) => r.record.id === id);
+    if (!row) throw new NotFoundError(`No registration ${id} to check in.`, { id });
+    if (row.record.checkedInAt != null) return;
+    row.record.checkedInAt = at ?? this.now();
+  }
+
+  /** Test/dev affordance. Not part of RegistrationRepository. */
+  clear(): void {
+    this.rows.length = 0;
+    this.nextId = 1;
+  }
+
+  private findRow(eventId: EventId, address: string): StoredRegistration | undefined {
+    return this.rows.find(
+      (r) => r.record.eventId === eventId && r.record.address === address,
+    );
+  }
+}
+
+function cloneRegistration(record: RegistrationRecord): RegistrationRecord {
+  return {
+    ...record,
+    registeredAt: record.registeredAt ? new Date(record.registeredAt.getTime()) : undefined,
+    checkedInAt: record.checkedInAt ? new Date(record.checkedInAt.getTime()) : record.checkedInAt,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Admin sessions
+// ---------------------------------------------------------------------------
+
+interface StoredSession {
+  email: string;
+  createdAt: Date;
+  expiresAt: Date;
+  lastSeenAt: Date;
+}
+
+/**
+ * Sessions, keyed by sha256 of the cookie value — the same digest Postgres
+ * stores, from the same function. The raw id is returned by create() and
+ * never kept: this map is as useless to a reader as the table is.
+ */
+export class MemorySessionStore implements SessionStore {
+  private readonly rows = new Map<string, StoredSession>();
+
+  /** Injectable clock, so an expiry test does not have to wait out a TTL. */
+  constructor(private readonly now: () => Date = () => new Date()) {}
+
+  async create(email: string, ttlMs: number): Promise<SessionRecord> {
+    assertValidSessionEmail(email);
+    const ttl = normalizeTtlMs(ttlMs);
+    const rawId = newSessionId();
+    const at = this.now();
+
+    this.rows.set(hashSessionId(rawId), {
+      email,
+      createdAt: at,
+      expiresAt: new Date(at.getTime() + ttl),
+      lastSeenAt: at,
+    });
+
+    return {
+      id: rawId,
+      email,
+      createdAt: new Date(at.getTime()),
+      expiresAt: new Date(at.getTime() + ttl),
+      lastSeenAt: new Date(at.getTime()),
+    };
+  }
+
+  /**
+   * Expiry is measured against this store's own clock, never against anything
+   * a caller passed — the same rule as the SQL version, where the comparison
+   * happens inside the statement. An expired row is refused without being
+   * touched, so last_seen never reads later than the expiry it failed.
+   */
+  async get(id: string): Promise<SessionRecord | null> {
+    if (typeof id !== "string" || id === "") return null;
+    const row = this.rows.get(hashSessionId(id));
+    if (!row) return null;
+    if (row.expiresAt.getTime() <= this.now().getTime()) return null;
+
+    row.lastSeenAt = this.now();
+    return {
+      id,
+      email: row.email,
+      createdAt: new Date(row.createdAt.getTime()),
+      expiresAt: new Date(row.expiresAt.getTime()),
+      lastSeenAt: new Date(row.lastSeenAt.getTime()),
+    };
+  }
+
+  async revoke(id: string): Promise<void> {
+    if (typeof id !== "string" || id === "") return;
+    this.rows.delete(hashSessionId(id));
+  }
+
+  async revokeAll(email: string): Promise<void> {
+    assertValidSessionEmail(email);
+    for (const [key, row] of this.rows) {
+      if (row.email === email) this.rows.delete(key);
+    }
+  }
+
+  async purgeExpired(now?: Date): Promise<number> {
+    const cutoff = (now ?? this.now()).getTime();
+    let purged = 0;
+    for (const [key, row] of this.rows) {
+      if (row.expiresAt.getTime() <= cutoff) {
+        this.rows.delete(key);
+        purged += 1;
+      }
+    }
+    return purged;
+  }
+
+  /**
+   * Every stored id, which is to say every digest. Not part of SessionStore:
+   * it exists so the contract suite can assert that a raw cookie value is
+   * nowhere in the store. Do not build application behaviour on it.
+   */
+  storedIds(): string[] {
+    return [...this.rows.keys()];
+  }
+
+  /** Test/dev affordance. Not part of SessionStore. */
+  clear(): void {
+    this.rows.clear();
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Wiring
+// ---------------------------------------------------------------------------
+
+export interface MemoryStores {
+  attendance: MemoryAttendanceRepository;
+  sponsor: MemorySponsorLedger;
+  claims: MemoryClaimRepository;
+  events: MemoryEventRepository;
+  registrations: MemoryRegistrationRepository;
+  sessions: MemorySessionStore;
+}
+
+/**
+ * Every in-memory store, wired to each other the way the Postgres schema wires
+ * the real tables: registrations check events the way the foreign key does,
+ * and hasBadges() counts the attendance index the way the SQL does.
+ *
+ * Use this at a composition root rather than constructing the six by hand. The
+ * cross-store links are the part that is easy to get wrong, and getting them
+ * wrong is silent.
+ */
+export function createMemoryStores(now: () => Date = () => new Date()): MemoryStores {
+  const attendance = new MemoryAttendanceRepository();
+  const events = new MemoryEventRepository(attendance, now);
+  return {
+    attendance,
+    sponsor: new MemorySponsorLedger(now),
+    claims: new MemoryClaimRepository(),
+    events,
+    registrations: new MemoryRegistrationRepository(events, now),
+    sessions: new MemorySessionStore(now),
   };
 }

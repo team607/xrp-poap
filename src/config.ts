@@ -43,9 +43,23 @@ export interface AppConfig {
    * Read once here so there is no second place to set it inconsistently.
    */
   eventName?: string;
+  admin: {
+    email?: string;
+    /** scrypt hash, produced by `npm run admin:hash`. Never a plaintext password. */
+    passwordHash?: string;
+    /** Signs the session cookie. Rotating it logs everyone out, which is the point. */
+    sessionSecret?: string;
+    sessionTtlHours: number;
+  };
   api: {
     port: number;
     host: string;
+    /**
+     * Set the Secure flag on cookies. Must be true behind HTTPS and false on
+     * plain-http localhost, because a Secure cookie is simply never sent over
+     * http and the symptom is a login that silently does nothing.
+     */
+    secureCookies: boolean;
     /**
      * Whether to trust X-Forwarded-For. Rate limiting is keyed on the client
      * IP, so behind an ingress this must be set or every attendee shares one
@@ -191,9 +205,16 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     defaultMetadataUri: env("EVENT_METADATA_URI"),
     demoEnabled: bool("DEMO_ENABLED", false),
     eventName: env("EVENT_NAME"),
+    admin: {
+      email: env("ADMIN_EMAIL"),
+      passwordHash: env("ADMIN_PASSWORD_HASH"),
+      sessionSecret: env("SESSION_SECRET"),
+      sessionTtlHours: int("SESSION_TTL_HOURS", 12),
+    },
     api: {
       port: int("PORT", 3000),
       host: env("HOST") ?? "127.0.0.1",
+      secureCookies: bool("SECURE_COOKIES", false),
       trustProxy: parseTrustProxy(env("TRUST_PROXY")),
     },
   };
@@ -215,6 +236,12 @@ export function describeConfig(cfg: AppConfig): Record<string, unknown> {
     },
     databaseUrl: cfg.databaseUrl ? "[redacted]" : "[unset]",
     defaultMetadataUri: cfg.defaultMetadataUri ?? "[unset]",
+    admin: {
+      email: cfg.admin.email ?? "[unset]",
+      passwordHash: cfg.admin.passwordHash ? "[redacted]" : "[unset]",
+      sessionSecret: cfg.admin.sessionSecret ? "[redacted]" : "[unset]",
+      sessionTtlHours: cfg.admin.sessionTtlHours,
+    },
     demoEnabled: cfg.demoEnabled,
     eventName: cfg.eventName ?? "[unset]",
     api: cfg.api,

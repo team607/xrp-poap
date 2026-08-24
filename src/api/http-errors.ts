@@ -149,6 +149,12 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   CONFIG_INVALID: 500,
   NETWORK_GUARD: 500,
   INVALID_INPUT: 400,
+  // Distinct on purpose: 401 means "identify yourself", 403 means "identified
+  // and still refused" (a failed CSRF check), 503 means the surface is not
+  // configured — never 500, which would read as a bug rather than a setting.
+  UNAUTHORIZED: 401,
+  FORBIDDEN: 403,
+  SERVICE_UNAVAILABLE: 503,
   INVALID_ADDRESS: 400,
   INVALID_TAXON: 400,
   URI_TOO_LONG: 400,

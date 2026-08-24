@@ -1,0 +1,2267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Organiser console — XRPL attendance events</title>
+<style>
+/* ==========================================================================
+   ORGANISER CONSOLE — the back office of the same instrument as /demo and
+   the volunteer desk. Bone paper and deep ink, editorial serif for prose,
+   monospace for anything the server said, amber signal, jade for confirmed,
+   vermilion for destructive.
+
+   Different job from the desk: the desk handles one attendee at a time and
+   needs a verdict readable from across a table. This is a registry — a ruled
+   ledger of events, each with a catalogue number that happens to be an
+   NFTokenTaxon. So: margin numbers, ruled rows, and prose wherever the model
+   is genuinely surprising (a draft is invisible; a taxon is forever).
+
+   No webfonts, no images, no CDN, no build step.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --sunk:#e4dccc;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --on-signal:#fffaf2;
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+  --vermilion:#a8331a;
+  --vermilion-wash:rgba(168,51,26,.11);
+
+  --j-key:#8d5310; --j-str:#186a4c; --j-num:#1c5c86; --j-bool:#a8331a; --j-null:#6b6153;
+
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 18px 34px -26px rgba(50,36,18,.55);
+  --grid:rgba(93,74,44,.09);
+  --grain-opacity:.055;
+  --railh:64px;
+}
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --sunk:#101312;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+
+    --signal:#e0a24a;
+    --signal-2:#c987309a;
+    --signal-wash:rgba(224,162,74,.12);
+    --on-signal:#17130c;
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+    --vermilion:#e8724f;
+    --vermilion-wash:rgba(232,114,79,.12);
+
+    --j-key:#e0a24a; --j-str:#5cbc93; --j-num:#79b6d8; --j-bool:#e8724f; --j-null:#8d8778;
+
+    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
+    --grid:rgba(224,214,190,.055);
+    --grain-opacity:.04;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#0e100f;
+  --surface:#161917;
+  --surface-2:#1c201d;
+  --sunk:#101312;
+  --ink:#ece6da;
+  --ink-2:#b3aa9a;
+  --ink-3:#8d8778;
+  --rule:#2b302c;
+  --rule-2:#3c433d;
+
+  --signal:#e0a24a;
+  --signal-2:#c987309a;
+  --signal-wash:rgba(224,162,74,.12);
+  --on-signal:#17130c;
+  --jade:#5cbc93;
+  --jade-wash:rgba(92,188,147,.12);
+  --vermilion:#e8724f;
+  --vermilion-wash:rgba(232,114,79,.12);
+
+  --j-key:#e0a24a; --j-str:#5cbc93; --j-num:#79b6d8; --j-bool:#e8724f; --j-null:#8d8778;
+
+  --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
+  --grid:rgba(224,214,190,.055);
+  --grain-opacity:.04;
+}
+
+*,*::before,*::after{box-sizing:border-box}
+/* Views set display:grid/flex, which outranks the UA [hidden] rule. */
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:16px;
+  line-height:1.55;
+  overflow-x:hidden;
+}
+/* Same paper, different sheet: the desk masks its grid to the top right, the
+   registry to the top left, so the two read as siblings rather than clones. */
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px;
+  -webkit-mask-image:radial-gradient(105% 78% at 10% -6%,#000 0%,rgba(0,0,0,.4) 48%,transparent 78%);
+  mask-image:radial-gradient(105% 78% at 10% -6%,#000 0%,rgba(0,0,0,.4) 48%,transparent 78%);
+}
+.grain{
+  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.wrap{position:relative; z-index:1; max-width:1240px; margin:0 auto; padding:0 clamp(12px,2.4vw,28px)}
+.wrap--narrow{max-width:820px}
+
+h1,h2,h3,h4{margin:0; font-weight:600; letter-spacing:-.012em; line-height:1.15}
+p{margin:0 0 .7em}
+p:last-child{margin-bottom:0}
+a{color:var(--signal)}
+code,pre,.mono{font-family:var(--font-mono)}
+.label{font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.prose{color:var(--ink-2)}
+.prose strong,.prose b{color:var(--ink); font-weight:600}
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+[tabindex="-1"]:focus{outline:none}
+
+/* ---------- console rail --------------------------------------------------- */
+.rail{
+  position:sticky; top:0; z-index:60;
+  background:color-mix(in srgb, var(--paper) 90%, transparent);
+  -webkit-backdrop-filter:saturate(150%) blur(10px);
+  backdrop-filter:saturate(150%) blur(10px);
+  border-bottom:1px solid var(--rule-2);
+}
+.rail__in{display:flex; align-items:stretch; gap:0; min-height:52px}
+.rail__brand{display:flex; align-items:center; gap:9px; padding:8px 18px 8px 0; flex:none; border-right:1px solid var(--rule)}
+.mark{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; font-weight:700;
+  color:var(--on-signal); background:var(--signal); padding:4px 7px; border-radius:2px; white-space:nowrap;
+}
+.rail__title{font-size:14px; letter-spacing:-.01em; color:var(--ink-2); white-space:nowrap}
+.cells{display:flex; flex:1; min-width:0; overflow-x:auto; scrollbar-width:none}
+.cells::-webkit-scrollbar{display:none}
+.cell{padding:8px 16px; border-right:1px solid var(--rule); min-width:0; flex:0 0 auto; display:flex; flex-direction:column; justify-content:center}
+.cell--wide{flex:1 1 190px}
+.cell:first-child{padding-left:16px}
+.cell__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.17em; text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
+.cell__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px}
+.rail__act{display:flex; align-items:center; gap:7px; padding:8px 0 8px 14px; flex:none; border-left:1px solid var(--rule)}
+.pulse{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3)}
+.dot{width:7px; height:7px; border-radius:50%; background:var(--jade); box-shadow:0 0 0 3px var(--jade-wash); flex:none}
+.pulse[data-up="0"] .dot{background:var(--vermilion); box-shadow:0 0 0 3px var(--vermilion-wash); animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.25}}
+
+@media (max-width:900px){
+  .rail__in{flex-wrap:wrap}
+  .rail__brand{border-right:0; padding-right:12px; flex:1 1 auto}
+  .rail__act{border-left:0; padding-left:0}
+  .cells{order:3; width:100%; flex:1 0 100%; border-top:1px solid var(--rule)}
+  .cell{flex:0 0 auto}
+}
+@media (max-width:560px){ .rail__title{display:none} }
+
+/* ---------- buttons -------------------------------------------------------- */
+.btn{
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase; font-weight:600;
+  color:var(--ink); background:var(--surface);
+  border:1px solid var(--rule-2); border-radius:2px;
+  padding:8px 13px; cursor:pointer; position:relative; overflow:hidden;
+  text-decoration:none; display:inline-block; text-align:center;
+  transition:transform .12s ease, background .16s ease, border-color .16s ease, color .16s ease;
+}
+.btn:hover:not(:disabled){background:var(--surface-2); border-color:var(--ink-3)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.btn:disabled{opacity:.42; cursor:not-allowed}
+.btn--go{background:var(--signal); color:var(--on-signal); border-color:transparent; box-shadow:0 8px 18px -14px rgba(0,0,0,.9)}
+/* Beats `.btn:hover:not(:disabled)` on specificity — without the background
+   repeated here the primary button turns beige under the cursor. */
+.btn--go:hover:not(:disabled){background:var(--signal); border-color:transparent; filter:brightness(1.1)}
+.btn--stop:hover:not(:disabled){background:var(--vermilion-wash); border-color:var(--vermilion); color:var(--vermilion); filter:brightness(1.06)}
+.btn--big{font-size:13px; padding:13px 20px; letter-spacing:.14em}
+.btn--ghost{background:transparent}
+.btn--tiny{font-size:9.5px; padding:4px 8px; letter-spacing:.1em}
+.btn--stop{border-color:var(--vermilion); color:var(--vermilion); background:var(--vermilion-wash)}
+.btn[aria-busy="true"]::after{
+  content:""; position:absolute; left:0; bottom:0; height:2px; width:100%;
+  background:linear-gradient(90deg,transparent,currentColor,transparent);
+  animation:sweep 1s linear infinite;
+}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+
+/* ---------- banners -------------------------------------------------------- */
+.banners{margin-top:12px; display:grid; gap:8px}
+.banner{
+  display:flex; gap:12px; align-items:flex-start;
+  border:1px solid var(--vermilion); background:var(--vermilion-wash);
+  border-left-width:3px; padding:11px 13px; border-radius:2px;
+}
+.banner--warn{border-color:var(--signal); background:var(--signal-wash)}
+.banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
+.banner p{font-size:14px; color:var(--ink-2); margin:.25em 0 0; max-width:88ch}
+.banner__act{margin-left:auto; flex:none; align-self:center}
+@media (max-width:700px){ .banner__act{margin-left:0; width:100%} .banner{flex-wrap:wrap} }
+
+/* ---------- cards ---------------------------------------------------------- */
+.card{border:1px solid var(--rule); border-radius:3px; background:var(--surface); box-shadow:var(--shadow); min-width:0}
+.card__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 13px; border-bottom:1px solid var(--rule); background:var(--surface-2); border-radius:3px 3px 0 0}
+.card__hd .label{color:var(--ink-2)}
+.card__n{font-family:var(--font-mono); font-size:10px; font-weight:700; color:var(--on-signal); background:var(--ink-3); width:17px; height:17px; display:grid; place-items:center; border-radius:2px; flex:none}
+.card__body{padding:clamp(13px,1.7vw,18px)}
+.card__ft{padding:9px 13px; border-top:1px solid var(--rule); background:var(--surface-2); border-radius:0 0 3px 3px; display:flex; gap:9px; align-items:center; flex-wrap:wrap}
+.spacer{flex:1}
+
+/* ---------- page head ------------------------------------------------------ */
+.head{display:flex; gap:14px; align-items:flex-end; flex-wrap:wrap; margin:clamp(16px,2.4vw,26px) 0 12px}
+.head__t{font-size:clamp(1.5rem,3.2vw,2.1rem); letter-spacing:-.022em}
+.head__s{font-size:14.5px; color:var(--ink-2); max-width:76ch; margin-top:5px}
+.head__act{margin-left:auto; display:flex; gap:8px; flex-wrap:wrap; align-items:center}
+@media (max-width:700px){ .head__act{margin-left:0; width:100%} }
+.crumb{display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); margin-top:clamp(14px,2vw,20px)}
+.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
+.crumb span[aria-current]{color:var(--ink-2)}
+
+/* ---------- login ---------------------------------------------------------- */
+.gate{display:grid; place-items:center; min-height:calc(100vh - var(--railh) - 40px); padding:clamp(18px,5vw,60px) 0}
+.gate__card{width:min(440px,100%)}
+.gate__mark{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; text-transform:uppercase;
+  color:var(--ink-3); display:flex; gap:9px; align-items:center; margin-bottom:14px;
+}
+.gate__mark::after{content:""; flex:1; height:1px; background:var(--rule-2)}
+.gate h1{font-size:1.55rem; letter-spacing:-.02em}
+.gate__sub{font-size:14.5px; color:var(--ink-2); margin-top:6px}
+
+/* ---------- forms ---------------------------------------------------------- */
+.form{display:grid; gap:clamp(13px,1.8vw,17px)}
+.field{display:grid; gap:5px; min-width:0}
+.field>label{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.field .req{color:var(--signal)}
+.in{
+  font-family:var(--font-mono); font-size:13.5px; line-height:1.45;
+  padding:10px 12px; border:1px solid var(--rule-2); border-radius:2px;
+  background:var(--sunk); color:var(--ink); width:100%; min-width:0;
+  transition:border-color .15s ease;
+}
+textarea.in{font-family:var(--font-display); font-size:15px; resize:vertical; min-height:76px}
+.in:focus{outline:2px solid var(--signal); outline-offset:1px}
+.in::placeholder{color:var(--ink-3); opacity:.7}
+select.in{appearance:none; -webkit-appearance:none; cursor:pointer;
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink-3) 50%),linear-gradient(135deg,var(--ink-3) 50%,transparent 50%);
+  background-position:calc(100% - 16px) calc(50% + 1px),calc(100% - 11px) calc(50% + 1px);
+  background-size:5px 5px,5px 5px; background-repeat:no-repeat; padding-right:32px}
+.field[data-bad="1"] .in{border-color:var(--vermilion); background:var(--vermilion-wash)}
+.help{font-size:13px; color:var(--ink-3); max-width:74ch}
+.help b{color:var(--ink-2); font-weight:600}
+.bad{font-family:var(--font-mono); font-size:11.5px; color:var(--vermilion); letter-spacing:.02em}
+.row2{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:clamp(13px,1.8vw,17px)}
+@media (max-width:700px){ .row2{grid-template-columns:minmax(0,1fr)} }
+
+/* The taxon note. This is the single most consequential field on the page and
+   the one whose consequence is invisible, so it gets a frame, not a tooltip. */
+.taxon{border:1px solid var(--signal); border-left-width:3px; background:var(--signal-wash); border-radius:0 2px 2px 0; padding:12px 14px}
+.taxon__hd{display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; margin-bottom:8px}
+.taxon__hd .label{color:var(--signal)}
+.taxon p{font-size:13.5px; color:var(--ink-2); max-width:80ch}
+.taxon p+p{margin-top:.5em}
+.taxon b{color:var(--ink); font-weight:600}
+.taxon .in{background:var(--surface); max-width:260px}
+.taxon__fixed{
+  display:flex; gap:10px; align-items:baseline; flex-wrap:wrap;
+  font-family:var(--font-mono); font-size:1.5rem; color:var(--ink); letter-spacing:.01em;
+}
+.taxon__lock{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--signal); border:1px dashed var(--signal); border-radius:2px; padding:2px 7px}
+
+/* ---------- flash receipt -------------------------------------------------- */
+.flash{
+  display:flex; gap:11px; align-items:flex-start; flex-wrap:wrap;
+  border:1px solid var(--jade); border-left-width:3px; background:var(--jade-wash);
+  padding:10px 13px; border-radius:0 2px 2px 0; margin-bottom:13px;
+}
+.flash--bad{border-color:var(--vermilion); background:var(--vermilion-wash)}
+.flash--warn{border-color:var(--signal); background:var(--signal-wash)}
+.flash__c{font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; font-weight:700; color:var(--jade); flex:none; padding-top:2px}
+.flash--bad .flash__c{color:var(--vermilion)}
+.flash--warn .flash__c{color:var(--signal)}
+.flash__m{font-size:14px; color:var(--ink); min-width:0; overflow-wrap:anywhere; flex:1}
+.flash__m em{color:var(--ink-2); font-style:normal; display:block; font-size:13px; margin-top:3px}
+
+.errbox{border-left:3px solid var(--vermilion); background:var(--vermilion-wash); padding:11px 13px; border-radius:0 2px 2px 0; margin-top:13px}
+.errbox--warn{border-left-color:var(--signal); background:var(--signal-wash)}
+.errbox__code{font-family:var(--font-mono); font-size:11.5px; font-weight:700; letter-spacing:.09em; color:var(--vermilion)}
+.errbox--warn .errbox__code{color:var(--signal)}
+.errbox__msg{font-size:14.5px; color:var(--ink); margin-top:5px; overflow-wrap:anywhere}
+.errbox__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px; font-style:italic}
+
+/* ---------- tables --------------------------------------------------------- */
+.tablebox{overflow-x:auto}
+table{border-collapse:collapse; width:100%}
+table.t-events{min-width:840px}
+table.t-regs{min-width:820px}
+th{
+  text-align:left; font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600; padding:8px 10px; border-bottom:1px solid var(--rule-2); white-space:nowrap;
+  background:var(--surface-2);
+}
+th .pii{color:var(--vermilion); letter-spacing:.12em}
+td{padding:9px 10px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11.5px; color:var(--ink-2); vertical-align:top}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:var(--surface-2)}
+td .val{font-family:var(--font-mono); font-size:11.5px; color:var(--ink); overflow-wrap:anywhere}
+.td-name{font-family:var(--font-display); font-size:15px; color:var(--ink); letter-spacing:-.01em}
+.td-name a{color:var(--ink); text-decoration:none; border-bottom:1px solid var(--rule-2)}
+.td-name a:hover{border-bottom-color:var(--signal); color:var(--signal)}
+.td-num{font-size:14px; color:var(--ink); letter-spacing:.02em}
+.td-dim{color:var(--ink-3)}
+.acts-cell{white-space:nowrap; text-align:right}
+
+/* The catalogue number sits in a margin rule, like a registry entry. */
+.taxoncell{white-space:nowrap}
+.taxonno{font-family:var(--font-mono); font-size:13.5px; color:var(--ink); letter-spacing:.02em; font-weight:600}
+.taxonk{display:block; font-family:var(--font-mono); font-size:8.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); margin-top:1px}
+
+/* A draft is invisible to the public. That is the single most confusing thing
+   in this model, so it is stated on the row itself — never in a tooltip. */
+tr[data-draft="1"] td{background:var(--signal-wash)}
+tr[data-draft="1"] td:first-child{box-shadow:inset 3px 0 0 var(--signal)}
+tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%, var(--surface-2))}
+.draftsay{
+  display:block; margin-top:4px; font-family:var(--font-display); font-size:12.5px;
+  color:var(--signal); font-style:italic; max-width:52ch; letter-spacing:0;
+}
+
+.pill{font-family:var(--font-mono); font-size:9px; letter-spacing:.13em; text-transform:uppercase; font-weight:700; padding:2px 7px; border-radius:9px; white-space:nowrap; display:inline-block; border:1px solid transparent}
+.pill--draft{color:var(--ink-3); border-color:var(--ink-3); border-style:dashed; background:transparent}
+.pill--open{color:var(--jade); border-color:var(--jade); background:var(--jade-wash)}
+.pill--live{color:var(--on-signal); background:var(--jade); border-color:var(--jade)}
+.pill--closed{color:var(--ink-3); background:var(--sunk); border-color:var(--rule-2)}
+.pill--xaman{color:var(--jade); border-color:var(--jade); background:var(--jade-wash)}
+.pill--self{color:var(--signal); border-color:var(--signal-2); border-style:dashed; background:var(--signal-wash)}
+.tag-hidden{
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.15em; text-transform:uppercase; font-weight:700;
+  color:var(--signal); border:1px solid var(--signal); border-radius:2px; padding:1px 5px; white-space:nowrap;
+}
+.empty{font-size:14.5px; color:var(--ink-2); padding:clamp(16px,3vw,26px) 14px; max-width:70ch}
+.empty b{color:var(--ink); font-weight:600}
+.empty .label{display:block; margin-bottom:7px; color:var(--signal)}
+
+/* ---------- counts --------------------------------------------------------- */
+.ledger{display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:clamp(13px,1.8vw,20px)}
+@media (max-width:860px){ .ledger{grid-template-columns:minmax(0,1fr)} }
+/* Flex column with a growing footer: the two books are grid siblings and so
+   the same height, and without this the shorter one ends in a slab of blank
+   surface that reads as a rendering fault. */
+.book{border:1px solid var(--rule); border-radius:3px; background:var(--surface); overflow:hidden; display:flex; flex-direction:column}
+.book__hd{display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; padding:8px 12px; border-bottom:1px solid var(--rule)}
+.book--db .book__hd{background:var(--jade-wash); border-bottom-color:var(--jade)}
+.book--db{border-color:var(--jade)}
+.book--db .book__hd .label{color:var(--jade)}
+.book--chain .book__hd{background:var(--signal-wash); border-bottom-color:var(--signal)}
+.book--chain{border-color:var(--signal)}
+.book--chain .book__hd .label{color:var(--signal)}
+.book__note{font-size:12.5px; color:var(--ink-3); margin-left:auto; font-style:italic}
+.counts{display:grid; grid-template-columns:repeat(auto-fit,minmax(88px,1fr)); gap:1px; background:var(--rule)}
+.count{background:var(--surface); padding:11px 10px; text-align:center; min-width:0}
+.count__n{font-family:var(--font-display); font-size:1.75rem; line-height:1; color:var(--ink); letter-spacing:-.02em}
+.count--good .count__n{color:var(--jade)}
+.count--warn .count__n{color:var(--signal)}
+.count__k{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); margin-top:6px}
+.book__ft{padding:11px 12px; border-top:1px solid var(--rule); background:var(--surface-2); font-size:13px; color:var(--ink-2); display:flex; gap:9px; align-items:flex-start; flex-wrap:wrap; flex:1}
+.book__ft b{color:var(--ink)}
+
+/* ---------- key/value ------------------------------------------------------ */
+.kv{display:grid; grid-template-columns:130px minmax(0,1fr); gap:3px 14px; padding:7px 0; align-items:baseline; border-bottom:1px dotted var(--rule)}
+.kv:last-of-type{border-bottom:0}
+.kv__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); padding-top:3px}
+.kv__v{min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 9px}
+.val{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow-wrap:anywhere}
+.val--prose{font-family:var(--font-display); font-size:14.5px; color:var(--ink-2)}
+@media (max-width:560px){ .kv{grid-template-columns:minmax(0,1fr); gap:2px} .kv__k{padding-top:0} }
+
+.copy{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase;
+  border:1px solid var(--rule-2); background:transparent; color:var(--ink-3); border-radius:2px;
+  padding:1px 5px; cursor:pointer; flex:none;
+}
+.copy:hover{color:var(--ink); border-color:var(--ink-3)}
+.link{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.06em; color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2); white-space:nowrap}
+.link:hover{border-bottom-style:dashed}
+
+/* ---------- the share link ------------------------------------------------- */
+.share{border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk); padding:11px 13px}
+.share__hd{display:flex; gap:9px; align-items:baseline; flex-wrap:wrap; margin-bottom:7px}
+.share__url{display:flex; gap:9px; align-items:center; flex-wrap:wrap}
+.share__url code{font-size:14px; color:var(--ink); overflow-wrap:anywhere}
+.share__warn{font-size:13px; color:var(--signal); margin-top:8px; font-style:italic}
+
+/* ---------- pager ---------------------------------------------------------- */
+.pager{display:flex; gap:9px; align-items:center; flex-wrap:wrap; font-family:var(--font-mono); font-size:11px; color:var(--ink-3)}
+
+/* ---------- pii ------------------------------------------------------------ */
+.pii-note{
+  display:flex; gap:10px; align-items:flex-start; flex-wrap:wrap;
+  border-left:3px solid var(--signal); background:var(--signal-wash);
+  padding:9px 12px; border-radius:0 2px 2px 0; margin-top:12px; font-size:13.5px; color:var(--ink-2);
+}
+.pii-note b{color:var(--ink)}
+.pii-note .spacer{min-width:10px}
+
+/* ---------- raw + wire ----------------------------------------------------- */
+.raw{margin-top:13px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk); min-width:0}
+.raw>summary{
+  cursor:pointer; list-style:none; padding:7px 11px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  display:flex; gap:9px; align-items:center; flex-wrap:wrap;
+}
+.raw>summary::-webkit-details-marker{display:none}
+.raw>summary::before{content:"\25B8"; color:var(--signal); font-size:10px}
+.raw[open]>summary::before{content:"\25BE"}
+.raw>summary:hover{color:var(--ink)}
+.raw pre{margin:0; padding:11px; overflow-x:auto; font-size:11.5px; line-height:1.5; border-top:1px solid var(--rule); color:var(--ink-2); max-height:min(46vh,420px); overflow-y:auto}
+.status{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; font-weight:700; padding:2px 6px; border-radius:2px}
+.status--ok{color:var(--jade); background:var(--jade-wash)}
+.status--err{color:var(--vermilion); background:var(--vermilion-wash)}
+.j-key{color:var(--j-key)} .j-str{color:var(--j-str)} .j-num{color:var(--j-num)}
+.j-bool{color:var(--j-bool)} .j-null{color:var(--j-null)}
+
+.wirewrap{margin-top:clamp(20px,3vw,30px)}
+.wire__box{border:1px solid var(--rule); border-top:0; border-radius:0 0 2px 2px; background:var(--sunk); max-height:240px; overflow-y:auto}
+.wire__row{display:grid; grid-template-columns:62px 52px minmax(0,1fr) 54px 56px; gap:10px; align-items:baseline; padding:5px 12px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11px}
+.wire__row:last-child{border-bottom:0}
+.wire__t{color:var(--ink-3)}
+.wire__m{font-weight:700; color:var(--signal)}
+.wire__p{color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.wire__s{font-weight:700}
+.wire__s.ok{color:var(--jade)} .wire__s.err{color:var(--vermilion)}
+.wire__ms{color:var(--ink-3); text-align:right}
+@media (max-width:640px){
+  .wire__row{grid-template-columns:44px minmax(0,1fr) 52px; row-gap:2px}
+  .wire__t,.wire__ms{display:none}
+}
+
+.skel{color:var(--ink-3); font-family:var(--font-mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase}
+.skel::after{content:" \25CC"; animation:blink 1.1s steps(2) infinite}
+
+.foot{margin:clamp(26px,4vw,44px) 0 48px; padding-top:16px; border-top:1px solid var(--rule); font-size:13px; color:var(--ink-3)}
+.foot p{max-width:88ch}
+.foot p+p{margin-top:9px}
+.foot b{color:var(--ink-2)}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="rail">
+  <div class="wrap rail__in">
+    <div class="rail__brand">
+      <span class="mark">ADMIN</span>
+      <span class="rail__title">Organiser console &middot; events &amp; registrations</span>
+    </div>
+    <div class="cells" role="group" aria-label="Console state">
+      <div class="cell cell--wide"><span class="cell__k">signed in</span><span class="cell__v" id="hdr-who">&mdash;</span></div>
+      <div class="cell"><span class="cell__k">events</span><span class="cell__v" id="hdr-events">&mdash;</span></div>
+      <div class="cell"><span class="cell__k">context</span><span class="cell__v" id="hdr-ctx">&mdash;</span></div>
+    </div>
+    <div class="rail__act">
+      <span class="pulse" id="pulse" data-up="1"><span class="dot"></span><span id="pulse-t">live</span></span>
+      <button class="btn btn--ghost btn--tiny" id="btn-theme" type="button" title="Switch between the paper and ink palettes">Theme</button>
+      <button class="btn btn--ghost btn--tiny" id="btn-out" type="button" hidden>Sign out</button>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+  <noscript>
+    <div class="banners"><div class="banner"><div><span class="banner__t">JavaScript required</span>
+      <p>This console drives the admin API from the browser. Nothing on it is pre-rendered.</p></div></div></div>
+  </noscript>
+
+  <div class="banners">
+    <div class="banner" id="bn-offline" hidden>
+      <div>
+        <span class="banner__t">The API is not answering</span>
+        <p>A request failed at the network layer. This page is served by the API itself, so if the page
+           loaded but a <code>fetch</code> did not, the process is down or restarting. Nothing below is
+           dead &mdash; start the server and press Retry.</p>
+      </div>
+      <span class="banner__act"><button class="btn btn--tiny" id="bn-offline-retry" type="button">Retry</button></span>
+    </div>
+  </div>
+</div>
+
+<main class="wrap" id="main">
+
+  <!-- ============ BOOT ============ -->
+  <section id="view-boot" aria-live="polite">
+    <div class="gate">
+      <div class="gate__card">
+        <p class="skel">asking the server who you are</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ LOGIN ============ -->
+  <section id="view-login" hidden>
+    <div class="gate">
+      <div class="gate__card">
+        <div class="gate__mark">organiser sign-in</div>
+        <div class="card">
+          <div class="card__body">
+            <h1 tabindex="-1" id="login-h">Sign in</h1>
+            <p class="gate__sub">One operator account, configured on the server. This console creates
+              events, edits them, and reads who has registered.</p>
+
+            <div id="login-flash" style="margin-top:14px"></div>
+
+            <form class="form" id="login-form" style="margin-top:14px" autocomplete="on" novalidate>
+              <div class="field" id="f-email">
+                <label for="in-email">Email</label>
+                <input class="in" id="in-email" name="email" type="email" autocomplete="username"
+                       spellcheck="false" autocapitalize="off" autocorrect="off" required
+                       placeholder="you@example.com">
+              </div>
+              <div class="field" id="f-pw">
+                <label for="in-pw">Password</label>
+                <input class="in" id="in-pw" name="password" type="password" autocomplete="current-password" required>
+              </div>
+              <div>
+                <button class="btn btn--go btn--big" id="btn-login" type="submit" style="width:100%">Sign in</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <p class="help" style="margin-top:12px">
+          There is no password reset and no second account &mdash; the credentials come from the
+          server&rsquo;s environment. If you are locked out, whoever runs the deployment re-runs
+          <code class="mono">npm run admin:hash</code> and restarts it.
+        </p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ ADMIN SURFACE OFF (503) ============ -->
+  <section id="view-disabled" hidden>
+    <div class="gate">
+      <div class="gate__card" style="width:min(660px,100%)">
+        <div class="gate__mark">admin surface disabled</div>
+        <div class="card">
+          <div class="card__hd">
+            <span class="label" style="color:var(--vermilion)">HTTP 503 &middot; ADMIN_DISABLED</span>
+          </div>
+          <div class="card__body">
+            <h1 tabindex="-1" id="disabled-h">This deployment has no admin credentials</h1>
+            <p class="prose" style="margin-top:9px" id="disabled-msg">
+              Every route under <code class="mono">/admin/api</code> is answering 503. The surface is
+              switched <strong>off</strong> rather than left open, so there is nothing to sign in to.
+            </p>
+            <p class="prose" style="margin-top:9px">Set all three of these in the server&rsquo;s environment and restart it:</p>
+            <div style="margin-top:11px">
+              <div class="kv"><span class="kv__k">1</span><span class="kv__v"><code class="val">ADMIN_EMAIL</code><span class="help">the one operator account</span></span></div>
+              <div class="kv"><span class="kv__k">2</span><span class="kv__v"><code class="val">ADMIN_PASSWORD_HASH</code><span class="help">a scrypt hash from <code class="mono">npm run admin:hash</code> &mdash; never the password itself</span></span></div>
+              <div class="kv"><span class="kv__k">3</span><span class="kv__v"><code class="val">SESSION_SECRET</code><span class="help">signs the session cookie</span></span></div>
+            </div>
+            <p class="prose" style="margin-top:13px">
+              Half-configured refuses to boot, so the server logging this is telling you that
+              <em>none</em> of them are set, not that one is wrong. A login form is deliberately not
+              shown here: it could not work.
+            </p>
+          </div>
+          <div class="card__ft">
+            <span class="label">after restarting</span>
+            <span class="spacer"></span>
+            <button class="btn btn--tiny" id="btn-disabled-retry" type="button">Check again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EVENTS LIST ============ -->
+  <section id="view-events" hidden>
+    <div class="head">
+      <div>
+        <h1 class="head__t" tabindex="-1" id="events-h">Events</h1>
+        <p class="head__s">Every event on this deployment, drafts included. The number in the left
+          column is the event id &mdash; which is also the <b>NFTokenTaxon</b> every badge for that
+          event is minted under.</p>
+      </div>
+      <div class="head__act">
+        <button class="btn btn--tiny" id="btn-events-refresh" type="button">Refresh</button>
+        <a class="btn btn--go" id="btn-new" href="#/new">New event</a>
+      </div>
+    </div>
+
+    <div id="events-flash"></div>
+
+    <div class="card">
+      <div class="card__hd">
+        <span class="card__n">1</span>
+        <span class="label">Registry</span>
+        <span class="label" id="events-count" style="margin-left:auto">&mdash;</span>
+      </div>
+      <div class="tablebox">
+        <table class="t-events">
+          <thead>
+            <tr>
+              <th>event id / taxon</th>
+              <th>name</th>
+              <th>status</th>
+              <th>date</th>
+              <th>venue</th>
+              <th>registered</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="events-rows"></tbody>
+        </table>
+      </div>
+      <div id="events-empty" class="empty" hidden></div>
+      <div class="card__ft">
+        <span class="label" id="events-page">&mdash;</span>
+        <span class="spacer"></span>
+        <span class="help">Registration counts come from <code class="mono">GET /admin/api/events/&#123;id&#125;/registrations</code>, one call per row.</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CREATE / EDIT ============ -->
+  <section id="view-form" hidden>
+    <nav class="crumb" aria-label="Breadcrumb">
+      <a href="#/">Events</a><span aria-hidden="true">/</span><span aria-current="page" id="form-crumb">New event</span>
+    </nav>
+
+    <div class="head">
+      <div>
+        <h1 class="head__t" tabindex="-1" id="form-h">New event</h1>
+        <p class="head__s" id="form-sub">An event is a row in the database and a number on the ledger.
+          Pick the number carefully: everything else here can be edited later.</p>
+      </div>
+    </div>
+
+    <div id="form-flash"></div>
+
+    <div class="card" style="max-width:900px">
+      <div class="card__hd">
+        <span class="card__n">1</span>
+        <span class="label" id="form-mode">Create</span>
+        <span class="label" id="form-endpoint" style="margin-left:auto">POST /admin/api/events</span>
+      </div>
+      <div class="card__body">
+        <form class="form" id="event-form" novalidate>
+
+          <div class="taxon">
+            <div class="taxon__hd">
+              <span class="label">Event id</span>
+              <span class="label" style="color:var(--ink-3)">= NFTokenTaxon</span>
+            </div>
+
+            <div class="field" id="f-eventId">
+              <label class="sr" for="in-eventId">Event id</label>
+              <input class="in" id="in-eventId" name="eventId" type="text" inputmode="numeric"
+                     spellcheck="false" autocomplete="off" placeholder="700002">
+              <div class="taxon__fixed" id="eventId-fixed" hidden>
+                <span id="eventId-fixed-v">&mdash;</span>
+                <span class="taxon__lock">permanent</span>
+              </div>
+              <div class="bad" id="e-eventId" hidden></div>
+            </div>
+
+            <p style="margin-top:10px">
+              This integer <b>is</b> the <b>NFTokenTaxon</b> stamped into every badge minted for this
+              event. It is written by <code class="mono">NFTokenMint</code> into the token itself and
+              <b>cannot be changed afterwards</b> &mdash; not by editing this row, not by anything.
+            </p>
+            <p>
+              <b>Do not reuse a number.</b> Two events sharing a taxon become one on-chain collection:
+              <code class="mono">nfts_by_issuer?taxon=N</code> returns both events&rsquo; badges mixed
+              together, and verification cannot tell them apart. The server refuses a duplicate with a
+              409 for exactly this reason.
+            </p>
+            <p id="taxon-range">Any whole number from 0 to 2147483647. Pick one you can read out loud &mdash;
+              it appears in the public URL and in every roster query.</p>
+          </div>
+
+          <div class="field" id="f-name">
+            <label for="in-name">Name <span class="req">*</span></label>
+            <input class="in" id="in-name" name="name" type="text" maxlength="200" required
+                   placeholder="Feooh 2026">
+            <div class="bad" id="e-name" hidden></div>
+          </div>
+
+          <div class="field" id="f-description">
+            <label for="in-description">Description</label>
+            <textarea class="in" id="in-description" name="description" maxlength="2000"
+                      placeholder="What the badge is for. Shown on the public registration page."></textarea>
+            <div class="bad" id="e-description" hidden></div>
+          </div>
+
+          <div class="row2">
+            <div class="field" id="f-eventDate">
+              <label for="in-eventDate">Event date</label>
+              <input class="in" id="in-eventDate" name="eventDate" type="date">
+              <p class="help">The date of the event itself. The ledger never sees it.</p>
+              <div class="bad" id="e-eventDate" hidden></div>
+            </div>
+            <div class="field" id="f-venue">
+              <label for="in-venue">Venue</label>
+              <input class="in" id="in-venue" name="venue" type="text" maxlength="200" placeholder="Toronto">
+              <div class="bad" id="e-venue" hidden></div>
+            </div>
+          </div>
+
+          <div class="field" id="f-metadataUri">
+            <label for="in-metadataUri">Metadata URI</label>
+            <input class="in" id="in-metadataUri" name="metadataUri" type="text" maxlength="256"
+                   spellcheck="false" placeholder="ipfs://&hellip;">
+            <p class="help">Event-wide fallback badge artwork, used when per-attendee art is
+              unavailable. <b>Editable only until the first badge is minted</b> &mdash;
+              <code class="mono">NFTokenMint.URI</code> is written into the token and is immutable, so
+              changing it later would leave minted badges pointing at the old artwork.</p>
+            <div class="bad" id="e-metadataUri" hidden></div>
+          </div>
+
+          <div class="field" id="f-status">
+            <label for="in-status">Status</label>
+            <select class="in" id="in-status" name="status">
+              <option value="draft">draft &mdash; invisible to the public</option>
+              <option value="open">open &mdash; taking registrations</option>
+              <option value="live">live &mdash; happening now</option>
+              <option value="closed">closed &mdash; no new registrations</option>
+            </select>
+            <p class="help" id="status-help"></p>
+            <div class="bad" id="e-status" hidden></div>
+          </div>
+
+          <div style="display:flex; gap:9px; flex-wrap:wrap; align-items:center; padding-top:4px">
+            <button class="btn btn--go btn--big" id="btn-save" type="submit">Create event</button>
+            <a class="btn btn--ghost" href="#/" id="btn-cancel">Cancel</a>
+            <span class="spacer"></span>
+            <span class="label" id="form-hint"></span>
+          </div>
+        </form>
+        <div id="form-err"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ EVENT DETAIL ============ -->
+  <section id="view-detail" hidden>
+    <nav class="crumb" aria-label="Breadcrumb">
+      <a href="#/">Events</a><span aria-hidden="true">/</span><span aria-current="page" id="detail-crumb">&mdash;</span>
+    </nav>
+
+    <div class="head">
+      <div style="min-width:0">
+        <h1 class="head__t" tabindex="-1" id="detail-h">&mdash;</h1>
+        <div style="display:flex; gap:9px; align-items:center; flex-wrap:wrap; margin-top:8px">
+          <span id="detail-status"></span>
+          <span class="taxonno" id="detail-taxon">&mdash;</span>
+          <span class="label">taxon</span>
+        </div>
+      </div>
+      <div class="head__act">
+        <button class="btn btn--tiny" id="btn-detail-refresh" type="button">Refresh</button>
+        <a class="btn" id="btn-edit" href="#/">Edit event</a>
+      </div>
+    </div>
+
+    <div id="detail-flash"></div>
+    <div id="detail-missing" hidden></div>
+
+    <div id="detail-body">
+      <div class="card" style="margin-bottom:clamp(13px,1.8vw,20px)">
+        <div class="card__body" style="display:grid; gap:clamp(13px,1.8vw,18px)">
+          <div class="share">
+            <div class="share__hd">
+              <span class="label" style="color:var(--signal)">Public registration page</span>
+              <span class="help" style="margin-left:auto">give this to attendees</span>
+            </div>
+            <div class="share__url">
+              <code class="mono" id="share-url">&mdash;</code>
+              <span id="share-copy"></span>
+              <a class="link" id="share-open" href="#" target="_blank" rel="noopener noreferrer">open</a>
+            </div>
+            <p class="share__warn" id="share-warn" hidden></p>
+          </div>
+
+          <div id="detail-kv"></div>
+        </div>
+      </div>
+
+      <div class="ledger">
+        <section class="book book--db" aria-labelledby="db-t">
+          <div class="book__hd">
+            <span class="label" id="db-t">The database</span>
+            <span class="book__note">who said they are coming</span>
+          </div>
+          <div class="counts">
+            <div class="count"><div class="count__n" id="c-total">&mdash;</div><div class="count__k">registered</div></div>
+            <div class="count count--good"><div class="count__n" id="c-checked">&mdash;</div><div class="count__k">checked in</div></div>
+            <div class="count"><div class="count__n" id="c-attend">&mdash;</div><div class="count__k">attendance rows</div></div>
+          </div>
+          <div class="book__ft">
+            <span><b>Registered</b> is a row somebody created on the public page. <b>Attendance rows</b>
+              are signed claims this server verified against the chain and indexed.</span>
+          </div>
+        </section>
+
+        <section class="book book--chain" aria-labelledby="chain-t">
+          <div class="book__hd">
+            <span class="label" id="chain-t">The chain</span>
+            <span class="book__note">what actually exists on XRPL</span>
+          </div>
+          <div class="counts">
+            <div class="count"><div class="count__n" id="c-minted">&mdash;</div><div class="count__k">minted</div></div>
+            <div class="count count--good"><div class="count__n" id="c-claimed">&mdash;</div><div class="count__k">claimed</div></div>
+            <div class="count count--warn"><div class="count__n" id="c-burned">&mdash;</div><div class="count__k">burned</div></div>
+            <div class="count"><div class="count__n" id="c-unknown">&mdash;</div><div class="count__k">owner unknown</div></div>
+          </div>
+          <div class="book__ft">
+            <span id="chain-ft"><b>Do not add these to the registration count.</b> A registration is not
+              a badge: somebody can register and never claim, and a badge can exist for somebody who
+              never registered.</span>
+            <span class="spacer"></span>
+            <button class="btn btn--tiny" id="btn-chain" type="button">Re-read the ledger</button>
+          </div>
+        </section>
+      </div>
+
+      <div class="card" style="margin-top:clamp(13px,1.8vw,20px)">
+        <div class="card__hd">
+          <span class="card__n">2</span>
+          <span class="label">Registrations</span>
+          <span class="label" id="regs-src" style="margin-left:auto">GET /admin/api/events/&hellip;/registrations</span>
+        </div>
+        <div class="tablebox">
+          <table class="t-regs">
+            <thead>
+              <tr>
+                <th>name</th>
+                <th>address</th>
+                <th>proof</th>
+                <th>email <span class="pii">&middot; personal data</span></th>
+                <th>registered</th>
+                <th>checked in</th>
+              </tr>
+            </thead>
+            <tbody id="regs-rows"></tbody>
+          </table>
+        </div>
+        <div id="regs-empty" class="empty" hidden></div>
+        <div class="card__ft">
+          <span class="pager" id="regs-pager">&mdash;</span>
+          <span class="spacer"></span>
+          <button class="btn btn--tiny" id="btn-prev" type="button" disabled>Prev</button>
+          <button class="btn btn--tiny" id="btn-next" type="button" disabled>Next</button>
+          <button class="btn btn--tiny" id="btn-csv" type="button">Export CSV</button>
+          <button class="btn btn--tiny btn--stop" id="btn-csv-pii" type="button">Export CSV with emails</button>
+        </div>
+        <div class="card__body" style="border-top:1px solid var(--rule); padding-top:0">
+          <div class="pii-note">
+            <b>Email is the only personal data on this page.</b>
+            <span>It is shown here because the organiser needs it, and it is never put in a URL. The
+              plain <b>Export CSV</b> omits it; <b>Export CSV with emails</b> writes a file containing
+              every attendee&rsquo;s address book entry, which then lives outside this console with no
+              access control at all.</span>
+          </div>
+          <div id="csv-out"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="wirewrap" id="wirewrap" hidden>
+    <div class="card__hd" style="border:1px solid var(--rule); border-bottom:0; border-radius:2px 2px 0 0">
+      <span class="label">Request log</span>
+      <span class="label" style="margin-left:auto; color:var(--ink-3)">every call this page made, newest first &middot; method, path and status only</span>
+    </div>
+    <div class="wire__box" id="wire-box">
+      <div class="wire__row"><span class="wire__t">&mdash;</span><span class="wire__m"></span><span class="wire__p" style="color:var(--ink-3)">no requests yet</span><span class="wire__s"></span><span class="wire__ms"></span></div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <p>
+      <b>No seed, secret or private key is ever requested by, displayed in, or stored by this page.</b>
+      Your password is sent once to <code class="mono">POST /admin/api/login</code> and is never stored,
+      echoed or logged &mdash; not by this page, and not by the server, which holds only a scrypt hash.
+    </p>
+    <p>
+      <b>A draft event is invisible to the public.</b> Its registration page 404s and it is absent from
+      every public list, deliberately indistinguishable from an id that never existed. Set it to
+      <em>open</em> when you want people to be able to register.
+    </p>
+    <p>
+      <b>Attendance is an event, not a state.</b> A badge that is later burned still verifies, because
+      the attendee&rsquo;s <code class="mono">NFTokenAcceptOffer</code> hash <em>is</em> the attendance
+      record. That is why the burned count sits next to the minted count rather than being subtracted
+      from it.
+    </p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  /* =====================================================================
+     What this tab knows.
+     ===================================================================== */
+  var me = null;               // { email } once signed in
+  var events = [];             // last GET /admin/api/events page
+  var eventsMeta = { limit: 50, offset: 0 };
+  var current = null;          // event on the detail screen
+  var regs = { rows: [], total: 0, checkedIn: 0, limit: 50, offset: 0 };
+  var offline = false;
+  var countsGen = 0;           // cancels in-flight per-row count fetches
+  var detailGen = 0;           // cancels in-flight detail fetches
+  var routing = false;
+  var booted = false;
+  var savingForm = false;
+  var THEME_KEY = "poap-admin:theme";
+  var CSRF_COOKIE = "poap_csrf";
+  var CSRF_HEADER = "x-csrf-token";
+  var REG_PAGE = 50;
+  var CSV_PAGE = 200;          // the registrations endpoint caps limit at 200
+  var CSV_MAX_CALLS = 10;
+
+  var STATUS_HELP = {
+    draft: "Invisible to the public. /register/{id} returns 404 and the event is absent from every public list. This is the scratch space — nobody can register.",
+    open: "Public. The registration page works and attendees can sign up.",
+    live: "Public, and happening now. Registration still works; this is the state the volunteer desk expects.",
+    closed: "Public to anyone holding a link or a badge, but no longer advertised. Registration is over."
+  };
+
+  /* =====================================================================
+     Tiny DOM helpers
+     ===================================================================== */
+  function $(id) { return document.getElementById(id); }
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function setText(id, s) { var n = $(id); if (n) n.textContent = s; }
+  function show(n, on) { if (n) n.hidden = !on; }
+  function esc(s) {
+    return String(s).replace(/[&<>]/g, function (c) {
+      return c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;";
+    });
+  }
+  /** Escape first, then colourise. The inserted text is already escaped. */
+  function jsonHtml(value) {
+    var raw;
+    try { raw = JSON.stringify(value, null, 2); } catch (e) { raw = String(value); }
+    if (raw === undefined) raw = "(empty body)";
+    return esc(raw).replace(
+      /("(?:\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(?:true|false)\b|\bnull\b|-?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)/g,
+      function (m) {
+        var cls = "j-num";
+        if (m.charAt(0) === '"') cls = /:\s*$/.test(m) ? "j-key" : "j-str";
+        else if (m === "true" || m === "false") cls = "j-bool";
+        else if (m === "null") cls = "j-null";
+        return '<span class="' + cls + '">' + m + "</span>";
+      }
+    );
+  }
+  function short(s, head, tail) {
+    s = String(s == null ? "" : s);
+    head = head || 10; tail = tail || 6;
+    return s.length > head + tail + 2 ? s.slice(0, head) + "…" + s.slice(-tail) : s;
+  }
+  function copyBtn(text, labelWhenDone) {
+    var b = node("button", "copy", "copy");
+    b.type = "button";
+    b.addEventListener("click", function () {
+      var done = function () {
+        b.textContent = labelWhenDone || "copied";
+        setTimeout(function () { b.textContent = "copy"; }, 1200);
+      };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { b.textContent = "failed"; });
+      } else { b.textContent = "n/a"; }
+    });
+    return b;
+  }
+  /** ISO -> "2026-09-15 19:12". Never throws on junk; shows it verbatim instead. */
+  function fmtStamp(iso) {
+    if (!iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso);
+    function p(n) { return (n < 10 ? "0" : "") + n; }
+    return d.getFullYear() + "-" + p(d.getMonth() + 1) + "-" + p(d.getDate()) +
+      " " + p(d.getHours()) + ":" + p(d.getMinutes());
+  }
+  function fmtDay(s) {
+    if (!s) return "";
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+    return m ? m[0] : String(s);
+  }
+  function isIsoDay(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")); }
+
+  /* =====================================================================
+     Request log. Method, path and status — never a body, so a password or
+     an attendee's email cannot end up in it.
+     ===================================================================== */
+  var wireCount = 0;
+  function logWire(method, path, status, ms) {
+    var box = $("wire-box");
+    if (!box) return;
+    if (wireCount === 0) clear(box);
+    wireCount++;
+    var row = node("div", "wire__row");
+    var d = new Date();
+    var t = ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2) + ":" + ("0" + d.getSeconds()).slice(-2);
+    row.appendChild(node("span", "wire__t", t));
+    row.appendChild(node("span", "wire__m", method));
+    var p = node("span", "wire__p", path);
+    p.title = path;
+    row.appendChild(p);
+    row.appendChild(node("span", "wire__s " + (status >= 200 && status < 300 ? "ok" : "err"), status === 0 ? "NET" : String(status)));
+    row.appendChild(node("span", "wire__ms", Math.round(ms) + "ms"));
+    box.insertBefore(row, box.firstChild);
+    while (box.childNodes.length > 80) box.removeChild(box.lastChild);
+  }
+  function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
+
+  /* =====================================================================
+     THE FETCH WRAPPER. Everything on this page goes through api().
+
+     The server double-submits CSRF: it sets a `poap_csrf` cookie that JS is
+     deliberately allowed to read, and every non-GET under /admin/api must
+     echo it back in an `x-csrf-token` header or the request is 403 FORBIDDEN.
+     There is exactly ONE place below that attaches it, because a hand-rolled
+     fetch that forgets the header is the bug this page would otherwise ship.
+
+     The cookie is re-read immediately before every request rather than cached:
+     it rotates with the session, and a stale copy 403s.
+     ===================================================================== */
+  function readCookie(name) {
+    var all = String(document.cookie || "").split(";");
+    for (var i = 0; i < all.length; i++) {
+      var kv = all[i].trim();
+      var eq = kv.indexOf("=");
+      if (eq < 0) continue;
+      if (kv.slice(0, eq) !== name) continue;
+      var raw = kv.slice(eq + 1);
+      try { return decodeURIComponent(raw); } catch (e) { return raw; }
+    }
+    return "";
+  }
+
+  function isSafe(method) { return method === "GET" || method === "HEAD"; }
+
+  /** One fetch. Attaches the CSRF header when the method needs it. Never throws. */
+  function send(method, path, body) {
+    var t0 = now();
+    var headers = { accept: "application/json" };
+    var init = { method: method, headers: headers, credentials: "same-origin" };
+
+    if (!isSafe(method)) {
+      // Read the cookie NOW, not at page load: it rotates with the session.
+      headers[CSRF_HEADER] = readCookie(CSRF_COOKIE);
+    }
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+        logWire(method, path, res.status, now() - t0);
+        setOffline(false);
+        return {
+          network: true, ok: res.ok, status: res.status, statusText: res.statusText || "",
+          method: method, path: path, json: json, text: text,
+          retryAfter: res.headers ? res.headers.get("retry-after") : null
+        };
+      });
+    }, function (err) {
+      logWire(method, path, 0, now() - t0);
+      setOffline(true);
+      return {
+        network: false, ok: false, status: 0, statusText: "network error",
+        method: method, path: path, json: null, retryAfter: null,
+        text: String((err && err.message) || err)
+      };
+    });
+  }
+
+  function codeOf(r) {
+    var e = r && r.json && r.json.error;
+    return e && typeof e === "object" && e.code ? String(e.code) : "";
+  }
+  function messageOf(r) {
+    var e = r && r.json && r.json.error;
+    if (e && typeof e === "object" && e.message) return String(e.message);
+    if (!r.network) return "The request never reached a server: " + r.text;
+    return (r.text || r.statusText || "Request failed").slice(0, 500);
+  }
+  function issuesOf(r) {
+    var d = r && r.json && r.json.error && r.json.error.details;
+    return d && Object.prototype.toString.call(d.issues) === "[object Array]" ? d.issues : [];
+  }
+
+  /**
+   * The wrapper every caller uses.
+   *
+   *   403 + FORBIDDEN  -> the CSRF cookie is stale or missing. GET
+   *                       /admin/api/me re-issues it (it is derived from the
+   *                       session id, so re-sending is free), then the request
+   *                       is retried EXACTLY ONCE. A second 403 is surfaced.
+   *   401              -> the session is gone. Drop to the login screen saying
+   *                       so, rather than showing a generic failure. Opt out
+   *                       with { noAuth: true } — the login POST's own 401
+   *                       means "wrong password", not "expired".
+   *   503 ADMIN_DISABLED -> the surface is not configured. Show the operator
+   *                       screen; there is nothing to sign in to.
+   */
+  function api(method, path, body, opts) {
+    opts = opts || {};
+    return send(method, path, body).then(function (r) {
+      if (r.status === 403 && codeOf(r) === "FORBIDDEN" && !isSafe(method) && !opts.retried) {
+        return send("GET", "/admin/api/me").then(function (mr) {
+          if (mr.status === 401) { expire(); return r; }
+          if (!mr.ok) return r;
+          var again = {};
+          for (var k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) again[k] = opts[k];
+          again.retried = true;
+          return api(method, path, body, again);
+        });
+      }
+      if (r.status === 401 && !opts.noAuth) { expire(); return r; }
+      if (r.status === 503 && codeOf(r) === "ADMIN_DISABLED") { toDisabled(r); return r; }
+      return r;
+    });
+  }
+
+  function setOffline(v) {
+    if (offline === v) return;
+    offline = v;
+    show($("bn-offline"), v);
+    var p = $("pulse");
+    p.setAttribute("data-up", v ? "0" : "1");
+    setText("pulse-t", v ? "no reply" : "live");
+  }
+
+  /* =====================================================================
+     Flash receipts. Every mutation says what happened, in the server's own
+     words where the server had something to say.
+     ===================================================================== */
+  function flash(hostId, tone, code, message, sub) {
+    var host = $(hostId);
+    if (!host) return;
+    clear(host);
+    var f = node("div", "flash" + (tone === "bad" ? " flash--bad" : tone === "warn" ? " flash--warn" : ""));
+    f.appendChild(node("span", "flash__c", code));
+    var m = node("div", "flash__m");
+    m.appendChild(document.createTextNode(message));
+    if (sub) m.appendChild(node("em", null, sub));
+    f.appendChild(m);
+    host.appendChild(f);
+  }
+  function clearFlash(hostId) { var h = $(hostId); if (h) clear(h); }
+
+  function errBox(r, hint, warn) {
+    var b = node("div", "errbox" + (warn ? " errbox--warn" : ""));
+    b.appendChild(node("div", "errbox__code", (codeOf(r) || ("HTTP_" + r.status)) + (r.network ? "  ·  HTTP " + r.status : "  ·  no response")));
+    b.appendChild(node("div", "errbox__msg", messageOf(r)));
+    if (hint) b.appendChild(node("div", "errbox__hint", hint));
+    return b;
+  }
+  function rawPanel(title, r) {
+    var d = node("details", "raw");
+    var s = node("summary");
+    s.appendChild(node("span", null, title));
+    s.appendChild(node("span", "status " + (r && r.ok ? "status--ok" : "status--err"),
+      r ? (r.network ? r.status + " " + (r.statusText || "") : "no response") : ""));
+    d.appendChild(s);
+    var pre = node("pre");
+    pre.innerHTML = jsonHtml(r && r.json !== null ? r.json : (r ? r.text : null));
+    d.appendChild(pre);
+    return d;
+  }
+
+  /* =====================================================================
+     Views
+     ===================================================================== */
+  var VIEWS = ["view-boot", "view-login", "view-disabled", "view-events", "view-form", "view-detail"];
+  function showView(id, focusId) {
+    for (var i = 0; i < VIEWS.length; i++) show($(VIEWS[i]), VIEWS[i] === id);
+    show($("wirewrap"), id !== "view-boot" && id !== "view-disabled");
+    if (focusId) { var f = $(focusId); if (f) f.focus(); }
+  }
+
+  function setSignedIn(email) {
+    me = email ? { email: email } : null;
+    setText("hdr-who", email || "—");
+    $("hdr-who").title = email || "";
+    show($("btn-out"), Boolean(email));
+  }
+
+  function toDisabled(r) {
+    setSignedIn(null);
+    setText("hdr-events", "—");
+    setText("hdr-ctx", "—");
+    var msg = r ? messageOf(r) : "";
+    if (msg) setText("disabled-msg", msg);
+    showView("view-disabled", "disabled-h");
+  }
+
+  /** A 401 anywhere except the login POST means the session is over. */
+  function expire() {
+    if (!me) return;                 // already on the login screen
+    setSignedIn(null);
+    setText("hdr-events", "—");
+    setText("hdr-ctx", "—");
+    showView("view-login", "login-h");
+    flash("login-flash", "warn", "session", "Your session expired. Sign in again to carry on.",
+      "Nothing you had open was lost — the events are on the server.");
+    if ($("in-pw")) $("in-pw").value = "";
+  }
+
+  /* =====================================================================
+     LOGIN
+     ===================================================================== */
+  function wireLogin() {
+    $("login-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var email = $("in-email").value.trim();
+      var password = $("in-pw").value;
+      var btn = $("btn-login");
+
+      $("f-email").removeAttribute("data-bad");
+      $("f-pw").removeAttribute("data-bad");
+
+      if (!email || !password) {
+        if (!email) $("f-email").setAttribute("data-bad", "1");
+        if (!password) $("f-pw").setAttribute("data-bad", "1");
+        flash("login-flash", "bad", "check", "Both fields are required.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      clearFlash("login-flash");
+
+      // noAuth: a 401 here means "wrong credentials", never "session expired".
+      api("POST", "/admin/api/login", { email: email, password: password }, { noAuth: true })
+        .then(function (r) {
+          btn.disabled = false;
+          btn.removeAttribute("aria-busy");
+
+          if (r.ok && r.json && r.json.email) {
+            // The password never survives the submit — not in a variable this
+            // page keeps, not in the field.
+            $("in-pw").value = "";
+            setSignedIn(r.json.email);
+            clearFlash("login-flash");
+            route(true);
+            return;
+          }
+
+          if (r.status === 401) {
+            // One message for both halves. Which of the two was wrong is
+            // exactly what an attacker wants to learn, so it is not said.
+            $("f-email").setAttribute("data-bad", "1");
+            $("f-pw").setAttribute("data-bad", "1");
+            $("in-pw").value = "";
+            $("in-pw").focus();
+            flash("login-flash", "bad", "401", "That email or password is incorrect.");
+            return;
+          }
+
+          if (r.status === 429) {
+            var wait = Number(r.retryAfter);
+            var when = isFinite(wait) && wait > 0
+              ? "Try again in about " + Math.ceil(wait / 60) + " minute" + (wait > 90 ? "s" : "") + "."
+              : "Wait a few minutes and try again.";
+            flash("login-flash", "warn", "429",
+              "Too many sign-in attempts from this address. " + when,
+              "Sign-in is limited to 5 attempts per 5 minutes per IP. This is the rate limit, not a wrong password — the credentials you typed were never checked.");
+            return;
+          }
+
+          if (r.status === 503 && codeOf(r) === "ADMIN_DISABLED") return; // handled by api()
+
+          flash("login-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r),
+            r.network ? null : "The API did not answer at all. Is the server running?");
+        });
+    });
+  }
+
+  /* =====================================================================
+     EVENTS LIST
+     ===================================================================== */
+  function statusPill(status) {
+    var p = node("span", "pill pill--" + status, status);
+    return p;
+  }
+
+  function loadEvents(quiet) {
+    if (!quiet) {
+      clear($("events-rows"));
+      var tr = node("tr");
+      var td = node("td");
+      td.colSpan = 7;
+      td.appendChild(node("span", "skel", "reading the registry"));
+      tr.appendChild(td);
+      $("events-rows").appendChild(tr);
+      show($("events-empty"), false);
+    }
+    return api("GET", "/admin/api/events?limit=200&offset=0").then(function (r) {
+      if (!r.ok) {
+        clear($("events-rows"));
+        show($("events-empty"), true);
+        clear($("events-empty"));
+        $("events-empty").appendChild(errBox(r, "Nothing was changed. Press Refresh to try the same call again."));
+        setText("events-count", "—");
+        return r;
+      }
+      events = (r.json && r.json.events) || [];
+      eventsMeta.limit = (r.json && r.json.limit) || 200;
+      eventsMeta.offset = (r.json && r.json.offset) || 0;
+      paintEvents();
+      return r;
+    });
+  }
+
+  function paintEvents() {
+    var body = $("events-rows");
+    clear(body);
+
+    var drafts = 0;
+    for (var i = 0; i < events.length; i++) if (events[i].status === "draft") drafts++;
+
+    setText("hdr-events", String(events.length));
+    setText("events-count", events.length === 1 ? "1 event" : events.length + " events");
+    setText("events-page",
+      events.length + (events.length === 1 ? " event" : " events") +
+      (drafts ? " · " + drafts + " draft" + (drafts === 1 ? "" : "s") + " not visible to the public" : ""));
+
+    if (!events.length) {
+      show($("events-empty"), true);
+      var e = $("events-empty");
+      clear(e);
+      e.appendChild(node("span", "label", "nothing here yet"));
+      var p1 = node("p", null, "");
+      p1.appendChild(document.createTextNode("There are no events on this deployment. Create one: pick an "));
+      p1.appendChild(node("b", null, "event id"));
+      p1.appendChild(document.createTextNode(" — any whole number you have not used before — and give it a name. That number becomes the NFTokenTaxon of every badge you ever mint for it, so it is worth choosing deliberately."));
+      e.appendChild(p1);
+      var p2 = node("p", null, "");
+      p2.appendChild(document.createTextNode("It starts as a "));
+      p2.appendChild(node("b", null, "draft"));
+      p2.appendChild(document.createTextNode(", which is invisible to the public. Set it to open when you want people to register."));
+      e.appendChild(p2);
+      var go = node("a", "btn btn--go", "New event");
+      go.href = "#/new";
+      go.style.marginTop = "12px";
+      e.appendChild(go);
+      return;
+    }
+
+    show($("events-empty"), false);
+
+    for (var j = 0; j < events.length; j++) {
+      body.appendChild(eventRow(events[j]));
+    }
+    fetchCounts();
+  }
+
+  function eventRow(ev) {
+    var tr = node("tr");
+    if (ev.status === "draft") tr.setAttribute("data-draft", "1");
+
+    var tdId = node("td", "taxoncell");
+    tdId.appendChild(node("span", "taxonno", String(ev.eventId)));
+    tdId.appendChild(node("span", "taxonk", "nftokentaxon"));
+    tr.appendChild(tdId);
+
+    var tdName = node("td", "td-name");
+    var a = node("a", null, ev.name);
+    a.href = "#/e/" + encodeURIComponent(ev.eventId);
+    tdName.appendChild(a);
+    if (ev.status === "draft") {
+      tdName.appendChild(node("span", "draftsay",
+        "Draft — invisible to the public. /register/" + ev.eventId + " returns 404 and nobody can register."));
+    }
+    tr.appendChild(tdName);
+
+    var tdSt = node("td");
+    tdSt.appendChild(statusPill(ev.status));
+    if (ev.status === "draft") {
+      tdSt.appendChild(document.createTextNode(" "));
+      tdSt.appendChild(node("span", "tag-hidden", "not public"));
+    }
+    tr.appendChild(tdSt);
+
+    tr.appendChild(node("td", ev.eventDate ? "" : "td-dim", ev.eventDate ? fmtDay(ev.eventDate) : "—"));
+    tr.appendChild(node("td", ev.venue ? "" : "td-dim", ev.venue || "—"));
+
+    var tdCount = node("td", "td-num");
+    tdCount.id = "count-" + ev.eventId;
+    tdCount.appendChild(node("span", "skel", ""));
+    tr.appendChild(tdCount);
+
+    var tdAct = node("td", "acts-cell");
+    var open = node("a", "btn btn--tiny", "Open");
+    open.href = "#/e/" + encodeURIComponent(ev.eventId);
+    tdAct.appendChild(open);
+    tdAct.appendChild(document.createTextNode(" "));
+    var edit = node("a", "btn btn--tiny btn--ghost", "Edit");
+    edit.href = "#/e/" + encodeURIComponent(ev.eventId) + "/edit";
+    tdAct.appendChild(edit);
+    tr.appendChild(tdAct);
+
+    return tr;
+  }
+
+  /**
+   * One registrations call per row for the count, four at a time. Deliberately
+   * not fanned out all at once: the API is globally rate limited at 120/min and
+   * a fifty-row registry would spend a third of that budget in one burst.
+   */
+  function fetchCounts() {
+    countsGen++;
+    var gen = countsGen;
+    var queue = events.slice();
+    var running = 0;
+
+    function pump() {
+      while (running < 4 && queue.length) {
+        var ev = queue.shift();
+        running++;
+        one(ev);
+      }
+    }
+    function one(ev) {
+      api("GET", "/admin/api/events/" + encodeURIComponent(ev.eventId) + "/registrations?limit=1&offset=0")
+        .then(function (r) {
+          if (gen !== countsGen) return;
+          var cell = $("count-" + ev.eventId);
+          if (cell) {
+            clear(cell);
+            if (r.ok && r.json) {
+              cell.appendChild(document.createTextNode(String(r.json.total)));
+              if (r.json.checkedIn) {
+                var c = node("span", null, "  " + r.json.checkedIn + " in");
+                c.style.color = "var(--jade)";
+                c.style.fontSize = "11px";
+                cell.appendChild(c);
+              }
+            } else {
+              var q = node("span", "td-dim", "?");
+              q.title = messageOf(r);
+              cell.appendChild(q);
+            }
+          }
+        })
+        .then(function () { running--; if (gen === countsGen) pump(); });
+    }
+    pump();
+  }
+
+  /* =====================================================================
+     CREATE / EDIT
+     ===================================================================== */
+  var formMode = "create";   // "create" | "edit"
+  var formEvent = null;
+
+  var FIELDS = ["eventId", "name", "description", "eventDate", "venue", "metadataUri", "status"];
+
+  function clearFieldErrors() {
+    for (var i = 0; i < FIELDS.length; i++) {
+      var f = $("f-" + FIELDS[i]);
+      if (f) f.removeAttribute("data-bad");
+      var e = $("e-" + FIELDS[i]);
+      if (e) { e.textContent = ""; e.hidden = true; }
+    }
+    clear($("form-err"));
+  }
+  function fieldError(name, message) {
+    var f = $("f-" + name);
+    var e = $("e-" + name);
+    if (f) f.setAttribute("data-bad", "1");
+    if (e) { e.textContent = message; e.hidden = false; }
+    return Boolean(e);
+  }
+
+  function openForm(mode, ev) {
+    formMode = mode;
+    formEvent = ev || null;
+    clearFieldErrors();
+    clearFlash("form-flash");
+    savingForm = false;
+    $("btn-save").disabled = false;
+    $("btn-save").removeAttribute("aria-busy");
+
+    var editing = mode === "edit" && ev;
+
+    setText("form-crumb", editing ? "Edit " + ev.name : "New event");
+    setText("form-h", editing ? "Edit event" : "New event");
+    setText("form-mode", editing ? "Edit" : "Create");
+    setText("form-endpoint", editing
+      ? "PATCH /admin/api/events/" + ev.eventId
+      : "POST /admin/api/events");
+    setText("form-hint", editing ? "only changed fields are sent" : "");
+    $("btn-save").textContent = editing ? "Save changes" : "Create event";
+    $("btn-cancel").href = editing ? "#/e/" + encodeURIComponent(ev.eventId) : "#/";
+    setText("form-sub", editing
+      ? "Everything here can be changed except the event id, and the metadata URI once badges exist."
+      : "An event is a row in the database and a number on the ledger. Pick the number carefully: everything else here can be edited later.");
+
+    // The event id is the taxon. On edit it is rendered, not typed: sending it
+    // back is a guaranteed 400, and a disabled input that looks editable is a
+    // worse explanation than a printed number with the reason next to it.
+    show($("in-eventId"), !editing);
+    show($("eventId-fixed"), Boolean(editing));
+    show($("taxon-range"), !editing);
+    if (editing) {
+      setText("eventId-fixed-v", String(ev.eventId));
+      setText("form-crumb", "Edit " + ev.name);
+    } else {
+      $("in-eventId").value = "";
+    }
+
+    $("in-name").value = editing ? (ev.name || "") : "";
+    $("in-description").value = editing ? (ev.description || "") : "";
+    $("in-venue").value = editing ? (ev.venue || "") : "";
+    $("in-metadataUri").value = editing ? (ev.metadataUri || "") : "";
+    $("in-status").value = editing ? ev.status : "draft";
+    paintStatusHelp();
+
+    // type="date" silently discards anything that is not yyyy-mm-dd. An event
+    // row stored with some other string must still be visible and editable.
+    var d = $("in-eventDate");
+    var v = editing ? (ev.eventDate || "") : "";
+    if (v && !isIsoDay(v)) { d.type = "text"; } else { d.type = "date"; }
+    d.value = v;
+
+    showView("view-form", "form-h");
+  }
+
+  function paintStatusHelp() {
+    setText("status-help", STATUS_HELP[$("in-status").value] || "");
+  }
+
+  function trimmed(id) { return $(id).value.trim(); }
+
+  function submitForm(e) {
+    e.preventDefault();
+    if (savingForm) return;
+    clearFieldErrors();
+    clearFlash("form-flash");
+
+    var name = trimmed("in-name");
+    var description = trimmed("in-description");
+    var eventDate = trimmed("in-eventDate");
+    var venue = trimmed("in-venue");
+    var metadataUri = trimmed("in-metadataUri");
+    var status = $("in-status").value;
+
+    var body;
+    var method;
+    var path;
+
+    if (formMode === "create") {
+      var idRaw = trimmed("in-eventId");
+      if (!/^\d+$/.test(idRaw)) {
+        fieldError("eventId", "A whole number, digits only. This becomes the NFTokenTaxon.");
+        $("in-eventId").focus();
+        return;
+      }
+      var idNum = Number(idRaw);
+      if (!isFinite(idNum) || idNum > 2147483647) {
+        fieldError("eventId", "Must be 2147483647 or lower — above that the taxon range is reserved.");
+        $("in-eventId").focus();
+        return;
+      }
+      if (!name) { fieldError("name", "A name is required."); $("in-name").focus(); return; }
+
+      body = { eventId: idNum, name: name, status: status };
+      if (description) body.description = description;
+      if (eventDate) body.eventDate = eventDate;
+      if (venue) body.venue = venue;
+      if (metadataUri) body.metadataUri = metadataUri;
+      method = "POST";
+      path = "/admin/api/events";
+    } else {
+      if (!formEvent) { route(true); return; }
+      if (!name) { fieldError("name", "A name is required."); $("in-name").focus(); return; }
+
+      // Only what changed, and `null` where a value was cleared — the PATCH
+      // schema uses presence, not truthiness, so null is how a venue is
+      // removed and omission is how it is left alone. eventId is never sent.
+      body = {};
+      if (name !== (formEvent.name || "")) body.name = name;
+      diff(body, "description", description, formEvent.description);
+      diff(body, "eventDate", eventDate, formEvent.eventDate);
+      diff(body, "venue", venue, formEvent.venue);
+      diff(body, "metadataUri", metadataUri, formEvent.metadataUri);
+      if (status !== formEvent.status) body.status = status;
+
+      if (!Object.keys(body).length) {
+        flash("form-flash", "warn", "no change", "Nothing was changed, so nothing was sent.",
+          "The server refuses an empty patch with a 400; there is no point asking it.");
+        return;
+      }
+      method = "PATCH";
+      path = "/admin/api/events/" + encodeURIComponent(formEvent.eventId);
+    }
+
+    savingForm = true;
+    var btn = $("btn-save");
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+
+    api(method, path, body).then(function (r) {
+      savingForm = false;
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+
+      if (r.ok && r.json && r.json.event) {
+        var saved = r.json.event;
+        upsertEvent(saved);
+        location.hash = "#/e/" + encodeURIComponent(saved.eventId);
+        // route() paints the detail; the receipt is queued onto it.
+        pendingReceipt = {
+          tone: "ok",
+          code: r.status === 201 ? "201 created" : "200 saved",
+          message: (r.status === 201 ? "Created " : "Saved ") + saved.name + " — taxon " + saved.eventId + ", status " + saved.status + ".",
+          sub: method + " " + path + " succeeded. " + (saved.status === "draft"
+            ? "It is a draft, so the public registration page still 404s."
+            : "The public registration page is live at /register/" + saved.eventId + ".")
+        };
+        return;
+      }
+
+      // Everything below keeps the form exactly as it was, so it is retryable.
+      var issues = issuesOf(r);
+      var placed = 0;
+      for (var i = 0; i < issues.length; i++) {
+        var p = String(issues[i].path || "");
+        if (fieldError(p, String(issues[i].message || "Invalid."))) placed++;
+      }
+
+      if (r.status === 400 && placed) {
+        flash("form-flash", "bad", "400", "The server rejected " + placed + (placed === 1 ? " field." : " fields."),
+          "Nothing was saved. Fix what is marked below and submit again.");
+        return;
+      }
+
+      // The 409s carry the explanation this page should not paraphrase: the
+      // taxon clash, and the metadataUri-after-badges refusal.
+      if (r.status === 409) {
+        var isUri = /metadataUri/i.test(messageOf(r));
+        if (isUri) fieldError("metadataUri", "Refused: badges already exist under this taxon.");
+        else fieldError("eventId", "That id is taken.");
+        flash("form-flash", "bad", "409 conflict", messageOf(r),
+          isUri ? "Your other edits were not saved either — the whole patch was refused. Clear the URI change and submit again to save the rest."
+                : "Nothing was created. Pick an id you have not used.");
+        $("form-err").appendChild(rawPanel("raw 409 response", r));
+        return;
+      }
+
+      flash("form-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r),
+        r.network ? "Nothing was saved. The form is untouched — fix it and submit again."
+                  : "The API did not answer. Nothing was saved; press the button again once it is back.");
+      $("form-err").appendChild(rawPanel("raw response", r));
+    });
+  }
+
+  function diff(body, key, value, was) {
+    var before = was == null ? "" : String(was);
+    if (value === before) return;
+    body[key] = value === "" ? null : value;
+  }
+
+  function upsertEvent(ev) {
+    var found = false;
+    for (var i = 0; i < events.length; i++) {
+      if (events[i].eventId === ev.eventId) { events[i] = ev; found = true; break; }
+    }
+    if (!found) {
+      events.push(ev);
+      events.sort(function (a, b) { return a.eventId - b.eventId; });
+    }
+    setText("hdr-events", String(events.length));
+  }
+
+  /* =====================================================================
+     EVENT DETAIL
+     ===================================================================== */
+  var pendingReceipt = null;
+
+  function openDetail(eventId) {
+    detailGen++;
+    var gen = detailGen;
+    current = null;
+    regs = { rows: [], total: 0, checkedIn: 0, limit: REG_PAGE, offset: 0 };
+
+    clearFlash("detail-flash");
+    clear($("detail-missing"));
+    show($("detail-missing"), false);
+    show($("detail-body"), true);
+    clear($("csv-out"));
+
+    setText("detail-crumb", String(eventId));
+    setText("detail-h", "…");
+    setText("detail-taxon", String(eventId));
+    setText("hdr-ctx", "event " + eventId);
+    clear($("detail-status"));
+    $("btn-edit").href = "#/e/" + encodeURIComponent(eventId) + "/edit";
+    showView("view-detail", "detail-h");
+
+    if (pendingReceipt) {
+      flash("detail-flash", pendingReceipt.tone, pendingReceipt.code, pendingReceipt.message, pendingReceipt.sub);
+      pendingReceipt = null;
+    }
+
+    var known = null;
+    for (var i = 0; i < events.length; i++) if (events[i].eventId === eventId) known = events[i];
+    if (known) paintDetailHead(known);
+
+    // The event row itself comes from the admin list — there is no admin
+    // single-event read, and the public one hides drafts, which is precisely
+    // the event an organiser is most likely to be looking at.
+    var needList = !known;
+    var p = needList ? loadEvents(true) : Promise.resolve(null);
+
+    p.then(function () {
+      if (gen !== detailGen) return;
+      var ev = null;
+      for (var k = 0; k < events.length; k++) if (events[k].eventId === eventId) ev = events[k];
+      if (!ev) {
+        show($("detail-body"), false);
+        show($("detail-missing"), true);
+        var box = node("div", "empty");
+        box.appendChild(node("span", "label", "no such event"));
+        var q = node("p", null, "There is no event " + eventId + " on this deployment. It may have been created on a different server, or the id in the address bar is a typo.");
+        box.appendChild(q);
+        var back = node("a", "btn", "Back to events");
+        back.href = "#/";
+        back.style.marginTop = "10px";
+        box.appendChild(back);
+        clear($("detail-missing"));
+        $("detail-missing").appendChild(box);
+        return;
+      }
+      current = ev;
+      paintDetailHead(ev);
+      loadRegs(0);
+      loadAttendance();
+      loadChain();
+    });
+  }
+
+  function paintDetailHead(ev) {
+    current = current || ev;
+    setText("detail-h", ev.name);
+    setText("detail-crumb", ev.name);
+    setText("detail-taxon", String(ev.eventId));
+    setText("hdr-ctx", "event " + ev.eventId);
+
+    var st = $("detail-status");
+    clear(st);
+    st.appendChild(statusPill(ev.status));
+    if (ev.status === "draft") {
+      st.appendChild(document.createTextNode(" "));
+      st.appendChild(node("span", "tag-hidden", "not public"));
+    }
+
+    var url = location.origin + "/register/" + ev.eventId;
+    setText("share-url", url);
+    var sc = $("share-copy");
+    clear(sc);
+    sc.appendChild(copyBtn(url, "copied"));
+    $("share-open").href = "/register/" + ev.eventId;
+    var warn = $("share-warn");
+    if (ev.status === "draft") {
+      warn.textContent = "This event is a draft, so that page returns 404 for everyone but you. Set it to open before you hand the link out.";
+      warn.hidden = false;
+    } else {
+      warn.hidden = true;
+    }
+
+    var kvBox = $("detail-kv");
+    clear(kvBox);
+    kvBox.appendChild(kvRow("event id", String(ev.eventId), { copy: true, note: "= NFTokenTaxon, permanent" }));
+    kvBox.appendChild(kvRow("status", ev.status, {}));
+    kvBox.appendChild(kvRow("date", ev.eventDate ? fmtDay(ev.eventDate) : "", {}));
+    kvBox.appendChild(kvRow("venue", ev.venue || "", {}));
+    kvBox.appendChild(kvRow("metadata uri", ev.metadataUri || "", { copy: Boolean(ev.metadataUri) }));
+    kvBox.appendChild(kvRow("description", ev.description || "", { prose: true }));
+    if (ev.createdAt) kvBox.appendChild(kvRow("created", fmtStamp(ev.createdAt), {}));
+    if (ev.updatedAt) kvBox.appendChild(kvRow("updated", fmtStamp(ev.updatedAt), {}));
+  }
+
+  function kvRow(label, value, opts) {
+    opts = opts || {};
+    var row = node("div", "kv");
+    row.appendChild(node("span", "kv__k", label));
+    var v = node("span", "kv__v");
+    var text = value === "" || value == null ? "—" : String(value);
+    v.appendChild(node("code", "val" + (opts.prose && text !== "—" ? " val--prose" : ""), text));
+    if (opts.copy && text !== "—") v.appendChild(copyBtn(text));
+    if (opts.note) v.appendChild(node("span", "label", opts.note));
+    row.appendChild(v);
+    return row;
+  }
+
+  function loadRegs(offset) {
+    var gen = detailGen;
+    var eventId = current.eventId;
+    var body = $("regs-rows");
+    clear(body);
+    show($("regs-empty"), false);
+    var tr = node("tr");
+    var td = node("td");
+    td.colSpan = 6;
+    td.appendChild(node("span", "skel", "reading registrations"));
+    tr.appendChild(td);
+    body.appendChild(tr);
+
+    var path = "/admin/api/events/" + encodeURIComponent(eventId) +
+      "/registrations?limit=" + REG_PAGE + "&offset=" + offset;
+
+    api("GET", path).then(function (r) {
+      if (gen !== detailGen) return;
+      clear($("regs-rows"));
+      if (!r.ok) {
+        show($("regs-empty"), true);
+        clear($("regs-empty"));
+        $("regs-empty").appendChild(errBox(r, "The counts above may be stale. Press Refresh."));
+        setText("c-total", "?");
+        setText("c-checked", "?");
+        return;
+      }
+      regs.rows = r.json.registrations || [];
+      regs.total = r.json.total || 0;
+      regs.checkedIn = r.json.checkedIn || 0;
+      regs.offset = r.json.offset || 0;
+      regs.limit = r.json.limit || REG_PAGE;
+      setText("c-total", String(regs.total));
+      setText("c-checked", String(regs.checkedIn));
+      paintRegs();
+    });
+  }
+
+  function paintRegs() {
+    var body = $("regs-rows");
+    clear(body);
+
+    if (!regs.rows.length) {
+      show($("regs-empty"), true);
+      var e = $("regs-empty");
+      clear(e);
+      e.appendChild(node("span", "label", regs.total ? "nothing on this page" : "nobody yet"));
+      if (regs.total) {
+        e.appendChild(node("p", null, "This page of the list is empty but the event has " + regs.total + " registrations. Go back a page."));
+      } else if (current && current.status === "draft") {
+        var pd = node("p", null, "");
+        pd.appendChild(document.createTextNode("Nobody can register yet: this event is a "));
+        pd.appendChild(node("b", null, "draft"));
+        pd.appendChild(document.createTextNode(", so /register/" + current.eventId + " returns 404. Edit the event and set its status to "));
+        pd.appendChild(node("b", null, "open"));
+        pd.appendChild(document.createTextNode(", then share the link above."));
+        e.appendChild(pd);
+        var go = node("a", "btn btn--go", "Open registration");
+        go.href = "#/e/" + encodeURIComponent(current.eventId) + "/edit";
+        go.style.marginTop = "11px";
+        e.appendChild(go);
+      } else {
+        var po = node("p", null, "");
+        po.appendChild(document.createTextNode("No registrations yet. Share the link above — "));
+        po.appendChild(node("b", null, location.origin + "/register/" + (current ? current.eventId : "")));
+        po.appendChild(document.createTextNode(" — and rows will appear here as attendees sign in with their wallet."));
+        e.appendChild(po);
+      }
+      paintPager();
+      return;
+    }
+
+    show($("regs-empty"), false);
+    for (var i = 0; i < regs.rows.length; i++) body.appendChild(regRow(regs.rows[i]));
+    paintPager();
+  }
+
+  function regRow(reg) {
+    var tr = node("tr");
+
+    var tdName = node("td", reg.displayName ? "td-name" : "td-dim");
+    tdName.appendChild(document.createTextNode(reg.displayName || "— no name"));
+    tr.appendChild(tdName);
+
+    var tdAddr = node("td");
+    var code = node("code", "val", reg.address || "—");
+    code.title = reg.address || "";
+    tdAddr.appendChild(code);
+    if (reg.address) { tdAddr.appendChild(document.createTextNode(" ")); tdAddr.appendChild(copyBtn(reg.address)); }
+    tr.appendChild(tdAddr);
+
+    var tdProof = node("td");
+    if (reg.addressProof === "xaman_signin") {
+      var p1 = node("span", "pill pill--xaman", "xaman signed");
+      p1.title = "The attendee proved this address by signing in Xaman.";
+      tdProof.appendChild(p1);
+    } else {
+      var p2 = node("span", "pill pill--self", "self declared");
+      p2.title = "The attendee typed this address. Nothing proved they hold its key.";
+      tdProof.appendChild(p2);
+    }
+    tr.appendChild(tdProof);
+
+    // Shown, because the organiser needs it. Never in a URL, never in the
+    // request log, never in the console.
+    var tdMail = node("td", reg.email ? "" : "td-dim");
+    tdMail.appendChild(node("code", "val", reg.email || "—"));
+    tr.appendChild(tdMail);
+
+    tr.appendChild(node("td", reg.registeredAt ? "" : "td-dim", reg.registeredAt ? fmtStamp(reg.registeredAt) : "—"));
+
+    var tdIn = node("td");
+    if (reg.checkedInAt) {
+      var ok = node("span", null, fmtStamp(reg.checkedInAt));
+      ok.style.color = "var(--jade)";
+      tdIn.appendChild(ok);
+    } else {
+      tdIn.className = "td-dim";
+      tdIn.appendChild(document.createTextNode("not yet"));
+    }
+    tr.appendChild(tdIn);
+
+    return tr;
+  }
+
+  function paintPager() {
+    var from = regs.total ? regs.offset + 1 : 0;
+    var to = Math.min(regs.offset + regs.limit, regs.total);
+    setText("regs-pager", regs.total
+      ? "showing " + from + "–" + to + " of " + regs.total
+      : "0 registrations");
+    $("btn-prev").disabled = regs.offset <= 0;
+    $("btn-next").disabled = regs.offset + regs.limit >= regs.total;
+  }
+
+  function loadAttendance() {
+    var gen = detailGen;
+    setText("c-attend", "…");
+    api("GET", "/events/" + encodeURIComponent(current.eventId) + "/attendance?limit=1&offset=0")
+      .then(function (r) {
+        if (gen !== detailGen) return;
+        setText("c-attend", r.ok && r.json ? String(r.json.total) : "?");
+      });
+  }
+
+  function loadChain() {
+    var gen = detailGen;
+    var ids = ["c-minted", "c-claimed", "c-burned", "c-unknown"];
+    for (var i = 0; i < ids.length; i++) setText(ids[i], "…");
+    var btn = $("btn-chain");
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+
+    api("GET", "/events/" + encodeURIComponent(current.eventId) + "/roster").then(function (r) {
+      if (gen !== detailGen) return;
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      if (!r.ok) {
+        for (var k = 0; k < ids.length; k++) setText(ids[k], "?");
+        var ft = $("chain-ft");
+        ft.textContent = "The ledger read failed: " + messageOf(r) + " The database counts on the left are unaffected.";
+        return;
+      }
+      setText("c-minted", String(r.json.minted));
+      setText("c-claimed", String(r.json.claimed));
+      setText("c-burned", String(r.json.burned));
+      setText("c-unknown", String(r.json.ownerUnknown));
+      var ftOk = $("chain-ft");
+      clear(ftOk);
+      ftOk.appendChild(node("b", null, "Do not add these to the registration count. "));
+      ftOk.appendChild(document.createTextNode(
+        "This is nfts_by_issuer over taxon " + current.eventId + " — what the XRP Ledger holds, not what the database was told. " +
+        (r.json.burned ? r.json.burned + " burned badge" + (r.json.burned === 1 ? " still counts" : "s still count") + " as attendance. " : "") +
+        "Somebody can register and never claim, and a badge can exist for somebody who never registered."));
+    });
+  }
+
+  /* =====================================================================
+     CSV export. The safe one is the plain button; the one carrying emails
+     is styled as destructive and says what it is before it writes anything.
+     ===================================================================== */
+  function csvCell(v) {
+    var s = v == null ? "" : String(v);
+    // Leading =, +, - or @ is a formula in a spreadsheet, not a name.
+    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
+  function exportCsv(withEmail) {
+    var out = $("csv-out");
+    clear(out);
+    var status = node("p", "help", "collecting registrations…");
+    out.appendChild(status);
+
+    var eventId = current.eventId;
+    var rows = [];
+    var calls = 0;
+
+    function page(offset) {
+      calls++;
+      return api("GET", "/admin/api/events/" + encodeURIComponent(eventId) +
+        "/registrations?limit=" + CSV_PAGE + "&offset=" + offset).then(function (r) {
+        if (!r.ok) throw r;
+        var got = r.json.registrations || [];
+        for (var i = 0; i < got.length; i++) rows.push(got[i]);
+        status.textContent = "collected " + rows.length + " of " + r.json.total + "…";
+        if (rows.length < r.json.total && got.length && calls < CSV_MAX_CALLS) return page(offset + CSV_PAGE);
+        return r;
+      });
+    }
+
+    page(0).then(function (last) {
+      var head = ["eventId", "displayName", "address", "addressProof", "registeredAt", "checkedInAt"];
+      if (withEmail) head.splice(3, 0, "email");
+      var lines = [head.join(",")];
+      for (var i = 0; i < rows.length; i++) {
+        var g = rows[i];
+        var line = [csvCell(eventId), csvCell(g.displayName), csvCell(g.address)];
+        if (withEmail) line.push(csvCell(g.email));
+        line.push(csvCell(g.addressProof), csvCell(g.registeredAt), csvCell(g.checkedInAt));
+        lines.push(line.join(","));
+      }
+      var blob = new Blob([lines.join("\r\n") + "\r\n"], { type: "text/csv;charset=utf-8" });
+      var url = URL.createObjectURL(blob);
+      var name = "event-" + eventId + "-registrations" + (withEmail ? "-with-emails" : "") + ".csv";
+
+      clear(out);
+      var box = node("div", withEmail ? "errbox" : "flash");
+      box.appendChild(node("div", withEmail ? "errbox__code" : "flash__c",
+        withEmail ? "contains personal data" : "ready"));
+      box.appendChild(node("div", withEmail ? "errbox__msg" : "flash__m",
+        rows.length + " row" + (rows.length === 1 ? "" : "s") + " · " + name +
+        (withEmail ? "" : " · no email column")));
+      if (withEmail) {
+        box.appendChild(node("div", "errbox__hint",
+          "This file contains attendee email addresses. Once it is on disk it is outside this console and outside every access control the server has. Delete it when you are done with it."));
+      }
+      var a = node("a", "btn btn--go", withEmail ? "Download (with emails)" : "Download CSV");
+      a.href = url;
+      a.download = name;
+      a.style.marginTop = "10px";
+      a.style.display = "inline-block";
+      a.style.flexBasis = "100%";        // .flash is a flex row; keep the button on its own line
+      a.addEventListener("click", function () {
+        setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+      });
+      box.appendChild(a);
+      if (last && last.json && rows.length < last.json.total) {
+        box.appendChild(node("div", "errbox__hint",
+          "Capped at " + rows.length + " of " + last.json.total + " rows: this export makes at most " +
+          CSV_MAX_CALLS + " requests so it cannot exhaust the API's rate limit."));
+      }
+      out.appendChild(box);
+    }, function (r) {
+      clear(out);
+      out.appendChild(errBox(r, "Nothing was written. Try again."));
+    });
+  }
+
+  /* =====================================================================
+     Router. The address bar carries an event id — never an email, never a
+     name, never anything an attendee typed.
+     ===================================================================== */
+  function parseHash() {
+    var h = String(location.hash || "").replace(/^#/, "");
+    if (!h || h === "/" ) return { view: "list" };
+    var parts = h.split("/").filter(function (s) { return s.length; });
+    if (parts[0] === "new") return { view: "new" };
+    if (parts[0] === "e" && parts[1] !== undefined) {
+      var id = Number(parts[1]);
+      if (!isFinite(id)) return { view: "list" };
+      if (parts[2] === "edit") return { view: "edit", eventId: id };
+      return { view: "detail", eventId: id };
+    }
+    return { view: "list" };
+  }
+
+  function route(force) {
+    if (routing) return;
+    if (!me) { showView("view-login", force ? "login-h" : null); return; }
+    routing = true;
+    var r = parseHash();
+    routing = false;
+
+    if (r.view === "new") {
+      setText("hdr-ctx", "new event");
+      openForm("create", null);
+      return;
+    }
+    if (r.view === "edit") {
+      setText("hdr-ctx", "event " + r.eventId);
+      var known = null;
+      for (var i = 0; i < events.length; i++) if (events[i].eventId === r.eventId) known = events[i];
+      if (known) { openForm("edit", known); return; }
+      loadEvents(true).then(function () {
+        var ev = null;
+        for (var k = 0; k < events.length; k++) if (events[k].eventId === r.eventId) ev = events[k];
+        if (ev) openForm("edit", ev);
+        else location.hash = "#/e/" + encodeURIComponent(r.eventId);
+      });
+      return;
+    }
+    if (r.view === "detail") {
+      openDetail(r.eventId);
+      return;
+    }
+    setText("hdr-ctx", "registry");
+    detailGen++;
+    showView("view-events", "events-h");
+    loadEvents(events.length > 0);
+  }
+
+  /* =====================================================================
+     Boot + wiring
+     ===================================================================== */
+  function checkMe(firstLoad) {
+    return api("GET", "/admin/api/me", undefined, { noAuth: true }).then(function (r) {
+      if (r.ok && r.json && r.json.email) {
+        setSignedIn(r.json.email);
+        booted = true;
+        route(true);
+        return r;
+      }
+      if (r.status === 503 && codeOf(r) === "ADMIN_DISABLED") { toDisabled(r); return r; }
+      if (r.status === 401) {
+        setSignedIn(null);
+        showView("view-login", firstLoad ? null : "login-h");
+        if (!firstLoad) flash("login-flash", "warn", "signed out", "You are signed out.");
+        booted = true;
+        return r;
+      }
+      // Network down, or something nobody planned for. Say so on the login
+      // screen rather than leaving a blank page.
+      setSignedIn(null);
+      showView("view-login");
+      flash("login-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r),
+        r.network ? null : "The API is not answering. The sign-in button will work as soon as it is back.");
+      booted = true;
+      return r;
+    });
+  }
+
+  function wire() {
+    wireLogin();
+
+    $("btn-out").addEventListener("click", function () {
+      var b = $("btn-out");
+      b.disabled = true;
+      api("POST", "/admin/api/logout").then(function (r) {
+        b.disabled = false;
+        setSignedIn(null);
+        setText("hdr-events", "—");
+        setText("hdr-ctx", "—");
+        events = [];
+        current = null;
+        showView("view-login", "login-h");
+        if (r.ok) flash("login-flash", "ok", "signed out", "Session revoked on the server, not just in this browser.");
+        else flash("login-flash", "warn", "signed out", "This browser dropped the session. " + messageOf(r));
+      });
+    });
+
+    $("btn-theme").addEventListener("click", function () {
+      var root = document.documentElement;
+      var cur = root.getAttribute("data-theme");
+      var dark = cur ? cur === "dark" : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
+      var next = dark ? "light" : "dark";
+      root.setAttribute("data-theme", next);
+      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* private mode */ }
+    });
+
+    $("bn-offline-retry").addEventListener("click", function () { checkMe(false); });
+    $("btn-disabled-retry").addEventListener("click", function () { checkMe(false); });
+    $("btn-events-refresh").addEventListener("click", function () { loadEvents(false); });
+    $("btn-detail-refresh").addEventListener("click", function () {
+      if (current) openDetail(current.eventId);
+    });
+    $("btn-chain").addEventListener("click", function () { if (current) loadChain(); });
+    $("event-form").addEventListener("submit", submitForm);
+    $("in-status").addEventListener("change", paintStatusHelp);
+    $("btn-prev").addEventListener("click", function () {
+      loadRegs(Math.max(0, regs.offset - regs.limit));
+    });
+    $("btn-next").addEventListener("click", function () {
+      loadRegs(regs.offset + regs.limit);
+    });
+    $("btn-csv").addEventListener("click", function () { exportCsv(false); });
+    $("btn-csv-pii").addEventListener("click", function () { exportCsv(true); });
+
+    window.addEventListener("hashchange", function () { route(false); });
+    window.addEventListener("resize", measureRail);
+
+    // Coming back to a tab that has been open for hours is exactly when the
+    // session has expired. One check on focus, not a polling loop.
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden || !booted || !me) return;
+      api("GET", "/admin/api/me", undefined, { noAuth: true }).then(function (r) {
+        if (r.status === 401) expire();
+      });
+    });
+  }
+
+  function measureRail() {
+    var r = document.querySelector(".rail");
+    if (r) document.documentElement.style.setProperty("--railh", r.offsetHeight + "px");
+  }
+
+  (function boot() {
+    try {
+      var saved = localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) { /* private mode */ }
+
+    measureRail();
+    wire();
+    paintStatusHelp();
+    showView("view-boot");
+    checkMe(true).then(measureRail);
+  })();
+})();
+</script>
+</body>
+</html>

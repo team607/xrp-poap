@@ -4,6 +4,12 @@ export type ErrorCode =
   | "CONFIG_INVALID"
   /** A malformed argument. Distinct from a policy denial. */
   | "INVALID_INPUT"
+  /** No credentials, or credentials that no longer identify anyone. */
+  | "UNAUTHORIZED"
+  /** Identified, but not permitted — a failed CSRF check lands here. */
+  | "FORBIDDEN"
+  /** Configured off or not ready. The admin surface uses this when unconfigured. */
+  | "SERVICE_UNAVAILABLE"
   | "NETWORK_GUARD"
   | "CONNECTION_FAILED"
   | "TX_FAILED"

@@ -12,20 +12,26 @@ import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import type { ZodType } from "zod";
 import { loadConfig } from "../config.js";
+import { registerAdminAuth } from "./auth.js";
 import { buildDeps, type ApiDeps } from "./deps.js";
 import { registerErrorHandler } from "./http-errors.js";
+import { registerAdminAuthRoutes } from "./routes/admin-auth.js";
 import { registerAttendanceRoute } from "./routes/attendance.js";
 import { registerClaimRoutes } from "./routes/claims.js";
 import { registerDemoRoutes } from "./routes/demo.js";
+import { registerPageRoutes } from "./routes/pages.js";
+import { registerEventRoutes } from "./routes/events.js";
+import { registerRegistrationRoutes } from "./routes/registrations.js";
 import { registerRosterRoute } from "./routes/roster.js";
 import { registerVerifyRoute } from "./routes/verify.js";
 import { registerXamanWebhookRoute } from "./routes/xaman-webhook.js";
 
 /**
- * Every route is public and unauthenticated (auth is out of scope per the
- * brief), so the global bucket is the only thing standing between a script and
- * the ledger read quota. POST /events/:eventId/claims sets its own, tighter,
- * limit — it is the route that spends money.
+ * Every attendee-facing route is public and unauthenticated, so the global
+ * bucket is the only thing standing between a script and the ledger read quota.
+ * Two routes set their own, tighter, limits: POST /events/:eventId/claims,
+ * which spends money, and POST /admin/api/login, which answers questions about
+ * a password. Everything under /admin/api needs a session — see auth.ts.
  */
 const GLOBAL_RATE_LIMIT = { max: 120, timeWindow: "1 minute" } as const;
 
@@ -48,6 +54,23 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
   });
 
   registerErrorHandler(app);
+
+  // Product pages. Outside the rate-limited scope: a static file read should
+  // not consume an attendee's claim budget.
+  registerPageRoutes(app);
+
+  /**
+   * ADMIN AUTHENTICATION, BEFORE ANY ROUTE.
+   *
+   * On the root instance and first, because the guard it installs is an
+   * `onRequest` hook keyed on the `/admin/api` prefix rather than a preHandler
+   * on these routes. Every admin route — including ones registered by other
+   * modules, later — is behind it, and a deployment with no credentials serves
+   * 503 there rather than an open API. `registerAdminAuth()` throws when the
+   * credentials are half-configured, so buildServer() fails rather than a
+   * request discovering it later. See src/api/auth.ts.
+   */
+  const adminAuth = registerAdminAuth(app, deps);
 
   /**
    * GET /health — 200, always, with no ledger call. A health check that needs a
@@ -80,6 +103,19 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
     registerRosterRoute(scope, deps);
     registerVerifyRoute(scope, deps);
     registerXamanWebhookRoute(scope, deps);
+
+    // Also inside the scope: the two registration routes that call Xaman are
+    // unauthenticated and set their own limits, which needs the plugin here.
+    // Both no-op when their repositories are absent from the deps.
+    registerEventRoutes(scope, deps);
+    registerRegistrationRoutes(scope, deps);
+
+    // Inside the rate-limited scope on purpose: POST /admin/api/login is a
+    // password oracle and takes the claim route's treatment, which needs the
+    // plugin registered in the same scope. Registered only when there is an
+    // admin account to log in to — the prefix guard above answers 503 for the
+    // whole surface when there is not.
+    if (adminAuth.enabled) registerAdminAuthRoutes(scope, deps, adminAuth);
   });
 
   /**

@@ -110,7 +110,8 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     pinata: { gateway: "https://gateway.pinata.cloud" },
     xumm: {},
     demoEnabled: false,
-    api: { port: 0, host: "127.0.0.1", trustProxy: false },
+    admin: { sessionTtlHours: 12 },
+    api: { port: 0, host: "127.0.0.1", trustProxy: false, secureCookies: false },
     ...overrides,
   };
 }

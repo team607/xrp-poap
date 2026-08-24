@@ -15,9 +15,12 @@ import type {
   ClaimRepository,
   CreateClaimOfferInput,
   EventId,
+  EventRepository,
   MintBadgeInput,
   MintResult,
+  RegistrationRepository,
   Roster,
+  SessionStore,
   SponsorLedger,
   SponsorResult,
   VerifyClaimInput,
@@ -26,8 +29,10 @@ import type {
 } from "../types.js";
 import { createGateway } from "../xrpl/client.js";
 import { NullXamanService, XummXamanService, type XamanService } from "../xaman/client.js";
+import { NullSignInService, XummSignInService, type SignInService } from "../xaman/signin.js";
 import { assertDemoAllowed, type DemoOptions } from "./demo-state.js";
 import { REDACTED, redactDetails, scrubSecrets } from "./http-errors.js";
+import type { AdminGuard } from "./routes/events.js";
 
 // ---------------------------------------------------------------------------
 // Ledger operations
@@ -253,6 +258,17 @@ export interface RateLimitSettings {
   global?: { max: number; timeWindow: string | number };
   /** The claim route spends the issuer's XRP, so it gets its own tighter cap. */
   claim?: { max: number; timeWindow: string | number };
+  /** POST /admin/api/login is a password oracle, so it gets one too. */
+  login?: { max: number; timeWindow: string | number };
+  /**
+   * Creating a Xaman sign-in payload: public, unauthenticated, and an outbound
+   * call to somebody else's API on every hit.
+   */
+  signin?: { max: number; timeWindow: string | number };
+  /** Polling one. The registration page does this on a timer, so it is wider. */
+  signinPoll?: { max: number; timeWindow: string | number };
+  /** Finishing a registration: resolves a payload against Xaman and writes a row. */
+  registration?: { max: number; timeWindow: string | number };
 }
 
 export interface ApiDeps {
@@ -267,6 +283,40 @@ export interface ApiDeps {
    */
   claims: ClaimRepository;
   sponsorLedger: SponsorLedger;
+  /**
+   * Admin login sessions. Opaque ids, revocable, never a JWT.
+   *
+   * Optional because a deployment with no `ADMIN_*` credentials has no admin
+   * surface to store sessions for — but it is NOT optional once those are set:
+   * registerAdminAuth() refuses to start rather than serve an admin API whose
+   * login endpoint cannot issue anything.
+   */
+  sessions?: SessionStore;
+  /**
+   * Events and their registrations.
+   *
+   * Optional for the same reason `demo` is: absent means those routes are not
+   * registered at all, so an instance built without them 404s rather than 500s
+   * on every call. buildDeps() always supplies both.
+   */
+  events?: EventRepository;
+  registrations?: RegistrationRepository;
+  /**
+   * Xaman SignIn — how an attendee proves the wallet they are registering.
+   *
+   * `NullSignInService` when there are no XUMM keys: the server still boots and
+   * still serves claims, verification and the roster, and only the registration
+   * routes fail, loudly. See the startup line in buildDeps().
+   */
+  signIn?: SignInService;
+  /**
+   * The admin check the event routes run as a preHandler.
+   *
+   * Defaults to `requireAdmin` from src/api/auth.ts, which is also installed as
+   * a prefix hook on the whole `/admin/api` surface. Overridden by tests so
+   * what they assert about those routes does not depend on cookies and scrypt.
+   */
+  requireAdmin?: AdminGuard;
   xaman?: XamanService;
   /** Ledger operations. Injected so the server is constructible without a node. */
   chain: ChainOps;
@@ -453,6 +503,32 @@ function announceBadgeArtMode(perAttendee: boolean, defaultMetadataUri?: string)
 }
 
 /**
+ * Say whether anyone can register, once, at startup.
+ *
+ * The failure this exists to prevent: a demo where the registration page loads,
+ * the QR button is there, and every press 500s because two environment
+ * variables are missing. That is discovered by an attendee, at the event, and
+ * by then it is too late. There is no fallback to a typed address on purpose —
+ * an unverified address is a claim rather than a proof, and a soulbound badge
+ * minted to the wrong one cannot be moved — so no keys means no registrations.
+ */
+function announceSignInMode(configured: boolean): void {
+  if (configured) {
+    console.info(
+      "[api] Xaman sign-in: LIVE. Attendees prove the wallet they register by approving a SignIn " +
+        "payload, which costs them nothing and touches no ledger state.",
+    );
+    return;
+  }
+
+  console.warn(
+    "[api] Xaman sign-in: NOT CONFIGURED (XUMM_API_KEY / XUMM_API_SECRET are unset). " +
+      "The registration routes will fail with a 500 and NOBODY CAN REGISTER. Everything else — " +
+      "claims, verification, the roster — still works. Set both keys and restart before the event.",
+  );
+}
+
+/**
  * Real wiring. Connects the gateway, picks durable storage when it is
  * configured, and constructs the Xaman service only when keys are present —
  * the server starts fine without them.
@@ -476,6 +552,9 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   let attendance: AttendanceRepository;
   let sponsorLedger: SponsorLedger;
   let claims: ClaimRepository;
+  let sessions: SessionStore;
+  let events: EventRepository;
+  let registrations: RegistrationRepository;
   let disposeStores: (() => Promise<void>) | undefined;
 
   if (config.databaseUrl) {
@@ -483,11 +562,26 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     attendance = new db.PgAttendanceRepository(pool);
     sponsorLedger = new db.PgSponsorLedger(pool);
     claims = new db.PgClaimRepository(pool);
+    sessions = new db.PgSessionStore(pool);
+    events = new db.PgEventRepository(pool);
+    registrations = new db.PgRegistrationRepository(pool);
     disposeStores = () => db.closePool(pool);
   } else {
     attendance = new db.MemoryAttendanceRepository();
     sponsorLedger = new db.MemorySponsorLedger();
     claims = new db.MemoryClaimRepository();
+    // Admin sessions go with it: without a database, every restart signs the
+    // operator out. Annoying, not dangerous.
+    sessions = new db.MemorySessionStore();
+    // The event list and everyone who registered for it go too, and that one
+    // hurts: the desk loses the roster it was built to have ready.
+    //
+    // The wiring between them is the memory layer's own: the event store reads
+    // badge counts off the attendance index to answer `hasBadges()`, and the
+    // registration store checks the event exists before it writes a row. In
+    // Postgres both are foreign keys and a COUNT.
+    events = new db.MemoryEventRepository(attendance);
+    registrations = new db.MemoryRegistrationRepository(events);
     // One line, once, at startup. Losing the index does not lose attendance —
     // the ledger still has it — but it does lose every cheap read until the
     // rows are re-derived. Losing the claim slots is worse than that: an
@@ -502,8 +596,15 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   }
 
   const { apiKey, apiSecret } = config.xumm;
+  const xamanConfigured = Boolean(apiKey && apiSecret);
   const xaman: XamanService =
     apiKey && apiSecret ? new XummXamanService({ apiKey, apiSecret }) : new NullXamanService();
+
+  // Same keys, different payload. The claim flow can survive without Xaman —
+  // the accept payload can be signed in any wallet — but registration cannot:
+  // the SignIn IS the proof, and there is deliberately no typed-address path.
+  const signIn: SignInService =
+    apiKey && apiSecret ? new XummSignInService({ apiKey, apiSecret }) : new NullSignInService();
 
   // Without this, every claim request must carry its own `metadataUri`.
   const defaultMetadataUri = config.defaultMetadataUri;
@@ -546,6 +647,10 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     attendance,
     claims,
     sponsorLedger,
+    sessions,
+    events,
+    registrations,
+    signIn,
     xaman,
     chain,
     trustProxy: config.api.trustProxy,
@@ -556,6 +661,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   };
 
   announceBadgeArtMode(Boolean(badgeUris), defaultMetadataUri);
+  announceSignInMode(xamanConfigured);
 
   return {
     deps,

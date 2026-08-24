@@ -60,6 +60,12 @@ export interface SubmitOptions {
 export interface XrplGateway {
   readonly network: NetworkName;
   readonly issuerAddress: string;
+  /**
+   * The node currently in use. May differ from the configured primary after a
+   * failover, which is exactly when an operator needs to know. Optional so a
+   * test fake need not invent one.
+   */
+  readonly endpoint?: string;
   request<Res = any>(req: Record<string, unknown>): Promise<Res>;
   submit(tx: SubmittableTransaction, options?: SubmitOptions): Promise<SubmitOutcome>;
   disconnect(): Promise<void>;
@@ -425,4 +431,110 @@ export interface AttendanceRepository {
   ): Promise<AttendanceRecord[]>;
   countByEvent(eventId: EventId): Promise<number>;
   listByAddress(address: string): Promise<AttendanceRecord[]>;
+}
+
+
+// ---------------------------------------------------------------------------
+// Events
+//
+// `eventId` IS the NFTokenTaxon. There is deliberately no second surrogate key:
+// a badge on the ledger carries the taxon and nothing else, so any mapping
+// layer between "our id" and "the taxon" would be a place for them to diverge.
+// ---------------------------------------------------------------------------
+
+export type EventStatus = "draft" | "open" | "live" | "closed";
+
+export interface EventRecord {
+  /** The NFTokenTaxon. Immutable once any badge has been minted. */
+  eventId: EventId;
+  name: string;
+  description?: string | null;
+  /** ISO date of the event itself, not of the row. */
+  eventDate?: string | null;
+  venue?: string | null;
+  /** Event-wide fallback URI, used when per-attendee art is unavailable. */
+  metadataUri?: string | null;
+  status: EventStatus;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface EventRepository {
+  create(input: Omit<EventRecord, "createdAt" | "updatedAt">): Promise<EventRecord>;
+  update(
+    eventId: EventId,
+    patch: Partial<Omit<EventRecord, "eventId" | "createdAt" | "updatedAt">>,
+  ): Promise<EventRecord>;
+  find(eventId: EventId): Promise<EventRecord | null>;
+  list(opts?: { status?: EventStatus; limit?: number; offset?: number }): Promise<EventRecord[]>;
+  /** Badges minted so far. Guards taxon reuse and blocks a destructive edit. */
+  hasBadges(eventId: EventId): Promise<boolean>;
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+/** How the address on a registration was obtained, and therefore how much to trust it. */
+export type AddressProof = "xaman_signin" | "self_declared";
+
+export interface RegistrationRecord {
+  id: string;
+  eventId: EventId;
+  /** Classic address. Verified when addressProof is "xaman_signin". */
+  address: string;
+  addressProof: AddressProof;
+  displayName?: string | null;
+  email?: string | null;
+  /** Xaman payload uuid that proved the address, when there was one. */
+  signinPayloadUuid?: string | null;
+  registeredAt?: Date;
+  /** Set when a volunteer scans them in at the desk. */
+  checkedInAt?: Date | null;
+}
+
+export interface RegistrationRepository {
+  create(
+    input: Omit<RegistrationRecord, "id" | "registeredAt" | "checkedInAt">,
+  ): Promise<RegistrationRecord>;
+  findByAddress(eventId: EventId, address: string): Promise<RegistrationRecord | null>;
+  findById(id: string): Promise<RegistrationRecord | null>;
+  listByEvent(
+    eventId: EventId,
+    opts?: { limit?: number; offset?: number; checkedIn?: boolean },
+  ): Promise<RegistrationRecord[]>;
+  countByEvent(eventId: EventId): Promise<{ total: number; checkedIn: number }>;
+  markCheckedIn(id: string, at?: Date): Promise<void>;
+}
+
+// ---------------------------------------------------------------------------
+// Admin auth
+//
+// One operator account, credentials from the environment. No users table: a
+// second account is a feature, and shipping a half-built user system is worse
+// than shipping one credential that is obviously one credential.
+// ---------------------------------------------------------------------------
+
+export interface AdminIdentity {
+  email: string;
+}
+
+export interface SessionRecord {
+  /** Opaque id stored in the cookie. Never a JWT — revocation must be real. */
+  id: string;
+  email: string;
+  createdAt: Date;
+  expiresAt: Date;
+  lastSeenAt?: Date;
+}
+
+export interface SessionStore {
+  create(email: string, ttlMs: number): Promise<SessionRecord>;
+  /** Returns null for unknown, expired or revoked ids. Also refreshes lastSeen. */
+  get(id: string): Promise<SessionRecord | null>;
+  revoke(id: string): Promise<void>;
+  /** Log-out-everywhere, and the remedy after a leaked cookie. */
+  revokeAll(email: string): Promise<void>;
+  /** Housekeeping; safe to call on a timer. */
+  purgeExpired(now?: Date): Promise<number>;
 }

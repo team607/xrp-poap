@@ -4,8 +4,12 @@
   "private": true,
   "type": "module",
   "description": "POAP-style attendance badges on XRP Ledger: mint, claim, verify.",
-  "engines": { "node": ">=20" },
-  "exports": { ".": "./dist/index.js" },
+  "engines": {
+    "node": ">=20"
+  },
+  "exports": {
+    ".": "./dist/index.js"
+  },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
@@ -16,6 +20,7 @@
     "dev": "tsx watch src/api/server.ts",
     "start": "node dist/api/server.js",
     "keygen": "tsx scripts/generate-issuer.ts",
+    "admin:hash": "tsx scripts/admin-hash.ts",
     "e2e:testnet": "tsx scripts/01-testnet-e2e.ts",
     "e2e:burn": "tsx scripts/02-burn-test.ts",
     "e2e:mainnet": "tsx scripts/03-mainnet-rehearsal.ts",
@@ -27,6 +32,7 @@
     "check:cutover": "tsx scripts/check-cutover.ts"
   },
   "dependencies": {
+    "@fastify/cookie": "^11.1.2",
     "@fastify/rate-limit": "^10.3.0",
     "dotenv": "^17.2.3",
     "fastify": "^5.12.1",

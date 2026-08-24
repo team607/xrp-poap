@@ -1,8 +1,11 @@
 # Conventions for this repo
 
-XRPL NFT layer for a POAP-style attendance app. Spec: `xrpl-nft-layer-brief.md`.
-Read section 4 of the brief before changing any transaction builder — those
-decisions are settled.
+XRPL NFT layer for a POAP-style attendance app.
+
+The original spec (`xrpl-nft-layer-brief.md`) has been removed; it is in git
+history at commit 4720bd5 if you need it. Its settled decisions are restated
+below, and its factual claims about endpoints and burn behaviour were measured
+and corrected in `docs/ground-truth.md` — trust that file over the brief.
 
 ## Non-negotiables
 

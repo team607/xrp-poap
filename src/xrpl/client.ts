@@ -29,6 +29,29 @@ export interface ConnectionOptions {
    * throwaway wallet use this instead of writing a seed into the environment.
    */
   issuerAddress?: string;
+  /**
+   * Builds the underlying client. Exists so tests can drive the real
+   * reconnect logic against a stand-in socket instead of re-implementing the
+   * policy in the test and asserting against that.
+   */
+  clientFactory?: (endpoint: string, opts: { connectionTimeout: number }) => Client;
+}
+
+/**
+ * True when the failure is the socket, not the request.
+ *
+ * xrpl.js surfaces a dropped connection as NotConnectedError or
+ * DisconnectedError depending on where in its stack the drop was noticed. A
+ * public Clio server with no SLA WILL drop an idle socket, and without this the
+ * process stays up while every ledger call fails forever.
+ */
+export function isDisconnectedError(err: unknown): boolean {
+  const name = (err as { name?: string } | undefined)?.name ?? "";
+  if (name === "NotConnectedError" || name === "DisconnectedError") return true;
+  const message = err instanceof Error ? err.message : "";
+  return /NotConnected|DisconnectedError|websocket was closed|not connected/i.test(
+    `${name} ${message}`,
+  );
 }
 
 /** True when a rippled response carried this specific error code. */
@@ -65,22 +88,123 @@ export function requireMetaString(outcome: SubmitOutcome, field: string): string
 export class XrplConnection implements XrplGateway {
   readonly network: NetworkName;
   readonly issuerAddress: string;
-  readonly endpoint: string;
-  readonly client: Client;
   private readonly defaultWallet?: Wallet;
+
+  /** Mutable: a reconnect may land on a different endpoint. */
+  #client: Client;
+  #endpoint: string;
+  /** Every endpoint we may use, primary first. Kept for reconnects. */
+  readonly #endpoints: readonly string[];
+  readonly #connectTimeoutMs: number;
+  readonly #makeClient: (endpoint: string, opts: { connectionTimeout: number }) => Client;
+  /** Collapses a stampede of concurrent failures into one reconnect. */
+  #reconnecting: Promise<void> | undefined;
+  #closed = false;
+
+  /** The raw client. Scripts use this for fundWallet(). */
+  get client(): Client {
+    return this.#client;
+  }
+
+  /** The endpoint currently in use, which may not be the configured primary. */
+  get endpoint(): string {
+    return this.#endpoint;
+  }
 
   private constructor(
     client: Client,
     endpoint: string,
     network: NetworkName,
     issuerAddress: string,
-    wallet?: Wallet,
+    wallet: Wallet | undefined,
+    endpoints: readonly string[],
+    connectTimeoutMs: number,
+    makeClient: (endpoint: string, opts: { connectionTimeout: number }) => Client,
   ) {
-    this.client = client;
-    this.endpoint = endpoint;
+    this.#client = client;
+    this.#endpoint = endpoint;
     this.network = network;
     this.issuerAddress = issuerAddress;
     this.defaultWallet = wallet;
+    this.#endpoints = endpoints;
+    this.#connectTimeoutMs = connectTimeoutMs;
+    this.#makeClient = makeClient;
+  }
+
+  /**
+   * Rebuild the socket, walking the endpoint list from the top.
+   *
+   * Concurrent callers share one attempt: twenty in-flight requests hitting a
+   * dead socket must not open twenty connections.
+   */
+  async #reconnect(): Promise<void> {
+    if (this.#closed) {
+      throw new ConnectionError("This XrplConnection has been disconnected.");
+    }
+    if (this.#reconnecting) return this.#reconnecting;
+
+    this.#reconnecting = (async () => {
+      try {
+        await this.#client.disconnect();
+      } catch {
+        /* it is already gone; that is why we are here */
+      }
+      const failures: string[] = [];
+      for (const endpoint of this.#endpoints) {
+        const next = this.#makeClient(endpoint, { connectionTimeout: this.#connectTimeoutMs });
+        try {
+          await next.connect();
+          this.#client = next;
+          this.#endpoint = endpoint;
+          return;
+        } catch (err) {
+          failures.push(`${endpoint}: ${(err as Error).message}`);
+          try {
+            await next.disconnect();
+          } catch {
+            /* nothing to close */
+          }
+        }
+      }
+      throw new ConnectionError(
+        `Lost the XRPL connection and could not re-establish it (tried ${this.#endpoints.length}).`,
+        { failures },
+      );
+    })().finally(() => {
+      this.#reconnecting = undefined;
+    });
+
+    return this.#reconnecting;
+  }
+
+  /** Run `fn`; on a dropped socket, reconnect once and run it again. */
+  async #withReconnect<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err) {
+      if (!isDisconnectedError(err)) throw err;
+      if (this.#closed) {
+        // Rethrowing the raw NotConnectedError here is useless: its message is
+        // the request payload. Say what actually happened.
+        throw new ConnectionError(
+          "This XrplConnection has been disconnected; build a new one to talk to the ledger.",
+          { endpoint: this.#endpoint },
+        );
+      }
+      await this.#reconnect();
+      return fn();
+    }
+  }
+
+  /** Has this transaction already been validated? Used before any resend. */
+  async #findByHash(hash: string): Promise<Record<string, any> | undefined> {
+    try {
+      const res = await this.#client.request({ command: "tx", transaction: hash } as any);
+      return (res as { result?: Record<string, any> }).result;
+    } catch (err) {
+      if (isRippledError(err, "txnNotFound")) return undefined;
+      throw err;
+    }
   }
 
   /**
@@ -93,6 +217,8 @@ export class XrplConnection implements XrplGateway {
     options: ConnectionOptions = {},
   ): Promise<XrplConnection> {
     const { connectTimeoutMs = 15_000 } = options;
+    const makeClient =
+      options.clientFactory ?? ((endpoint, opts) => new Client(endpoint, opts));
     const endpoints = [cfg.endpoint, ...cfg.fallbackEndpoints];
     const failures: string[] = [];
 
@@ -113,10 +239,19 @@ export class XrplConnection implements XrplGateway {
     }
 
     for (const endpoint of endpoints) {
-      const client = new Client(endpoint, { connectionTimeout: connectTimeoutMs });
+      const client = makeClient(endpoint, { connectionTimeout: connectTimeoutMs });
       try {
         await client.connect();
-        return new XrplConnection(client, endpoint, cfg.network, issuerAddress, wallet);
+        return new XrplConnection(
+          client,
+          endpoint,
+          cfg.network,
+          issuerAddress,
+          wallet,
+          endpoints,
+          connectTimeoutMs,
+          makeClient,
+        );
       } catch (err) {
         failures.push(`${endpoint}: ${(err as Error).message}`);
         try {
@@ -133,8 +268,11 @@ export class XrplConnection implements XrplGateway {
     );
   }
 
+  /** Reads are pure, so a dropped socket is simply retried on a fresh one. */
   async request<Res = any>(req: Record<string, unknown>): Promise<Res> {
-    return (await this.client.request(req as any)) as Res;
+    return this.#withReconnect(
+      async () => (await this.#client.request(req as any)) as Res,
+    );
   }
 
   /**
@@ -152,8 +290,36 @@ export class XrplConnection implements XrplGateway {
       );
     }
 
-    const prepared = await this.client.autofill(tx);
-    const response = await this.client.submitAndWait(prepared, { wallet });
+    // Split deliberately into prepare-and-sign, then send.
+    //
+    // A dropped socket during PREPARE has put nothing on the wire, so the whole
+    // step is safe to redo. A dropped socket during SEND is the dangerous case:
+    // re-running autofill would allocate a NEW Sequence, and resubmitting under
+    // it would mint a second badge for one claim. So the signed blob is reused
+    // verbatim — the ledger enforces one application per (Account, Sequence) —
+    // and before resending at all we ask whether it already landed.
+
+    // --- prepare + sign: nothing sent yet, retry freely ---------------------
+    const signed = await this.#withReconnect(async () => {
+      const prepared = await this.#client.autofill(tx);
+      return wallet.sign(prepared);
+    });
+
+    // --- send: the same bytes, or nothing ----------------------------------
+    let response: { result: unknown };
+    try {
+      response = await this.#client.submitAndWait(signed.tx_blob);
+    } catch (err) {
+      if (!isDisconnectedError(err) || this.#closed) throw err;
+      await this.#reconnect();
+      // It may well have been applied before the socket died. Ask first: a
+      // blind resend is safe against duplication but a needless round trip,
+      // and a landed transaction is the answer we already want.
+      const landed = await this.#findByHash(signed.hash);
+      response = landed
+        ? { result: landed }
+        : await this.#client.submitAndWait(signed.tx_blob);
+    }
     const result = response.result as Record<string, any>;
     const meta = metaOf(result);
 
@@ -183,7 +349,10 @@ export class XrplConnection implements XrplGateway {
   }
 
   async disconnect(): Promise<void> {
-    if (this.client.isConnected()) await this.client.disconnect();
+    // Latch first: a reconnect racing a deliberate shutdown would resurrect the
+    // socket the caller just asked us to close.
+    this.#closed = true;
+    if (this.#client.isConnected()) await this.#client.disconnect();
   }
 }
 

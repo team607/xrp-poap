@@ -158,9 +158,14 @@ async function run(): Promise<void> {
     // what makes the "unfunded attendee" branch of the demo real rather than
     // staged. POST /claims 409s that attendee without it.
     sponsor: { ...cfg.sponsor, enabled: true },
-    // In memory. Nothing about a demo should outlive the process, and a demo
-    // that needs a Postgres is not a one-command demo.
-    databaseUrl: undefined,
+    // Use Postgres when one is configured, memory otherwise.
+    //
+    // A demo must stay one command with no database — that is why the memory
+    // fallback exists. But events and registrations are real records now: an
+    // organiser who creates an event, collects sign-ups, then restarts and
+    // finds an empty room has not been served by "nothing outlives the demo".
+    // So honour DATABASE_URL when the operator has bothered to set one.
+    ...(cfg.databaseUrl ? { databaseUrl: cfg.databaseUrl } : { databaseUrl: undefined }),
     defaultMetadataUri: cfg.defaultMetadataUri ?? DEFAULT_METADATA_URI,
     // The whole point of this launcher. AppConfig owns the switch, so setting
     // it here is enough — buildDeps re-asserts it is not paired with mainnet.
@@ -222,7 +227,12 @@ async function run(): Promise<void> {
   r.info("issuer", issuer.classicAddress);
   r.link("issuer on explorer", explorerAccountUrl(config.network, issuer.classicAddress));
   r.info("sponsorship", `on · ${config.sponsor.amountXrp} XRP, cap ${config.sponsor.dailyCapXrp}/day`);
-  r.info("storage", "in memory (no DATABASE_URL needed; nothing survives a restart)");
+  r.info(
+    "storage",
+    config.databaseUrl
+      ? "postgres — events, registrations and attendance persist across restarts"
+      : "in memory — no DATABASE_URL set, nothing survives a restart",
+  );
   r.blank();
 
   if (WANT_LAN) {

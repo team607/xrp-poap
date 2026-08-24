@@ -2,8 +2,11 @@
 
 Mint, claim, and verify POAP-style attendance badges on the XRP Ledger.
 
-Scope is deliberately narrow: **the NFT layer only**. No UI, no auth, no event
-management, no payments. Spec: [`xrpl-nft-layer-brief.md`](xrpl-nft-layer-brief.md).
+Started as the NFT layer only; now a working product around it — events,
+registration, an attendee app and a volunteer desk.
+
+Ledger behaviour here was measured rather than assumed: see
+[`docs/ground-truth.md`](docs/ground-truth.md).
 
 ## There is nothing to deploy
 
@@ -274,7 +277,7 @@ src/
   db/               the attendance index (Postgres) + in-memory equivalents
   api/              thin Fastify surface
   xaman/            attendee-side signing payloads
-scripts/            the build order of brief section 8, runnable
+scripts/            the build order of section 8, runnable
 docs/ground-truth.md  measured ledger behaviour
 ```
 

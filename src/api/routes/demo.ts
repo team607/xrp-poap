@@ -513,7 +513,12 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
 
   // GUARD 4. One line, once, and it says what is now possible.
   app.log.warn(
-    { network: deps.config.network, endpoint: deps.config.endpoint, eventId: state.eventId },
+    {
+        network: deps.config.network,
+        // The live endpoint, not the configured one: after a failover they differ.
+        endpoint: deps.gateway.endpoint ?? deps.config.endpoint,
+        eventId: state.eventId,
+      },
     "DEMO ROUTES ARE LIVE at /demo — this build can generate wallets, take faucet funds and " +
       "sign transactions as an attendee. Testnet only. Never run this configuration against mainnet.",
   );
@@ -632,7 +637,7 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
       return reply.code(200).send({
         enabled: true,
         network: deps.config.network,
-        endpoint: deps.config.endpoint,
+        endpoint: deps.gateway.endpoint ?? deps.config.endpoint,
         eventId: view.eventId,
         issuer: { address: issuerAddress, balanceXrp: issuer.balanceXrp },
         attendee,

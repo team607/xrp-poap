@@ -24,21 +24,24 @@ import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import { dropsToXrp } from "xrpl";
 import { XrplLayerError } from "../errors.js";
-import type {
-  AttendanceRecord,
-  AttendanceRepository,
-  ClaimRepository,
-  SponsorLedger,
-  SponsorReservation,
+import {
+  MAX_TAXON,
+  type AttendanceRecord,
+  type AttendanceRepository,
+  type ClaimRepository,
+  type EventRepository,
+  type RegistrationRepository,
+  type SessionStore,
+  type SponsorLedger,
+  type SponsorReservation,
 } from "../types.js";
 import { PgAttendanceRepository } from "./attendance-repo.js";
 import { PgClaimRepository } from "./claim-repo.js";
-import {
-  MemoryAttendanceRepository,
-  MemoryClaimRepository,
-  MemorySponsorLedger,
-} from "./memory.js";
+import { PgEventRepository } from "./event-repo.js";
+import { createMemoryStores } from "./memory.js";
 import { closePool, createPool } from "./pool.js";
+import { PgRegistrationRepository } from "./registration-repo.js";
+import { hashSessionId, PgSessionStore } from "./session-store.js";
 import { dropsToXrpString, PgSponsorLedger } from "./sponsor-ledger.js";
 
 // XRPL classic addresses: base58, mixed case, and case-SENSITIVE. Nothing in
@@ -75,10 +78,36 @@ function addr(i: number): string {
   return `rConc${String(i).padStart(3, "0")}xF7bN4qT8sJ1wK6vP9dG3hLyRz`;
 }
 
+const ADMIN = "ops@example.test";
+const OTHER_ADMIN = "second@example.test";
+
+/** Enough of an event to satisfy the schema, for tests that are not about events. */
+function eventInput(overrides: Partial<Parameters<EventRepository["create"]>[0]> = {}) {
+  return {
+    eventId: EVENT_A,
+    name: "Ledger Days",
+    status: "draft" as const,
+    ...overrides,
+  };
+}
+
 export interface ContractSubjects {
   repo: AttendanceRepository;
   ledger: SponsorLedger;
   claims: ClaimRepository;
+  events: EventRepository;
+  registrations: RegistrationRepository;
+  sessions: SessionStore;
+  /**
+   * Every id the session store actually persisted.
+   *
+   * Not part of SessionStore, and supplied by the wiring rather than reached
+   * for through the interface, so the contract stays implementation-agnostic.
+   * It exists for exactly one assertion, and that assertion is the reason the
+   * column is hashed: a raw cookie value must not be recoverable from the
+   * store.
+   */
+  storedSessionIds: () => Promise<string[]>;
 }
 
 export type ContractFactory = () => Promise<ContractSubjects> | ContractSubjects;
@@ -88,9 +117,22 @@ export type ContractFactory = () => Promise<ContractSubjects> | ContractSubjects
  * nothing in here may reach for an implementation-specific method.
  */
 export function runRepositoryContract(label: string, factory: ContractFactory): void {
-  describe(`${label}: AttendanceRepository + SponsorLedger + ClaimRepository contract`, () => {
+  describe(`${label}: persistence layer contract`, () => {
     async function fresh(): Promise<ContractSubjects> {
       return factory();
+    }
+
+    /**
+     * Registrations carry a foreign key to events, so anything that registers
+     * needs the event to exist first. Postgres enforces it; the in-memory
+     * store is wired to the event store so that it enforces it too.
+     */
+    async function withEvent(
+      subjects: ContractSubjects,
+      overrides: Partial<Parameters<EventRepository["create"]>[0]> = {},
+    ): Promise<ContractSubjects> {
+      await subjects.events.create(eventInput(overrides));
+      return subjects;
     }
 
     /** reserve() + confirm(), the whole two-phase spend, for tests about totals. */
@@ -779,6 +821,650 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
       // Nothing is expired before anything expired.
       expect(await claims.listExpired(past(300_000))).toEqual([]);
     });
+
+    // -----------------------------------------------------------------------
+    // EventRepository — the event id IS the NFTokenTaxon
+    // -----------------------------------------------------------------------
+
+    it("creates an event and reads it back", async () => {
+      const { events } = await fresh();
+
+      const created = await events.create({
+        eventId: EVENT_A,
+        name: "Ledger Days",
+        description: "One day, many badges",
+        eventDate: "2026-05-01",
+        venue: "Hall C",
+        metadataUri: "ipfs://bafyEVENT/metadata.json",
+        status: "open",
+      });
+
+      expect(created.eventId).toBe(EVENT_A);
+      expect(created.name).toBe("Ledger Days");
+      expect(created.description).toBe("One day, many badges");
+      expect(created.eventDate).toBe("2026-05-01");
+      expect(created.venue).toBe("Hall C");
+      expect(created.metadataUri).toBe("ipfs://bafyEVENT/metadata.json");
+      expect(created.status).toBe("open");
+      expect(created.createdAt).toBeInstanceOf(Date);
+      expect(created.updatedAt).toBeInstanceOf(Date);
+
+      const found = await events.find(EVENT_A);
+      expect(found).not.toBeNull();
+      expect(found?.name).toBe("Ledger Days");
+      expect(found?.eventDate).toBe("2026-05-01");
+      expect(await events.find(EVENT_B)).toBeNull();
+    });
+
+    it("defaults the optional columns to null", async () => {
+      const { events } = await fresh();
+      const created = await events.create(eventInput());
+
+      expect(created.description ?? null).toBeNull();
+      expect(created.eventDate ?? null).toBeNull();
+      expect(created.venue ?? null).toBeNull();
+      expect(created.metadataUri ?? null).toBeNull();
+      expect(created.status).toBe("draft");
+    });
+
+    it("keeps event_date a calendar day, not an instant, in any timezone", async () => {
+      const { events } = await fresh();
+      await events.create(eventInput({ eventDate: "2026-05-01" }));
+
+      // A `date` column has no zone, but node-postgres parses one into a Date
+      // at LOCAL midnight — whose ISO form is the PREVIOUS day everywhere east
+      // of Greenwich. UTC+14 is the worst case: without the to_char() cast in
+      // event-repo.ts this reads back "2026-04-30" and an event silently moves
+      // a day earlier for everyone on a server in Kiritimati.
+      const original = process.env.TZ;
+      process.env.TZ = "Pacific/Kiritimati";
+      try {
+        expect((await events.find(EVENT_A))?.eventDate).toBe("2026-05-01");
+        const [listed] = await events.list();
+        expect(listed?.eventDate).toBe("2026-05-01");
+      } finally {
+        if (original === undefined) delete process.env.TZ;
+        else process.env.TZ = original;
+      }
+    });
+
+    it("refuses to reuse an event id: it is a taxon, and badges point at it", async () => {
+      const { events } = await fresh();
+      await events.create(eventInput());
+
+      const second = events.create(eventInput({ name: "A different event" }));
+      await expect(second).rejects.toBeInstanceOf(XrplLayerError);
+      await expect(second).rejects.toMatchObject({ code: "DUPLICATE_CLAIM" });
+      await second.catch((err: XrplLayerError) => {
+        expect(err.details?.constraint).toBe("event_id");
+      });
+
+      // The original survived; the loser did not overwrite it.
+      expect((await events.find(EVENT_A))?.name).toBe("Ledger Days");
+    });
+
+    it("rejects an event id outside the NFTokenTaxon range", async () => {
+      const { events } = await fresh();
+
+      // Taxons are unsigned in the protocol's mind and signed on the wire;
+      // 2147483648 and up are reserved, and a negative one cannot be minted.
+      await expect(events.create(eventInput({ eventId: -1 }))).rejects.toMatchObject({
+        code: "INVALID_TAXON",
+      });
+      await expect(
+        events.create(eventInput({ eventId: MAX_TAXON + 1 })),
+      ).rejects.toMatchObject({ code: "INVALID_TAXON" });
+      await expect(events.create(eventInput({ eventId: 1.5 }))).rejects.toMatchObject({
+        code: "INVALID_TAXON",
+      });
+
+      // The boundary itself is legal.
+      expect((await events.create(eventInput({ eventId: MAX_TAXON }))).eventId).toBe(MAX_TAXON);
+    });
+
+    it("rejects a status or a date the table would reject", async () => {
+      const { events } = await fresh();
+
+      await expect(
+        events.create(eventInput({ status: "cancelled" as never })),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(events.create(eventInput({ name: "  " }))).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+      });
+      // Rolls over to 3 March, which is not the date anybody typed.
+      await expect(
+        events.create(eventInput({ eventDate: "2026-02-31" })),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(
+        events.create(eventInput({ eventDate: "1 May 2026" })),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    });
+
+    it("updates only the fields the patch carries", async () => {
+      const { events } = await fresh();
+      const created = await events.create(
+        eventInput({ description: "as first written", venue: "Hall C" }),
+      );
+
+      const updated = await events.update(EVENT_A, { name: "Ledger Nights", status: "live" });
+
+      expect(updated.name).toBe("Ledger Nights");
+      expect(updated.status).toBe("live");
+      // Untouched by a patch that did not mention them.
+      expect(updated.description).toBe("as first written");
+      expect(updated.venue).toBe("Hall C");
+      expect(updated.eventId).toBe(EVENT_A);
+      expect(updated.createdAt?.getTime()).toBe(created.createdAt?.getTime());
+      expect(updated.updatedAt!.getTime()).toBeGreaterThanOrEqual(
+        created.updatedAt!.getTime(),
+      );
+
+      expect((await events.find(EVENT_A))?.name).toBe("Ledger Nights");
+    });
+
+    it("clears a nullable field when the patch says null", async () => {
+      const { events } = await fresh();
+      await events.create(eventInput({ venue: "Hall C", eventDate: "2026-05-01" }));
+
+      const updated = await events.update(EVENT_A, { venue: null, eventDate: null });
+
+      // "The venue is now unknown" and "leave the venue alone" are different
+      // instructions, which is why the SET list is built from present keys
+      // rather than with COALESCE.
+      expect(updated.venue).toBeNull();
+      expect(updated.eventDate).toBeNull();
+      expect((await events.find(EVENT_A))?.venue).toBeNull();
+    });
+
+    it("an empty patch changes nothing, updated_at included", async () => {
+      const { events } = await fresh();
+      const created = await events.create(eventInput());
+
+      const updated = await events.update(EVENT_A, {});
+
+      expect(updated.updatedAt?.getTime()).toBe(created.updatedAt?.getTime());
+      expect(updated.name).toBe(created.name);
+    });
+
+    it("REFUSES to change eventId — the taxon is on chain and cannot follow", async () => {
+      const { events } = await fresh();
+      await events.create(eventInput());
+      await events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+
+      // TypeScript omits eventId from the patch type, which stops nobody: this
+      // patch is a parsed JSON body in production, and an admin form that
+      // round-trips the whole record posts the id straight back.
+      const renumber = events.update(EVENT_A, { eventId: 9999 } as never);
+      await expect(renumber).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await renumber.catch((err: XrplLayerError) => {
+        expect(err.message).toMatch(/eventId/i);
+      });
+
+      // Nothing moved, and nothing was created under the new number.
+      expect((await events.find(EVENT_A))?.name).toBe("Ledger Days");
+      expect(await events.find(9999)).toBeNull();
+
+      // The same id is the harmless round trip, not a renumber.
+      const echoed = await events.update(EVENT_A, {
+        eventId: EVENT_A,
+        name: "Ledger Days II",
+      } as never);
+      expect(echoed.eventId).toBe(EVENT_A);
+      expect(echoed.name).toBe("Ledger Days II");
+    });
+
+    it("throws NOT_FOUND when updating an event that does not exist", async () => {
+      const { events } = await fresh();
+      await expect(events.update(EVENT_A, { name: "ghost" })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(events.update(EVENT_A, {})).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("lists events by event_id, filtered by status and paged", async () => {
+      const { events } = await fresh();
+      await events.create(eventInput({ eventId: 30, name: "third", status: "open" }));
+      await events.create(eventInput({ eventId: 10, name: "first", status: "open" }));
+      await events.create(eventInput({ eventId: 20, name: "second", status: "closed" }));
+
+      // event_id, not event_date: the date is nullable and can tie, which makes
+      // it a paging hazard. The PK cannot.
+      expect((await events.list()).map((e) => e.eventId)).toEqual([10, 20, 30]);
+
+      expect((await events.list({ status: "open" })).map((e) => e.eventId)).toEqual([10, 30]);
+      expect(await events.list({ status: "draft" })).toEqual([]);
+
+      const page1 = await events.list({ limit: 2, offset: 0 });
+      const page2 = await events.list({ limit: 2, offset: 2 });
+      expect(page1.map((e) => e.eventId)).toEqual([10, 20]);
+      expect(page2.map((e) => e.eventId)).toEqual([30]);
+      expect(await events.list({ offset: 99 })).toEqual([]);
+    });
+
+    it("hasBadges answers from the attendance index", async () => {
+      const { events, repo } = await fresh();
+      await events.create(eventInput());
+      await events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+
+      // Nothing minted yet: an admin may still renumber or delete freely.
+      expect(await events.hasBadges(EVENT_A)).toBe(false);
+
+      await repo.insert(claim({ eventId: EVENT_A }));
+
+      // Now a badge on chain carries this taxon. A destructive edit orphans it.
+      expect(await events.hasBadges(EVENT_A)).toBe(true);
+      expect(await events.hasBadges(EVENT_B)).toBe(false);
+    });
+
+    // -----------------------------------------------------------------------
+    // RegistrationRepository — sign-ups, and the desk
+    // -----------------------------------------------------------------------
+
+    it("registers an attendee and reads them back", async () => {
+      const { registrations } = await withEvent(await fresh());
+
+      const created = await registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "xaman_signin",
+        displayName: "Alice",
+        email: "alice@example.test",
+        signinPayloadUuid: "3f2b8c1a-0000-4000-8000-0123456789ab",
+      });
+
+      expect(created.id).toBeTruthy();
+      expect(typeof created.id).toBe("string");
+      expect(created.eventId).toBe(EVENT_A);
+      expect(created.address).toBe(ALICE);
+      expect(created.addressProof).toBe("xaman_signin");
+      expect(created.displayName).toBe("Alice");
+      expect(created.email).toBe("alice@example.test");
+      expect(created.signinPayloadUuid).toBe("3f2b8c1a-0000-4000-8000-0123456789ab");
+      expect(created.registeredAt).toBeInstanceOf(Date);
+      // Registering is an intention. Nobody has seen them yet.
+      expect(created.checkedInAt ?? null).toBeNull();
+
+      expect((await registrations.findById(created.id))?.address).toBe(ALICE);
+      expect((await registrations.findByAddress(EVENT_A, ALICE))?.id).toBe(created.id);
+      expect(await registrations.findByAddress(EVENT_A, BOB)).toBeNull();
+      expect(await registrations.findById("999999")).toBeNull();
+      expect(await registrations.findById("not-an-id")).toBeNull();
+    });
+
+    it("accepts a self-declared address with no contact details", async () => {
+      const { registrations } = await withEvent(await fresh());
+
+      const created = await registrations.create({
+        eventId: EVENT_A,
+        address: BOB,
+        addressProof: "self_declared",
+      });
+
+      expect(created.addressProof).toBe("self_declared");
+      expect(created.displayName ?? null).toBeNull();
+      expect(created.email ?? null).toBeNull();
+      expect(created.signinPayloadUuid ?? null).toBeNull();
+    });
+
+    it("rejects an addressProof outside the pair", async () => {
+      const { registrations } = await withEvent(await fresh());
+      await expect(
+        registrations.create({
+          eventId: EVENT_A,
+          address: ALICE,
+          addressProof: "trust_me" as never,
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+    });
+
+    it("stores the address verbatim: base58 is case-sensitive", async () => {
+      const { registrations } = await withEvent(await fresh());
+      await registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+
+      // If anything folded case, the desk would tell a registered attendee
+      // they are not on the list — or find them under an address that is not
+      // a real account.
+      expect(await registrations.findByAddress(EVENT_A, ALICE.toLowerCase())).toBeNull();
+      expect((await registrations.findByAddress(EVENT_A, ALICE))?.address).toBe(ALICE);
+    });
+
+    it("refuses a duplicate (event, address) with a typed error, not a 500", async () => {
+      const { registrations } = await withEvent(await fresh());
+      await registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+
+      // A refreshed form or a double-tapped button. Expected, not exceptional.
+      const second = registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "self_declared",
+        displayName: "Alice again",
+      });
+
+      await expect(second).rejects.toBeInstanceOf(XrplLayerError);
+      await expect(second).rejects.toMatchObject({ code: "DUPLICATE_CLAIM" });
+      await second.catch((err: XrplLayerError) => {
+        expect(err.details?.constraint).toBe("event_id,address");
+      });
+
+      const counts = await registrations.countByEvent(EVENT_A);
+      expect(counts.total).toBe(1);
+      // And the loser did not overwrite the winner.
+      expect((await registrations.findByAddress(EVENT_A, ALICE))?.addressProof).toBe(
+        "xaman_signin",
+      );
+    });
+
+    it("lets one wallet register for two different events", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Second" }));
+
+      await subjects.registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+      await expect(
+        subjects.registrations.create({
+          eventId: EVENT_B,
+          address: ALICE,
+          addressProof: "xaman_signin",
+        }),
+      ).resolves.toMatchObject({ eventId: EVENT_B });
+    });
+
+    it("refuses to register for an event that does not exist", async () => {
+      const { registrations } = await fresh();
+
+      // The foreign key firing. A typo in an event id is a 404, not a pg error
+      // leaking out of the persistence layer.
+      const orphan = registrations.create({
+        eventId: 987_654,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+      await expect(orphan).rejects.toBeInstanceOf(XrplLayerError);
+      await expect(orphan).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+      // An id no event could ever have is still just a missing event, not a
+      // range error from an `integer` column.
+      await expect(
+        registrations.create({
+          eventId: MAX_TAXON + 1,
+          address: ALICE,
+          addressProof: "xaman_signin",
+        }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("CONCURRENCY: eight simultaneous sign-ups for ONE wallet yield exactly one", async () => {
+      const { registrations } = await withEvent(await fresh());
+
+      const results = await Promise.allSettled(
+        Array.from({ length: 8 }, () =>
+          registrations.create({
+            eventId: EVENT_A,
+            address: ALICE,
+            addressProof: "xaman_signin",
+          }),
+        ),
+      );
+
+      expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+      expect((await registrations.countByEvent(EVENT_A)).total).toBe(1);
+      for (const rejected of results.filter((r) => r.status === "rejected")) {
+        expect((rejected.reason as XrplLayerError).code).toBe("DUPLICATE_CLAIM");
+      }
+    });
+
+    it("pages listByEvent in sign-up order and filters on checked-in", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Second" }));
+      const { registrations } = subjects;
+
+      const addresses = [ALICE, BOB, CAROL, addr(11), addr(12)];
+      const ids: string[] = [];
+      for (const address of addresses) {
+        const created = await registrations.create({
+          eventId: EVENT_A,
+          address,
+          addressProof: "xaman_signin",
+        });
+        ids.push(created.id);
+      }
+      await registrations.create({
+        eventId: EVENT_B,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+
+      const all = await registrations.listByEvent(EVENT_A);
+      expect(all).toHaveLength(5);
+      expect(all.map((r) => r.address)).toEqual(addresses);
+
+      const page1 = await registrations.listByEvent(EVENT_A, { limit: 2, offset: 0 });
+      const page2 = await registrations.listByEvent(EVENT_A, { limit: 2, offset: 2 });
+      const page3 = await registrations.listByEvent(EVENT_A, { limit: 2, offset: 4 });
+      const paged = [...page1, ...page2, ...page3].map((r) => r.id);
+      expect(paged).toEqual(all.map((r) => r.id));
+      expect(new Set(paged).size).toBe(5);
+      expect(await registrations.listByEvent(EVENT_A, { offset: 99 })).toEqual([]);
+
+      // Two people through the door.
+      await registrations.markCheckedIn(ids[1]!);
+      await registrations.markCheckedIn(ids[3]!);
+
+      // The desk's two questions.
+      const arrived = await registrations.listByEvent(EVENT_A, { checkedIn: true });
+      const expected = await registrations.listByEvent(EVENT_A, { checkedIn: false });
+      expect(arrived.map((r) => r.address)).toEqual([BOB, addr(11)]);
+      expect(expected.map((r) => r.address)).toEqual([ALICE, CAROL, addr(12)]);
+      expect(arrived.every((r) => r.checkedInAt instanceof Date)).toBe(true);
+      expect(expected.every((r) => (r.checkedInAt ?? null) === null)).toBe(true);
+
+      // The filter pages too, and does not leak the other event.
+      expect(
+        (await registrations.listByEvent(EVENT_A, { checkedIn: false, limit: 1 })).map(
+          (r) => r.address,
+        ),
+      ).toEqual([ALICE]);
+      expect(await registrations.listByEvent(EVENT_B, { checkedIn: true })).toEqual([]);
+    });
+
+    it("counts totals and arrivals per event", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Second" }));
+      const { registrations } = subjects;
+
+      expect(await registrations.countByEvent(EVENT_A)).toEqual({ total: 0, checkedIn: 0 });
+
+      const a = await registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+      await registrations.create({
+        eventId: EVENT_A,
+        address: BOB,
+        addressProof: "self_declared",
+      });
+      await registrations.create({
+        eventId: EVENT_B,
+        address: CAROL,
+        addressProof: "xaman_signin",
+      });
+
+      expect(await registrations.countByEvent(EVENT_A)).toEqual({ total: 2, checkedIn: 0 });
+
+      await registrations.markCheckedIn(a.id);
+
+      expect(await registrations.countByEvent(EVENT_A)).toEqual({ total: 2, checkedIn: 1 });
+      expect(await registrations.countByEvent(EVENT_B)).toEqual({ total: 1, checkedIn: 0 });
+      const counts = await registrations.countByEvent(EVENT_A);
+      expect(typeof counts.total).toBe("number");
+      expect(typeof counts.checkedIn).toBe("number");
+    });
+
+    it("markCheckedIn is IDEMPOTENT: a double-tap is not a second arrival", async () => {
+      const { registrations } = await withEvent(await fresh());
+      const created = await registrations.create({
+        eventId: EVENT_A,
+        address: ALICE,
+        addressProof: "xaman_signin",
+      });
+
+      const first = new Date(Date.UTC(2026, 4, 1, 9, 0, 0));
+      const later = new Date(Date.UTC(2026, 4, 1, 17, 30, 0));
+
+      await registrations.markCheckedIn(created.id, first);
+      const afterFirst = await registrations.findById(created.id);
+      expect(afterFirst?.checkedInAt?.toISOString()).toBe(first.toISOString());
+
+      // A volunteer leaning on the button at a noisy door. Neither an error
+      // nor a rewrite: the first arrival is the one that happened.
+      await expect(registrations.markCheckedIn(created.id, later)).resolves.toBeUndefined();
+      await expect(registrations.markCheckedIn(created.id)).resolves.toBeUndefined();
+
+      expect((await registrations.findById(created.id))?.checkedInAt?.toISOString()).toBe(
+        first.toISOString(),
+      );
+      expect((await registrations.countByEvent(EVENT_A)).checkedIn).toBe(1);
+    });
+
+    it("markCheckedIn on a registration that does not exist is NOT_FOUND", async () => {
+      const { registrations } = await withEvent(await fresh());
+      // Telling the desk "checked in" for a row that is not there is a lie the
+      // desk would act on.
+      await expect(registrations.markCheckedIn("999999")).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(registrations.markCheckedIn("not-an-id")).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+    });
+
+    // -----------------------------------------------------------------------
+    // SessionStore — revocable, hashed, and on the server's clock
+    // -----------------------------------------------------------------------
+
+    it("creates a session and reads it back, refreshing last seen", async () => {
+      const { sessions } = await fresh();
+
+      const created = await sessions.create(ADMIN, 60_000);
+      expect(created.id).toBeTruthy();
+      expect(created.email).toBe(ADMIN);
+      expect(created.createdAt).toBeInstanceOf(Date);
+      expect(created.expiresAt.getTime()).toBeGreaterThan(created.createdAt.getTime());
+
+      // Long enough that both clocks — the database's now() and the memory
+      // store's — have visibly moved on.
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      const read = await sessions.get(created.id);
+      expect(read).not.toBeNull();
+      expect(read?.email).toBe(ADMIN);
+      expect(read?.id).toBe(created.id);
+      expect(read?.lastSeenAt!.getTime()).toBeGreaterThan(created.createdAt.getTime());
+    });
+
+    it("returns null for a session id nobody minted", async () => {
+      const { sessions } = await fresh();
+      await sessions.create(ADMIN, 60_000);
+      expect(await sessions.get("not-a-session-id")).toBeNull();
+      expect(await sessions.get("")).toBeNull();
+    });
+
+    it("STORES A HASH, NOT THE COOKIE VALUE", async () => {
+      const { sessions, storedSessionIds } = await fresh();
+
+      const created = await sessions.create(ADMIN, 60_000);
+      const stored = await storedSessionIds();
+
+      // The raw id is a bearer token: whoever holds it is the admin, no
+      // password involved. A leaked backup or a stray SELECT must not hand
+      // over live sessions.
+      expect(stored).not.toContain(created.id);
+      expect(stored.join(" ")).not.toContain(created.id);
+      expect(stored).toContain(hashSessionId(created.id));
+      expect(stored).toHaveLength(1);
+
+      // And the digest itself is not a working cookie.
+      expect(await sessions.get(hashSessionId(created.id))).toBeNull();
+      expect(await sessions.get(created.id)).not.toBeNull();
+    });
+
+    it("refuses an expired session, and does not let a caller argue", async () => {
+      const { sessions } = await fresh();
+
+      // Born expired. The only way to age a session without waiting out a TTL
+      // or reaching past the interface for a clock.
+      const dead = await sessions.create(ADMIN, -1_000);
+      expect(dead.expiresAt.getTime()).toBeLessThan(Date.now() + 1_000);
+
+      // Expiry is evaluated against the store's own clock — in SQL, against
+      // now() — so nothing the caller holds can revive this.
+      expect(await sessions.get(dead.id)).toBeNull();
+
+      const live = await sessions.create(OTHER_ADMIN, 60_000);
+      expect(await sessions.get(live.id)).not.toBeNull();
+    });
+
+    it("revoke ends one session and leaves the others alone", async () => {
+      const { sessions } = await fresh();
+      const first = await sessions.create(ADMIN, 60_000);
+      const second = await sessions.create(ADMIN, 60_000);
+
+      await sessions.revoke(first.id);
+
+      expect(await sessions.get(first.id)).toBeNull();
+      expect(await sessions.get(second.id)).not.toBeNull();
+
+      // Silent on an id that is already gone: a retried logout cannot fail.
+      await expect(sessions.revoke(first.id)).resolves.toBeUndefined();
+      await expect(sessions.revoke("never-existed")).resolves.toBeUndefined();
+    });
+
+    it("revokeAll is the remedy after a leaked cookie", async () => {
+      const { sessions } = await fresh();
+      const laptop = await sessions.create(ADMIN, 60_000);
+      const phone = await sessions.create(ADMIN, 60_000);
+      const colleague = await sessions.create(OTHER_ADMIN, 60_000);
+
+      await sessions.revokeAll(ADMIN);
+
+      // Every session for that operator, including the one making the call.
+      expect(await sessions.get(laptop.id)).toBeNull();
+      expect(await sessions.get(phone.id)).toBeNull();
+      // Scoped: somebody else's session is not collateral.
+      expect(await sessions.get(colleague.id)).not.toBeNull();
+
+      await expect(sessions.revokeAll("nobody@example.test")).resolves.toBeUndefined();
+    });
+
+    it("purgeExpired removes the dead and counts them, sparing the living", async () => {
+      const { sessions, storedSessionIds } = await fresh();
+
+      await sessions.create(ADMIN, -1_000);
+      await sessions.create(ADMIN, -5_000);
+      const live = await sessions.create(OTHER_ADMIN, 60_000);
+
+      // An explicit cutoff before anything expired purges nothing.
+      expect(await sessions.purgeExpired(new Date(Date.now() - 86_400_000))).toBe(0);
+
+      expect(await sessions.purgeExpired()).toBe(2);
+      expect(await storedSessionIds()).toHaveLength(1);
+      expect(await sessions.get(live.id)).not.toBeNull();
+
+      // Safe to call on a timer: a second sweep finds nothing left to do.
+      expect(await sessions.purgeExpired()).toBe(0);
+    });
   });
 }
 
@@ -786,11 +1472,22 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
 // Implementation 1: in-memory. Always runs. Never touches a database.
 // ---------------------------------------------------------------------------
 
-runRepositoryContract("memory", () => ({
-  repo: new MemoryAttendanceRepository(),
-  ledger: new MemorySponsorLedger(),
-  claims: new MemoryClaimRepository(),
-}));
+runRepositoryContract("memory", () => {
+  // createMemoryStores, not six constructors: the cross-store links — the
+  // events foreign key, the attendance count behind hasBadges — are the part
+  // that is easy to wire wrongly, and wiring them wrongly here would quietly
+  // weaken the contract rather than fail it.
+  const stores = createMemoryStores();
+  return {
+    repo: stores.attendance,
+    ledger: stores.sponsor,
+    claims: stores.claims,
+    events: stores.events,
+    registrations: stores.registrations,
+    sessions: stores.sessions,
+    storedSessionIds: async () => stores.sessions.storedIds(),
+  };
+});
 
 // ---------------------------------------------------------------------------
 // dropsToXrpString is the reason the sums above are exact, so pin it directly.
@@ -820,7 +1517,7 @@ describe("dropsToXrpString", () => {
 const TEST_DATABASE_URL = process.env.TEST_DATABASE_URL;
 
 if (!TEST_DATABASE_URL) {
-  describe.skip("postgres: AttendanceRepository + SponsorLedger + ClaimRepository contract", () => {
+  describe.skip("postgres: persistence layer contract", () => {
     it("skipped: set TEST_DATABASE_URL to run this suite against a real database", () => {
       expect(true).toBe(true);
     });
@@ -851,12 +1548,22 @@ if (!TEST_DATABASE_URL) {
   runRepositoryContract("postgres", async () => {
     schemaReady ??= migrate();
     await schemaReady;
-    // Every contract test starts from an empty index.
-    await pool.query("TRUNCATE attendance, sponsorship, claims RESTART IDENTITY");
+    // Every contract test starts from an empty index. registrations and events
+    // are truncated in the same statement because the foreign key between them
+    // makes truncating either alone illegal — which is the schema telling the
+    // truth about the relationship.
+    await pool.query(
+      "TRUNCATE attendance, sponsorship, claims, registrations, events, sessions RESTART IDENTITY",
+    );
+    const sessions = new PgSessionStore(pool);
     return {
       repo: new PgAttendanceRepository(pool),
       ledger: new PgSponsorLedger(pool),
       claims: new PgClaimRepository(pool),
+      events: new PgEventRepository(pool),
+      registrations: new PgRegistrationRepository(pool),
+      sessions,
+      storedSessionIds: async () => sessions.storedIds(),
     };
   });
 }

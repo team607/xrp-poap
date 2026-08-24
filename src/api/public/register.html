@@ -1,0 +1,1937 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<title>Register — XRPL attendance badge</title>
+<style>
+/* ==========================================================================
+   THE INVITATION — the public registration page.
+
+   Sibling of /demo/attendee, which is a letterpress TICKET: ink border, ribbon
+   head, perforation, stub. This is the other half of the same stationery — the
+   INVITATION that arrives first. Same bone paper, same deep ink, same editorial
+   serif for prose and monospace for anything the ledger said, same amber
+   "live" / jade "confirmed" signalling, same variable names.
+
+   The difference is the object, not the language. A ticket is left-aligned and
+   industrial because it is read at a desk under pressure. An invitation is
+   centred and engraved — double rule, lozenge ornament, the event's name set
+   large — because it is read on a sofa a week earlier.
+
+   Phone first. 375px is the design width; everything above it is the same card
+   with more air. The primary action lives in a fixed dock in the thumb zone,
+   and on a phone the QR code is demoted: the person holding the screen cannot
+   scan it, so they get the deeplink and the code hides behind a disclosure.
+
+   No webfonts, no images, no CDN, no build step, no library.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --sunk:#e4dccc;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --on-signal:#fffaf2;
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+  --vermilion:#a8331a;
+  --vermilion-wash:rgba(168,51,26,.11);
+
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
+  --grid:rgba(93,74,44,.09);
+  --grain-opacity:.055;
+
+  /* Xaman's QR arrives as a PNG with a white ground. The plate is therefore
+     white rather than bone, and — like the ticket's plate — it is deliberately
+     NOT theme-aware: a scanner wants dark-on-light, and inverting a QR code for
+     dark mode is how a registration dies at the moment it matters. */
+  --qr-plate:#ffffff;
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --sunk:#101312;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+
+    --signal:#e0a24a;
+    --signal-2:rgba(201,135,48,.56);
+    --signal-wash:rgba(224,162,74,.12);
+    --on-signal:#17130c;
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+    --vermilion:#e8724f;
+    --vermilion-wash:rgba(232,114,79,.12);
+
+    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
+    --grid:rgba(224,214,190,.055);
+    --grain-opacity:.04;
+  }
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:16.5px;
+  line-height:1.58;
+  overflow-x:hidden;
+  -webkit-tap-highlight-color:var(--signal-wash);
+}
+body.is-docked{padding-bottom:118px}
+
+/* Atmosphere: the plate grid and paper grain of the ticket, unchanged, so the
+   two pages read as one product rather than two skins. */
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px;
+  -webkit-mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
+  mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
+}
+.grain{
+  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.018em; line-height:1.12}
+p{margin:0 0 .8em}
+p:last-child{margin-bottom:0}
+a{color:var(--signal)}
+code,.mono{font-family:var(--font-mono)}
+.label{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+}
+.prose{color:var(--ink-2); font-size:15.5px}
+.prose strong{color:var(--ink); font-weight:600}
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+
+/* ---- status strip -------------------------------------------------------- */
+.strip{
+  position:sticky; top:0; z-index:40;
+  background:color-mix(in srgb, var(--paper) 90%, transparent);
+  -webkit-backdrop-filter:saturate(150%) blur(9px);
+  backdrop-filter:saturate(150%) blur(9px);
+  border-bottom:1px solid var(--rule);
+}
+.strip__in{display:flex; align-items:center; gap:12px; padding:7px 13px; max-width:640px; margin:0 auto}
+.mark{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; font-weight:700;
+  color:var(--on-signal); background:var(--signal); padding:3px 6px; border-radius:2px; flex:none;
+}
+.facts{
+  display:flex; align-items:baseline; gap:0 16px; flex:1; min-width:0;
+  overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+}
+.facts::-webkit-scrollbar{display:none}
+.fact{display:flex; align-items:baseline; gap:6px; flex:none}
+.fact__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.fact__v{font-family:var(--font-mono); font-size:11.5px; color:var(--ink); white-space:nowrap}
+.fact__v.ok{color:var(--jade)}
+.fact__v.warn{color:var(--signal)}
+
+.wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:0 13px}
+
+/* ---- banners ------------------------------------------------------------- */
+.banner{
+  display:flex; gap:11px; align-items:flex-start; margin:14px 0 0;
+  border:1px solid var(--vermilion); border-left-width:3px; background:var(--vermilion-wash);
+  padding:11px 13px; border-radius:2px;
+}
+.banner--warn{border-color:var(--signal); background:var(--signal-wash)}
+.banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
+.banner p{font-size:14px; color:var(--ink-2); margin:.3em 0 0}
+
+/* ---- the card ------------------------------------------------------------
+   The ticket has one ink border and a ribbon. The invitation has the engraver's
+   double rule: a solid outer edge and a hairline set in from it, drawn with one
+   pseudo-element and no extra DOM. */
+.invite{
+  position:relative; margin:18px 0 0;
+  border:1.5px solid var(--ink); border-radius:3px;
+  background:var(--surface); box-shadow:var(--shadow);
+}
+.invite::before{
+  content:""; position:absolute; inset:5px; pointer-events:none; z-index:0;
+  border:1px solid var(--rule-2); border-radius:2px;
+}
+.invite > *{position:relative; z-index:1}
+.invite[data-tone="live"]{border-color:var(--signal-2)}
+.invite[data-tone="good"]{border-color:var(--jade)}
+/* Amber, not vermilion. Neither dead end on this page is a fault — a closed
+   event and an unconfigured server are both just "not now", and vermilion is
+   reserved across this product for something being wrong. */
+.invite[data-tone="warn"]{border-color:var(--signal-2)}
+
+/* ---- letterhead ----------------------------------------------------------- */
+.head{padding:24px 20px 18px; text-align:center}
+.head .label{display:block; margin-bottom:11px}
+.head h1{font-size:clamp(1.68rem,7.2vw,2.3rem); letter-spacing:-.032em; text-wrap:balance}
+.head__meta{
+  margin:11px 0 0; font-family:var(--font-mono); font-size:11px; letter-spacing:.15em;
+  text-transform:uppercase; color:var(--ink-2);
+  display:flex; justify-content:center; align-items:center; gap:9px; flex-wrap:wrap;
+}
+.head__meta .sep{color:var(--signal); font-size:8px}
+.head__desc{margin:13px auto 0; max-width:46ch; font-size:15px; color:var(--ink-2)}
+
+/* The lozenge divider: a hairline broken by a rotated square. Pure invitation
+   stationery, and the one ornament on the page. */
+.orn{display:flex; align-items:center; gap:11px; margin:16px 0 0}
+.orn::before,.orn::after{content:""; flex:1; height:1px; background:var(--rule)}
+.orn__d{width:6px; height:6px; background:var(--signal); transform:rotate(45deg); flex:none}
+
+/* ---- the programme: three steps ------------------------------------------
+   Three fixed columns, mono labels, ellipsis on every one of them: at 375px
+   this row is 116px per cell and it must never be the thing that overflows. */
+.steps{
+  display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:0; padding:0; list-style:none;
+  border-top:1px solid var(--rule); border-bottom:1px solid var(--rule); background:var(--sunk);
+}
+.step{display:flex; align-items:center; gap:7px; padding:9px 9px; border-right:1px solid var(--rule); min-width:0}
+.step:last-child{border-right:0}
+.step__n{
+  flex:none; width:19px; height:19px; border-radius:50%; display:grid; place-items:center;
+  font-family:var(--font-mono); font-size:10px; font-weight:700; line-height:1;
+  border:1px solid var(--rule-2); color:var(--ink-3); background:var(--surface);
+}
+.step__t{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
+}
+.step[data-s="now"]{background:var(--signal-wash)}
+.step[data-s="now"] .step__n{border-color:var(--signal); color:var(--on-signal); background:var(--signal)}
+.step[data-s="now"] .step__t{color:var(--ink); font-weight:700}
+.step[data-s="done"] .step__n{border-color:var(--jade); color:var(--jade); background:transparent}
+.step[data-s="done"] .step__t{color:var(--ink-2)}
+
+/* ---- faces ---------------------------------------------------------------- */
+.face{padding:20px 15px 18px; animation:rise .42s cubic-bezier(.2,.75,.3,1) both}
+@keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
+.face__eyebrow{display:flex; align-items:center; gap:11px; margin-bottom:11px}
+.face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
+.face__eyebrow--mid{margin-top:22px}
+.face h2{font-size:clamp(1.42rem,5.8vw,1.72rem); letter-spacing:-.026em; text-wrap:balance}
+.face h2 em{font-style:italic; color:var(--signal)}
+.face h2 + .prose{margin-top:12px}
+
+/* ---- the QR plate --------------------------------------------------------- */
+.plate{
+  position:relative; width:min(272px,100%); margin:0 auto;
+  aspect-ratio:1/1; padding:9px; border-radius:3px;
+  background:var(--qr-plate); border:1px solid var(--rule-2);
+  box-shadow:0 14px 30px -22px rgba(30,20,6,.8);
+}
+.plate img{display:block; width:100%; height:100%; object-fit:contain}
+.bracket{position:absolute; width:19px; height:19px; border:2.5px solid var(--signal); pointer-events:none}
+.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:3px 0 0 0}
+.bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
+.bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 3px}
+.bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 3px 0}
+.plate.is-live .bracket{animation:hunt 2.2s ease-in-out infinite}
+@keyframes hunt{0%,100%{opacity:1; transform:translate(0,0)}50%{opacity:.4; transform:translate(var(--bx,0),var(--by,0))}}
+.bracket--tl{--bx:-3px; --by:-3px}
+.bracket--tr{--bx:3px;  --by:-3px}
+.bracket--bl{--bx:-3px; --by:3px}
+.bracket--br{--bx:3px;  --by:3px}
+.scan{text-align:center; margin-top:18px}
+.scan__cap{font-size:13.5px; color:var(--ink-3); margin:13px 0 0}
+
+/* On a coarse pointer the QR is useless to the person holding the screen, so it
+   folds away behind a disclosure — still one tap from a second device. */
+.fold{margin-top:18px; border:1px dashed var(--rule-2); border-radius:2px; background:var(--sunk)}
+.fold>summary{
+  cursor:pointer; list-style:none; padding:11px 12px; min-height:44px; display:flex; align-items:center; gap:9px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"▸"; color:var(--signal)}
+.fold[open]>summary::before{content:"▾"}
+.fold__body{padding:0 12px 16px}
+.fold .scan{margin-top:4px}
+
+/* ---- the live ticker ------------------------------------------------------ */
+.ticker{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px}
+.watching{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:2px; padding:6px 10px;
+}
+.dot{
+  width:7px; height:7px; border-radius:50%; flex:none;
+  background:currentColor; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+}
+.watching .dot{color:var(--signal); animation:blink 1.7s ease-in-out infinite}
+.watching[data-paused="1"] .dot{color:var(--ink-3); animation:none}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
+.clock{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin-left:auto}
+.clock b{color:var(--ink-2); font-weight:700}
+
+/* ---- the proved wallet ---------------------------------------------------- */
+.proved{
+  display:grid; gap:11px; margin-top:16px;
+  border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  background:var(--jade-wash); padding:12px 13px;
+  animation:land .55s cubic-bezier(.2,.85,.25,1) both;
+}
+@keyframes land{from{opacity:0; transform:scale(.96) translateY(-8px)}to{opacity:1; transform:none}}
+.proved__k{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+.proved__k .label{color:var(--jade)}
+.proved__v{font-family:var(--font-mono); font-size:12.5px; line-height:1.5; color:var(--ink); overflow-wrap:anywhere; -webkit-user-select:text; user-select:text}
+.pill{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:700;
+  padding:3px 7px; border-radius:2px; flex:none;
+}
+.pill--yes{color:var(--jade); background:var(--jade-wash); border:1px solid color-mix(in srgb, var(--jade) 45%, transparent)}
+.pill--no{color:var(--signal); background:var(--signal-wash); border:1px solid var(--signal-2)}
+
+/* ---- the form ------------------------------------------------------------- */
+.field{margin-top:18px}
+.field > .label{display:flex; align-items:baseline; gap:8px; margin-bottom:7px}
+.field .opt{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; color:var(--signal);
+  border:1px solid var(--signal-2); border-radius:2px; padding:1px 5px; font-weight:700;
+}
+/* 16px is not a taste decision: anything smaller and iOS Safari zooms the page
+   on focus, which on this form means the dock button scrolls out of reach. */
+.field input{
+  display:block; width:100%; font-family:var(--font-display); font-size:16px; line-height:1.4;
+  padding:12px 12px; border:1px solid var(--rule-2); border-radius:2px;
+  background:var(--sunk); color:var(--ink);
+}
+.field input:focus{outline:2px solid var(--signal); outline-offset:1px}
+.field input::placeholder{color:var(--ink-3); opacity:.7}
+.field input[type="email"]{font-family:var(--font-mono); font-size:16px}
+.field__why{font-size:13.5px; color:var(--ink-3); margin:7px 0 0}
+.field__why b{color:var(--ink-2); font-weight:600}
+.field__count{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.12em; color:var(--ink-3); margin-left:auto}
+.field__count.warn{color:var(--signal)}
+.nudge{
+  margin-top:11px; font-size:14px; color:var(--ink-2);
+  border-left:2px solid var(--signal); background:var(--signal-wash); padding:10px 12px; border-radius:0 2px 2px 0;
+}
+.nudge b{color:var(--ink); font-weight:600}
+
+/* ---- notes, rows, links, errors — the ticket's vocabulary ----------------- */
+.note{
+  margin-top:16px; font-size:14px; color:var(--ink-2);
+  border-left:2px solid var(--rule-2); background:var(--sunk); padding:10px 12px; border-radius:0 2px 2px 0;
+}
+.note b{color:var(--ink); font-weight:600}
+.rows{margin-top:14px; border-top:1px solid var(--rule)}
+.row{padding:10px 0; border-bottom:1px dotted var(--rule)}
+.row__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600; display:block; margin-bottom:4px}
+/* `anywhere`, not `break-all`: an address must break mid-token, prose must not. */
+.row__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; line-height:1.5}
+.row__v.ok{color:var(--jade)}
+.row__v.prose-v{font-family:var(--font-display); font-size:15px}
+.rows--quiet .row__k{font-size:9px}
+.rows--quiet .row__v{font-size:11.5px; color:var(--ink-2)}
+.rows--quiet .row__v.ok{color:var(--jade)}
+.rows--quiet .row__v.prose-v{font-size:14.5px; color:var(--ink)}
+.links{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px}
+.link{
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:2px;
+  padding:7px 12px; min-height:40px; display:inline-flex; align-items:center;
+}
+.link::after{content:" ↗"; opacity:.6}
+.err{
+  margin-top:16px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
+  padding:11px 13px; border-radius:0 2px 2px 0;
+}
+.err__code{font-family:var(--font-mono); font-size:11.5px; font-weight:700; letter-spacing:.1em; color:var(--vermilion)}
+.err__msg{font-size:14.5px; color:var(--ink); margin-top:5px; overflow-wrap:anywhere}
+.err__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px; font-style:italic}
+.err--warn{border-left-color:var(--signal); background:var(--signal-wash)}
+.err--warn .err__code{color:var(--signal)}
+.retry{margin-top:13px; display:flex; gap:9px; flex-wrap:wrap}
+
+/* ---- buttons -------------------------------------------------------------- */
+.btn{
+  font-family:var(--font-mono); letter-spacing:.14em; text-transform:uppercase; font-weight:700;
+  border-radius:2px; cursor:pointer; position:relative; overflow:hidden; text-decoration:none;
+  transition:transform .12s ease, filter .16s ease, background .16s ease;
+}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn[aria-busy="true"]::after{
+  content:""; position:absolute; left:0; bottom:0; height:3px; width:100%;
+  background:linear-gradient(90deg,transparent,currentColor,transparent);
+  animation:sweep 1s linear infinite;
+}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.btn--act{
+  display:flex; align-items:center; justify-content:center; width:100%; min-height:58px; font-size:14px;
+  background:var(--signal); color:var(--on-signal); border:0;
+  box-shadow:0 1px 0 rgba(255,255,255,.22) inset, 0 12px 24px -16px rgba(0,0,0,.9);
+}
+.btn--act:hover:not(:disabled){filter:brightness(1.07)}
+.btn--quiet{
+  background:transparent; color:var(--ink-2); border:1px solid var(--rule-2);
+  font-size:11px; padding:11px 14px; min-height:44px;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.btn--quiet:hover:not(:disabled){color:var(--ink); border-color:var(--ink-3)}
+
+/* ---- the dock: the primary action lives in the thumb zone ----------------- */
+.dock{
+  position:fixed; left:0; right:0; bottom:0; z-index:50;
+  padding:11px 13px calc(11px + env(safe-area-inset-bottom,0px));
+  background:color-mix(in srgb, var(--paper) 93%, transparent);
+  -webkit-backdrop-filter:saturate(150%) blur(12px);
+  backdrop-filter:saturate(150%) blur(12px);
+  border-top:1px solid var(--rule);
+  animation:dockin .34s cubic-bezier(.2,.8,.3,1) both;
+}
+.dock__in{max-width:640px; margin:0 auto}
+.dock__note{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); text-align:center; margin:8px 0 0;
+}
+/* A small offset and no opacity: this bar carries the primary tap target, and an
+   animation that is throttled must still leave the button on screen. */
+@keyframes dockin{from{transform:translateY(15px)}to{transform:none}}
+
+/* ---- the picker (bare /register) ------------------------------------------ */
+.picks{display:grid; gap:11px; margin-top:14px}
+.pick{
+  display:block; text-decoration:none; color:inherit;
+  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  padding:13px 14px; transition:border-color .16s ease, background .16s ease;
+}
+.pick:hover{border-color:var(--signal); background:var(--signal-wash)}
+.pick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.pick__top{display:flex; align-items:baseline; gap:10px}
+.pick__n{font-family:var(--font-display); font-size:1.14rem; font-weight:600; color:var(--ink); letter-spacing:-.02em; min-width:0}
+.pick__go{margin-left:auto; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); flex:none}
+.pick__meta{font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:6px 0 0}
+.pick__desc{font-size:14px; color:var(--ink-2); margin:7px 0 0}
+.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:2px; padding:16px; text-align:center; margin-top:14px}
+
+/* ---- the stamp: the payoff ------------------------------------------------
+   Rotated, double-ruled, jade. The one thing on the page that looks pressed
+   into the paper rather than printed on it. */
+.stampwrap{display:flex; justify-content:center; margin:18px 0 4px}
+.stamp{
+  position:relative; color:var(--jade); border:2px solid currentColor; border-radius:3px;
+  padding:9px 16px 10px; transform:rotate(-1.6deg); text-align:center; max-width:100%;
+  animation:press .5s cubic-bezier(.2,.9,.3,1) both;
+}
+.stamp::before{content:""; position:absolute; inset:3px; border:1px solid currentColor; border-radius:2px; opacity:.5}
+.stamp__t{font-family:var(--font-mono); font-size:15px; letter-spacing:.28em; text-transform:uppercase; font-weight:700; display:block}
+.stamp__d{font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; display:block; margin-top:3px}
+@keyframes press{from{opacity:0; transform:rotate(-7deg) scale(1.3)}to{opacity:1; transform:rotate(-1.6deg) scale(1)}}
+.already{
+  margin-top:14px; border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  background:var(--jade-wash); padding:11px 13px;
+}
+.already__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--jade); font-weight:700}
+.already p{font-size:14px; color:var(--ink-2); margin:.35em 0 0}
+
+/* ---- the badge artwork ----------------------------------------------------
+   GET /demo/art?address&eventId is a pure function of the two, so the badge
+   exists the moment the wallet is proven — before anything is minted. Same
+   mount as the ticket: a board, a hairline keyline, and a bed painted the
+   artwork's OWN outer black so the seam disappears. Theme-fixed, because the
+   artwork is an object, not a skin. */
+:root{
+  --art-bed:#080a0c;
+  --art-mount:var(--sunk);
+  --art-edge:var(--rule-2);
+  --art-keyline:rgba(24,17,5,.6);
+  --art-shadow:0 16px 32px -24px rgba(30,20,6,.85);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --art-mount:var(--surface-2);
+    --art-keyline:rgba(236,230,218,.15);
+    --art-shadow:0 20px 38px -28px rgba(0,0,0,.95);
+  }
+}
+.art{margin:0}
+.art__mount{
+  position:relative; padding:9px; border-radius:3px;
+  background:var(--art-mount); border:1px solid var(--art-edge);
+  box-shadow:var(--art-shadow);
+}
+.art__bed{position:relative; aspect-ratio:1/1; overflow:hidden; background:var(--art-bed); border:1px solid var(--art-keyline)}
+.art__img{display:block; width:100%; height:auto}
+.art__cap{margin:0; min-width:0}
+.art__prov{font-size:12.5px; line-height:1.45; color:var(--ink-3); margin:0}
+.art--preview{
+  display:grid; grid-template-columns:88px minmax(0,1fr); gap:14px; align-items:center;
+  margin-top:16px; padding-top:15px; border-top:1px dashed var(--rule-2);
+}
+.art--preview .art__mount{padding:5px; border-radius:2px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
+.art--preview .art__cap .label{display:block; margin-bottom:5px}
+.art--big{margin:18px auto 0; max-width:340px}
+/* Crop marks: eight hairlines in one pseudo-element. A print artefact, not the
+   QR's amber viewfinder — same stationery, different job. */
+.art--big .art__mount::after{
+  content:""; position:absolute; inset:-8px; pointer-events:none;
+  background:
+    linear-gradient(var(--art-edge),var(--art-edge)) left top/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left top/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right top/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right top/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left bottom/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left bottom/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right bottom/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right bottom/14px 1px no-repeat;
+}
+.art--big .art__cap{margin-top:12px; text-align:center}
+.art--big .art__img{animation:art-place .78s cubic-bezier(.18,.72,.24,1) both}
+@keyframes art-place{from{opacity:0; transform:translateY(-9px) scale(1.045)}to{opacity:1; transform:none}}
+
+/* ---- wire log + footer ---------------------------------------------------- */
+.wire{margin-top:26px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk)}
+.wire>summary{
+  cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+}
+.wire>summary::-webkit-details-marker{display:none}
+.wire>summary::before{content:"▸"; color:var(--signal)}
+.wire[open]>summary::before{content:"▾"}
+.wire__box{border-top:1px solid var(--rule); max-height:230px; overflow-y:auto}
+.wire__row{
+  display:grid; grid-template-columns:42px minmax(0,1fr) auto; gap:9px; align-items:baseline;
+  padding:6px 12px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11px;
+}
+.wire__row:last-child{border-bottom:0}
+.wire__m{font-weight:700; color:var(--signal)}
+.wire__p{color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.wire__s{font-weight:700}
+.wire__s.ok{color:var(--jade)}
+.wire__s.err{color:var(--vermilion)}
+.wire__empty{padding:11px 12px; font-family:var(--font-mono); font-size:11px; color:var(--ink-3)}
+
+.foot{margin:20px 0 34px; padding-top:16px; border-top:1px solid var(--rule); font-size:13px; color:var(--ink-3)}
+.foot b{color:var(--ink-2); font-weight:600}
+
+@media (min-width:560px){
+  .wrap{padding:0 20px}
+  .head{padding:32px 26px 22px}
+  .face{padding:26px 24px 24px}
+  .art--preview{grid-template-columns:112px minmax(0,1fr); gap:18px}
+  .steps{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .step{padding:10px 14px}
+  .step__t{font-size:10px}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="strip">
+  <div class="strip__in">
+    <span class="mark">XRPL</span>
+    <div class="facts">
+      <span class="fact"><span class="fact__k">net</span><span class="fact__v" id="f-net">—</span></span>
+      <span class="fact"><span class="fact__k">event</span><span class="fact__v" id="f-event">—</span></span>
+      <span class="fact"><span class="fact__k">step</span><span class="fact__v" id="f-step">—</span></span>
+      <span class="fact"><span class="fact__k">wallet</span><span class="fact__v" id="f-wallet">—</span></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <noscript>
+    <div class="banner">
+      <div><span class="banner__t">JavaScript required</span>
+      <p>This page talks to a live API and to Xaman. Nothing here is pre-rendered.</p></div>
+    </div>
+  </noscript>
+
+  <div class="banner" id="b-offline" hidden>
+    <div>
+      <span class="banner__t">The server is not answering</span>
+      <p>A request from this page failed at the network layer. This page is served by the API itself, so if it loaded but a request did not, the process is down or restarting. Nothing you have done is lost — try again.</p>
+    </div>
+  </div>
+
+  <section class="invite" id="invite" data-tone="neutral">
+
+    <div class="head">
+      <span class="label" id="head-eyebrow">registration</span>
+      <h1 id="head-name">Reading the event…</h1>
+      <p class="head__meta" id="head-meta" hidden></p>
+      <div class="orn" aria-hidden="true"><span class="orn__d"></span></div>
+      <p class="head__desc" id="head-desc" hidden></p>
+    </div>
+
+    <ol class="steps" id="steps" hidden>
+      <li class="step" data-s="now"  id="st-1"><span class="step__n">1</span><span class="step__t">wallet</span></li>
+      <li class="step" data-s="todo" id="st-2"><span class="step__n">2</span><span class="step__t">details</span></li>
+      <li class="step" data-s="todo" id="st-3"><span class="step__n">3</span><span class="step__t">confirmed</span></li>
+    </ol>
+
+    <!-- ============ boot ============ -->
+    <div class="face" data-face="boot">
+      <p class="prose">Reading the event…</p>
+    </div>
+
+    <!-- ============ the event is not open ============ -->
+    <div class="face" data-face="closed" hidden>
+      <div class="face__eyebrow"><span class="label">Nothing to register for</span></div>
+      <h2>This event is not open for <em>registration</em>.</h2>
+      <p class="prose">
+        Either there is no event behind this link, or the organiser has not opened it yet. Both look
+        the same from out here, on purpose — a draft event is the organiser's scratch space and is
+        never public.
+      </p>
+      <div id="closed-err"></div>
+      <div class="retry">
+        <a class="btn btn--quiet" href="/register">See what is open</a>
+      </div>
+    </div>
+
+    <!-- ============ pick an event (bare /register) ============ -->
+    <div class="face" data-face="picker" hidden>
+      <div class="face__eyebrow"><span class="label">Open events</span></div>
+      <p class="prose">Pick the one you are coming to. Registration takes one signature and about a minute.</p>
+      <div class="picks" id="picks"></div>
+      <div id="picker-err"></div>
+    </div>
+
+    <!-- ============ Xaman is not configured on this server ============ -->
+    <div class="face" data-face="unavailable" hidden>
+      <div class="face__eyebrow"><span class="label">Step one · unavailable</span></div>
+      <h2>Registration is not open <em>yet</em>.</h2>
+      <p class="prose">
+        Proving a wallet needs <strong>Xaman</strong>, and this server has no Xaman credentials
+        configured — so there is nothing for you to approve and nothing for us to verify. Nothing is
+        wrong with your wallet, your phone, or this link.
+      </p>
+      <div id="unavail-err"></div>
+      <p class="note">
+        <b>For the organiser:</b> set <code>XUMM_API_KEY</code> and <code>XUMM_API_SECRET</code> and
+        restart the API. This page needs no changes — the same link starts working the moment the
+        keys are there. There is deliberately no "just type your address" fallback: an unverified
+        address is a claim, not a proof, and a badge minted to the wrong address is soulbound and
+        unrecoverable.
+      </p>
+      <div class="retry">
+        <button class="btn btn--quiet" id="recheck" type="button">Check again</button>
+      </div>
+    </div>
+
+    <!-- ============ step 1 · prove the wallet ============ -->
+    <div class="face" data-face="prove" hidden>
+      <div class="face__eyebrow"><span class="label">Step one</span></div>
+      <h2>Prove the <em>wallet</em>.</h2>
+      <p class="prose">
+        Xaman will ask you to sign in. <strong>It is not a transaction</strong> — no fee, nothing
+        submitted, nothing moved. It only proves the wallet is yours, which is the whole point: a
+        badge is <strong>soulbound</strong>, so one minted to a mistyped address can never be moved
+        and never be recovered.
+      </p>
+
+      <div id="prove-live" hidden>
+        <!-- Coarse pointer: the deeplink leads (in the dock) and the code folds away. -->
+        <details class="fold" id="qr-fold">
+          <summary id="qr-fold-summary">Signing on another device? Show the code</summary>
+          <div class="fold__body">
+            <div class="scan">
+              <div class="plate is-live" id="plate">
+                <img id="qr-img" alt="" width="272" height="272">
+                <span class="bracket bracket--tl"></span>
+                <span class="bracket bracket--tr"></span>
+                <span class="bracket bracket--bl"></span>
+                <span class="bracket bracket--br"></span>
+              </div>
+              <p class="scan__cap" id="scan-cap">Open Xaman on your phone and scan this.</p>
+            </div>
+          </div>
+        </details>
+
+        <p class="sr" id="qr-alt"></p>
+
+        <div class="ticker">
+          <span class="watching" id="watching" data-paused="0">
+            <span class="dot" aria-hidden="true"></span><span id="watching-text">waiting for the signature</span>
+          </span>
+          <span class="clock" id="clock"></span>
+        </div>
+
+        <div class="retry" id="prove-alt"></div>
+      </div>
+
+      <p class="note" id="prove-note">
+        <b>You will never be asked for a seed, a secret or a private key.</b> Not here, not in Xaman,
+        not at the desk. A sign-in is a signature over a challenge; the only thing it hands back is
+        which account signed it.
+      </p>
+
+      <div id="prove-err"></div>
+    </div>
+
+    <!-- ============ step 2 · their details ============ -->
+    <div class="face" data-face="details" hidden>
+      <div class="face__eyebrow"><span class="label">Step two</span></div>
+      <h2>Who shall we <em>expect</em>?</h2>
+
+      <div class="proved">
+        <div class="proved__k">
+          <span class="label">verified wallet</span>
+          <span class="pill pill--yes">signed in xaman</span>
+        </div>
+        <span class="proved__v" id="proved-addr">—</span>
+      </div>
+
+      <figure class="art art--preview" id="art-preview" hidden>
+        <div class="art__mount">
+          <div class="art__bed"><img class="art__img" id="art-preview-img" alt="" width="512" height="512"></div>
+        </div>
+        <figcaption class="art__cap">
+          <span class="label">your badge</span>
+          <p class="art__prov">Drawn from your address, so it already exists. This exact image is what gets minted to you at the event.</p>
+        </figcaption>
+      </figure>
+
+      <form id="form" autocomplete="on" novalidate>
+        <div class="field">
+          <label class="label" for="dn"><span>the name on the list</span><span class="field__count" id="dn-count"></span></label>
+          <input id="dn" name="name" type="text" maxlength="120" autocomplete="name"
+                 spellcheck="false" placeholder="Ada Lovelace">
+          <p class="field__why">
+            So the volunteer at the desk can find you by name instead of reading an address out loud.
+            <b>Not required</b> — without it you are a wallet on a list, which still works.
+          </p>
+        </div>
+
+        <div class="field">
+          <label class="label" for="em"><span>email</span><span class="opt">optional</span></label>
+          <input id="em" name="email" type="email" maxlength="254" autocomplete="email"
+                 inputmode="email" spellcheck="false" autocapitalize="off" placeholder="you@example.com">
+          <p class="field__why">
+            <b>Genuinely optional — leave it blank and nothing about your badge changes.</b> Its only
+            use is a one-off note from the organiser after the event, with the link to your badge on
+            the ledger. It is never shown on the public confirmation page and never goes on chain.
+          </p>
+        </div>
+      </form>
+
+      <div id="details-nudge"></div>
+      <div id="details-err"></div>
+    </div>
+
+    <!-- ============ step 3 · confirmed ============ -->
+    <div class="face" data-face="done" hidden>
+      <div class="face__eyebrow"><span class="label">Step three</span></div>
+      <h2>You're on the <em>list</em>.</h2>
+
+      <div id="done-already"></div>
+
+      <div class="stampwrap">
+        <div class="stamp">
+          <span class="stamp__t">Registered</span>
+          <span class="stamp__d" id="stamp-date">—</span>
+        </div>
+      </div>
+
+      <figure class="art art--big" id="art-hero" hidden>
+        <div class="art__mount">
+          <div class="art__bed"><img class="art__img" id="art-hero-img" alt="" width="512" height="512"></div>
+        </div>
+        <figcaption class="art__cap">
+          <span class="label">the badge waiting for you</span>
+        </figcaption>
+      </figure>
+
+      <p class="prose" id="done-next" style="margin-top:18px"></p>
+
+      <div class="face__eyebrow face__eyebrow--mid"><span class="label">keep this</span></div>
+      <div class="rows rows--quiet" id="done-rows"></div>
+      <div class="links" id="done-links"></div>
+
+      <p class="note">
+        <b>Nothing is minted yet.</b> The badge is issued at the event, to the address above and only
+        to that address. Registering costs nothing and puts nothing on the ledger — the sign-in you
+        approved was a signature, not a transaction.
+      </p>
+
+      <div class="retry">
+        <button class="btn btn--quiet" id="restart" type="button">Register a different wallet</button>
+      </div>
+    </div>
+
+  </section>
+
+  <details class="wire">
+    <summary>Every request this page made</summary>
+    <div class="wire__box" id="wire">
+      <p class="wire__empty">Nothing yet.</p>
+    </div>
+  </details>
+
+  <p class="foot">
+    This page never asks for a seed, a private key or a secret, and it could not use one if you gave
+    it one — registration needs a <b>signature</b>, which stays inside Xaman on your own device. What
+    it keeps in this browser tab, and only until you close it: the sign-in it started, and the
+    address that sign-in proved.
+  </p>
+</main>
+
+<div class="dock" id="dock" hidden>
+  <div class="dock__in">
+    <button class="btn btn--act" id="act" type="button">Start</button>
+    <a class="btn btn--act" id="act-link" href="#" hidden rel="noopener noreferrer" target="_blank">Open in Xaman</a>
+    <p class="dock__note" id="dock-note"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ======================================================================
+     A. WHAT THE PAGE KNOWS
+
+     Four calls make this page work, and none of them is optional:
+
+       GET  /api/events                                  the picker
+       GET  /api/events/{eventId}                        the invitation itself
+       POST /api/events/{eventId}/registrations/signin   start the proof
+       GET  /api/registrations/signin/{uuid}             has it been signed?
+       POST /api/events/{eventId}/registrations          store the row
+       GET  /api/registrations/{id}                      read it back
+
+     Two are decoration and must fail silently:
+       GET /health                    tells us up front whether Xaman is wired
+       GET /demo/art?address&eventId  the badge they are about to receive
+     ====================================================================== */
+
+  var POLL_MS = 2500;            /* the signin poll — see startPolling() */
+  var POLL_FAIL_LIMIT = 5;       /* consecutive failures before we stop and say so */
+  var MAX_NAME = 120;            /* the server's own cap (registrations.ts) */
+
+  /* sessionStorage, keyed by event: two events open in two tabs on one phone
+     must not overwrite each other's in-flight proof. */
+  var SS = "poap.register.";
+  function ssKey(part) { return SS + String(app.eventId) + "." + part; }
+
+  var app = {
+    eventId: null,       /* from location.pathname, never a query parameter */
+    event: null,         /* GET /api/events/{eventId} */
+    health: null,        /* GET /health — xamanConfigured is the useful bit */
+    signin: null,        /* {uuid, deeplink, qrPng, expiresAt} */
+    address: null,       /* only ever set from a SIGNED sign-in resolution */
+    registration: null,  /* the finished row */
+    face: "boot",
+    timer: null,         /* the poll interval */
+    tick: null,          /* the 1s expiry clock */
+    polling: false,      /* one request in flight at a time */
+    pollFails: 0,
+    busy: false,
+    nudged: false,       /* the empty-name nudge has been shown once */
+    coarse: false        /* pointer:coarse — decides deeplink-first vs QR-first */
+  };
+
+  /* ---- storage: a phone reload mid-flow must not dead-end ---- */
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+  function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) { /* ignore */ } }
+
+  function rememberSignin(s) {
+    app.signin = s;
+    if (!s) { ssDel(ssKey("signin")); return; }
+    try { ssSet(ssKey("signin"), JSON.stringify(s)); } catch (e) { /* ignore */ }
+  }
+  function rememberAddress(a) {
+    app.address = a;
+    if (a) ssSet(ssKey("address"), a); else ssDel(ssKey("address"));
+  }
+  function rememberRegistration(id) {
+    if (id) ssSet(ssKey("reg"), id); else ssDel(ssKey("reg"));
+  }
+  function forgetAll() {
+    rememberSignin(null);
+    rememberAddress(null);
+    rememberRegistration(null);
+    app.registration = null;
+    app.pollFails = 0;
+    app.nudged = false;
+  }
+
+  /* ---- tiny DOM helpers, same shapes as the attendee pass ---- */
+  function $(id) { return document.getElementById(id); }
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function setText(id, s) { var n = $(id); if (n) n.textContent = s; }
+  function show(id, on) { var n = $(id); if (n) n.hidden = !on; }
+  function short(s, head, tail) {
+    s = String(s || "");
+    head = head || 6; tail = tail || 4;
+    return s.length > head + tail + 1 ? s.slice(0, head) + "…" + s.slice(-tail) : s;
+  }
+
+  var MONTHS = ["January","February","March","April","May","June","July",
+                "August","September","October","November","December"];
+  /* Parsed by hand rather than by `new Date("2026-09-15")`: that is UTC
+     midnight, and rendering it in a timezone west of Greenwich moves the event
+     to the day before. */
+  function fmtDate(s) {
+    if (!s) return "";
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+    if (!m) return String(s);
+    var mi = parseInt(m[2], 10) - 1;
+    if (mi < 0 || mi > 11) return String(s);
+    return parseInt(m[3], 10) + " " + MONTHS[mi] + " " + m[1];
+  }
+  function fmtStamp(iso) {
+    if (!iso) return "";
+    var t = Date.parse(iso);
+    if (!isFinite(t)) return String(iso);
+    var d = new Date(t);
+    var hh = d.getHours() < 10 ? "0" + d.getHours() : String(d.getHours());
+    var mm = d.getMinutes() < 10 ? "0" + d.getMinutes() : String(d.getMinutes());
+    return d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3) + " " + d.getFullYear() + " · " + hh + ":" + mm;
+  }
+
+  function row(key, value, opts) {
+    opts = opts || {};
+    var r = node("div", "row");
+    r.appendChild(node("span", "row__k", key));
+    var cls = "row__v" + (opts.ok ? " ok" : "") + (opts.prose ? " prose-v" : "");
+    r.appendChild(node("span", cls, value === undefined || value === null || value === "" ? "—" : String(value)));
+    return r;
+  }
+
+  /* ---- the request log, so nothing here has to be taken on trust ---- */
+  var wireCount = 0;
+  function logWire(method, path, status) {
+    var box = $("wire");
+    if (!box) return;
+    if (wireCount === 0) clear(box);
+    wireCount++;
+    var r = node("div", "wire__row");
+    r.appendChild(node("span", "wire__m", method));
+    r.appendChild(node("span", "wire__p", path));
+    r.appendChild(node("span", "wire__s " + (status >= 200 && status < 300 ? "ok" : "err"),
+      status === 0 ? "NET" : String(status)));
+    box.insertBefore(r, box.firstChild);
+    while (box.childNodes.length > 40) box.removeChild(box.lastChild);
+  }
+
+  /* ---- fetch wrapper. Never throws; always returns something describable ---- */
+  function call(method, path, body) {
+    var init = { method: method, headers: { accept: "application/json" } };
+    if (body !== undefined) {
+      init.headers["content-type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+        logWire(method, path, res.status);
+        setOffline(false);
+        return { network: true, ok: res.ok, status: res.status, json: json, text: text };
+      });
+    }, function (err) {
+      logWire(method, path, 0);
+      setOffline(true);
+      return { network: false, ok: false, status: 0, json: null, text: String((err && err.message) || err) };
+    });
+  }
+
+  var offline = false;
+  function setOffline(v) {
+    if (offline === v) return;
+    offline = v;
+    show("b-offline", v);
+  }
+
+  function errorOf(r) {
+    if (!r.network) {
+      return {
+        code: "NETWORK_UNREACHABLE",
+        message: "The request never reached the server: " + r.text,
+        hint: "This page is served by the API itself, so a failed request means the process is down or restarting. Nothing is lost — try again."
+      };
+    }
+    var e = r.json && r.json.error;
+    if (e && typeof e === "object") {
+      return { code: String(e.code || "ERROR"), message: String(e.message || "") };
+    }
+    return {
+      code: "HTTP_" + r.status,
+      message: (r.text || "The server answered " + r.status + " with no error body.").slice(0, 400)
+    };
+  }
+
+  /** True when the server is telling us Xaman has no credentials. */
+  function isUnconfigured(r) {
+    return r.network && !r.ok && errorOf(r).code === "CONFIG_INVALID";
+  }
+
+  /** Render {error:{code,message}} where the attendee can see it, with a retry. */
+  function showError(hostId, r, opts) {
+    opts = opts || {};
+    var host = $(hostId);
+    if (!host) return;
+    clear(host);
+    var e = errorOf(r);
+    var box = node("div", "err" + (opts.warn ? " err--warn" : ""));
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", e.code));
+    box.appendChild(node("div", "err__msg", e.message));
+    var h = e.hint || opts.hint;
+    if (h) box.appendChild(node("div", "err__hint", h));
+    if (opts.retry) {
+      var bar = node("div", "retry");
+      var b = node("button", "btn btn--quiet", opts.retryLabel || "Try again");
+      b.type = "button";
+      b.addEventListener("click", function () { clear(host); opts.retry(); });
+      bar.appendChild(b);
+      box.appendChild(bar);
+    }
+    host.appendChild(box);
+    return box;
+  }
+  function clearError(hostId) { var h = $(hostId); if (h) clear(h); }
+
+  /** The same block, for something this page worked out on its own. */
+  function showLocalError(hostId, code, message, hint) {
+    var host = $(hostId);
+    if (!host) return;
+    clear(host);
+    var box = node("div", "err err--warn");
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", code));
+    box.appendChild(node("div", "err__msg", message));
+    if (hint) box.appendChild(node("div", "err__hint", hint));
+    host.appendChild(box);
+  }
+
+
+  /* ======================================================================
+     B. URL SAFETY
+
+     Three server-supplied strings end up in an href or a src: the Xaman
+     deeplink, the Xaman QR, and the badge art. Parse them rather than trust
+     them — a javascript: URL in a href is the whole reason this function
+     exists, even when the only writer is our own server.
+     ====================================================================== */
+
+  function safeUrl(value, sameOriginOnly) {
+    if (typeof value !== "string" || value === "") return null;
+    var u;
+    try { u = new URL(value, window.location.href); } catch (e) { return null; }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (sameOriginOnly) return u.origin === window.location.origin ? u.pathname + u.search : null;
+    return u.href;
+  }
+
+  /** The deeplink. Xaman hands back an https link; a custom scheme is allowed
+      too, because that is what "open the app I already have" looks like. */
+  function safeDeeplink(value) {
+    if (typeof value !== "string" || value === "") return null;
+    if (/^xumm:/i.test(value) || /^xaman:/i.test(value)) return value;
+    return safeUrl(value, false);
+  }
+
+  /** The QR: an https URL or an inline PNG. Nothing else can be an image. */
+  function safeImage(value) {
+    if (typeof value !== "string" || value === "") return null;
+    if (/^data:image\/(png|jpeg|gif|webp|svg\+xml);/i.test(value)) return value;
+    return safeUrl(value, false);
+  }
+
+
+  /* ======================================================================
+     C. PAINTING
+     ====================================================================== */
+
+  var TONES = { boot: "neutral", closed: "warn", picker: "neutral", unavailable: "warn",
+                prove: "live", details: "live", done: "good" };
+  var STEP_OF = { prove: 1, details: 2, done: 3 };
+  var STEP_FACT = { boot: "—", closed: "closed", picker: "choose", unavailable: "blocked",
+                    prove: "1 of 3", details: "2 of 3", done: "done" };
+
+  function showFace(name) {
+    app.face = name;
+    var faces = document.querySelectorAll("[data-face]");
+    for (var i = 0; i < faces.length; i++) {
+      faces[i].hidden = faces[i].getAttribute("data-face") !== name;
+    }
+    $("invite").setAttribute("data-tone", TONES[name] || "neutral");
+    show("steps", STEP_OF[name] !== undefined);
+    paintSteps();
+    paintDock();
+    setText("f-step", STEP_FACT[name] || "—");
+    /* Never leave a poll running for a face that is not on screen. */
+    if (name !== "prove") stopPolling();
+  }
+
+  function paintSteps() {
+    var at = STEP_OF[app.face] || 0;
+    for (var n = 1; n <= 3; n++) {
+      var el = $("st-" + n);
+      if (!el) continue;
+      el.setAttribute("data-s", n < at ? "done" : (n === at ? "now" : "todo"));
+    }
+  }
+
+  /* The dock holds exactly one primary action, and on a coarse pointer mid-proof
+     that action is an anchor (the deeplink) rather than a button. */
+  function paintDock() {
+    var dock = $("dock"), btn = $("act"), link = $("act-link");
+    var mode = dockMode();
+    if (!mode) {
+      dock.hidden = true;
+      document.body.classList.remove("is-docked");
+      return;
+    }
+    dock.hidden = false;
+    document.body.classList.add("is-docked");
+    if (mode.href) {
+      link.hidden = false;
+      link.href = mode.href;
+      link.textContent = mode.label;
+      btn.hidden = true;
+    } else {
+      btn.hidden = false;
+      btn.textContent = mode.label;
+      btn.disabled = !!app.busy;
+      btn.setAttribute("aria-busy", app.busy ? "true" : "false");
+      link.hidden = true;
+    }
+    setText("dock-note", mode.note || "");
+  }
+
+  function dockMode() {
+    if (app.face === "prove") {
+      if (!app.signin) {
+        return { label: "Prove my wallet in Xaman", note: "a signature, not a transaction · costs nothing" };
+      }
+      var href = safeDeeplink(app.signin.deeplink);
+      if (href && (app.coarse || !safeImage(app.signin.qrPng))) {
+        /* Coarse pointer, or no QR came back to scan: the link is the action. */
+        return { href: href, label: "Open in Xaman", note: "approve the sign-in, then come back to this page" };
+      }
+      return null; /* desktop mid-proof: the QR is the action, not a button */
+    }
+    if (app.face === "details") {
+      return { label: app.busy ? "Registering…" : "Complete my registration",
+               note: "sends your name and the proof — never a key" };
+    }
+    return null;
+  }
+
+  function paintHead() {
+    var e = app.event;
+    if (!e) return;
+    setText("head-eyebrow", "you are invited · registration");
+    setText("head-name", e.name || ("Event " + app.eventId));
+    var meta = $("head-meta");
+    clear(meta);
+    var bits = [];
+    if (e.eventDate) bits.push(fmtDate(e.eventDate));
+    if (e.venue) bits.push(String(e.venue));
+    for (var i = 0; i < bits.length; i++) {
+      if (i > 0) meta.appendChild(node("span", "sep", "◆"));
+      meta.appendChild(node("span", null, bits[i]));
+    }
+    meta.hidden = bits.length === 0;
+    var desc = $("head-desc");
+    desc.textContent = e.description ? String(e.description) : "";
+    desc.hidden = !e.description;
+    setText("f-event", String(app.eventId));
+    document.title = (e.name ? e.name + " — " : "") + "register";
+  }
+
+  function paintWallet() {
+    setText("f-wallet", app.address ? short(app.address, 5, 4) : "—");
+    var f = $("f-wallet");
+    if (f) f.className = "fact__v" + (app.address ? " ok" : "");
+  }
+
+
+  /* ======================================================================
+     D. THE BADGE ARTWORK
+
+     GET /demo/art?address=r...&eventId=N -> image/svg+xml. A pure function of
+     the two values, so the badge exists the moment the wallet is proven and
+     long before anything is minted.
+
+     It is a delight, not a dependency: the endpoint only exists when the demo
+     routes are enabled, so a 404 — or no endpoint at all — removes the figure
+     and says nothing. There is nothing here for an attendee to act on.
+     ====================================================================== */
+
+  function artUrl() {
+    if (!app.address || app.eventId === null) return null;
+    return "/demo/art?address=" + encodeURIComponent(app.address) +
+           "&eventId=" + encodeURIComponent(String(app.eventId));
+  }
+
+  function paintArt(figureId, imgId) {
+    var fig = $(figureId), img = $(imgId);
+    if (!fig || !img) return;
+    var src = artUrl();
+    if (!src) { fig.hidden = true; return; }
+    /* Re-painting the same URL must not un-hide a figure whose image already
+       failed — `data-ok` is the memory of the last load, not of the last src. */
+    if (img.getAttribute("src") === src) {
+      fig.hidden = img.getAttribute("data-ok") !== "1";
+      return;
+    }
+    img.removeAttribute("data-ok");
+    img.onload = function () { img.setAttribute("data-ok", "1"); fig.hidden = false; };
+    img.onerror = function () { fig.hidden = true; };
+    fig.hidden = true;               /* stays hidden until the bytes arrive */
+    img.setAttribute("src", src);
+  }
+
+
+  /* ======================================================================
+     E. STEP ONE — PROVE THE WALLET
+
+     POST /api/events/{eventId}/registrations/signin
+       -> 201 {uuid, qrPng, deeplink, websocket, expiresAt}
+       -> 404 the event is not open · 429 too fast · 500 Xaman not configured
+     ====================================================================== */
+
+  function startSignIn() { createSignIn(true); }
+
+  /**
+   * `withReturnUrl` sends Xaman a return_url so that a phone which was taken
+   * over by the app gets a way back to this page. It is a nicety, and a Xaman
+   * account that rejects the URL must not cost anyone their registration — so
+   * a failure that is not one of the three understood ones retries once
+   * without it.
+   */
+  function createSignIn(withReturnUrl) {
+    if (app.busy) return;
+    clearError("prove-err");
+    app.busy = true;
+    paintDock();
+
+    var body = {};
+    if (withReturnUrl && (location.protocol === "https:" || location.protocol === "http:")) {
+      body.returnUrl = { web: location.href };
+    }
+
+    call("POST", "/api/events/" + encodeURIComponent(String(app.eventId)) + "/registrations/signin", body)
+      .then(function (r) {
+        app.busy = false;
+
+        if (r.ok && r.json && r.json.uuid) {
+          rememberSignin({
+            uuid: String(r.json.uuid),
+            deeplink: safeDeeplink(r.json.deeplink) || "",
+            qrPng: safeImage(r.json.qrPng) || "",
+            expiresAt: r.json.expiresAt ? String(r.json.expiresAt) : ""
+          });
+          app.pollFails = 0;
+          paintProve();
+          startPolling();
+          return;
+        }
+
+        if (isUnconfigured(r)) { showUnavailable(r); return; }
+
+        if (r.status === 404) { showClosed(r); return; }
+
+        if (r.status === 429) {
+          paintDock();
+          showError("prove-err", r, {
+            warn: true,
+            hint: "That is this server protecting Xaman's rate limit, not a problem with your wallet. Wait a minute and start again.",
+            retryLabel: "Start again",
+            retry: startSignIn
+          });
+          return;
+        }
+
+        if (withReturnUrl) { createSignIn(false); return; }
+
+        paintDock();
+        showError("prove-err", r, {
+          hint: "Nothing was created, so nothing is half-done. Try again.",
+          retryLabel: "Try again",
+          retry: startSignIn
+        });
+      });
+  }
+
+  function paintProve() {
+    var live = !!app.signin;
+    show("prove-live", live);
+    paintDock();
+    if (!live) return;
+
+    /* The QR. On a coarse pointer it is folded away — the person holding the
+       screen cannot scan the screen they are holding — and on a fine pointer it
+       is the action, so the disclosure starts open and says so. */
+    var img = $("qr-img"), fold = $("qr-fold");
+    var qr = safeImage(app.signin.qrPng);
+    if (qr) {
+      if (img.getAttribute("src") !== qr) img.setAttribute("src", qr);
+      img.hidden = false;
+      fold.hidden = false;
+      fold.open = !app.coarse;
+      setText("qr-fold-summary", app.coarse
+        ? "Signing on another device? Show the code"
+        : "Scan this with Xaman");
+      setText("scan-cap", app.coarse
+        ? "Open Xaman on a second phone and scan this."
+        : "Open Xaman on your phone and scan this. This page updates by itself.");
+      setText("qr-alt", "A QR code containing a Xaman sign-in request for this event.");
+    } else {
+      fold.hidden = true;
+    }
+
+    /* The alternative to whatever the dock is offering. */
+    var alt = $("prove-alt");
+    clear(alt);
+    var href = safeDeeplink(app.signin.deeplink);
+    if (href && !app.coarse) {
+      var a = node("a", "btn btn--quiet", "Xaman on this machine? Open it");
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      alt.appendChild(a);
+    }
+    var cancel = node("button", "btn btn--quiet", "Start a new sign-in");
+    cancel.type = "button";
+    cancel.addEventListener("click", function () {
+      stopPolling();
+      rememberSignin(null);
+      clearError("prove-err");
+      paintProve();
+      startSignIn();
+    });
+    alt.appendChild(cancel);
+  }
+
+  /* ---- polling: 2.5s, never while hidden, never past the expiry ---------- */
+
+  function expiresAtMs() {
+    if (!app.signin || !app.signin.expiresAt) return null;
+    var t = Date.parse(app.signin.expiresAt);
+    return isFinite(t) ? t : null;
+  }
+  function isExpired() {
+    var t = expiresAtMs();
+    return t !== null && Date.now() >= t;
+  }
+
+  function startPolling() {
+    stopPolling();
+    if (!app.signin || app.face !== "prove") { paintWatching(); return; }
+    /* Checked here and not only in the visibilitychange handler: a page that is
+       RESTORED into a background tab — a phone reload from the app switcher —
+       would otherwise start a loop nobody is looking at. */
+    if (document.hidden) { paintWatching(); return; }
+    if (isExpired()) { onExpired(); return; }
+    pollOnce();
+    app.timer = setInterval(pollOnce, POLL_MS);
+    app.tick = setInterval(paintClock, 1000);
+    paintWatching();
+    paintClock();
+  }
+  function stopPolling() {
+    if (app.timer) { clearInterval(app.timer); app.timer = null; }
+    if (app.tick) { clearInterval(app.tick); app.tick = null; }
+    paintWatching();
+  }
+
+  function pollOnce() {
+    if (app.polling || !app.signin) return;
+    if (isExpired()) { onExpired(); return; }
+    app.polling = true;
+
+    call("GET", "/api/registrations/signin/" + encodeURIComponent(app.signin.uuid)).then(function (r) {
+      app.polling = false;
+      if (!app.signin) return;             /* torn down while in flight */
+
+      if (r.ok) {
+        app.pollFails = 0;
+        var j = r.json || {};
+        if (j.signed && j.address) { onSigned(String(j.address)); return; }
+        /* `rejected` is not "still waiting". Someone declined in Xaman, or the
+           payload expired on Xaman's side, and both need a new payload. */
+        if (j.rejected) { onDeclined(); return; }
+        return;
+      }
+
+      /* The server has never heard of this payload — it restarted, or the uuid
+         came from a different deployment. The stored proof is worthless. */
+      if (r.status === 404) {
+        stopPolling();
+        rememberSignin(null);
+        paintProve();
+        showError("prove-err", r, {
+          warn: true,
+          hint: "That sign-in is not on the server any more. Nothing was lost — start a new one.",
+          retryLabel: "Start again",
+          retry: startSignIn
+        });
+        return;
+      }
+
+      if (isUnconfigured(r)) { stopPolling(); showUnavailable(r); return; }
+
+      /* Anything else: tolerate a few, then stop. A poll that keeps firing into
+         a wall is worse than one that says it gave up. */
+      app.pollFails++;
+      if (app.pollFails >= POLL_FAIL_LIMIT) {
+        stopPolling();
+        showError("prove-err", r, {
+          warn: true,
+          hint: "We stopped checking after " + POLL_FAIL_LIMIT + " failed attempts. Your sign-in may still be valid — approve it in Xaman, then press below.",
+          retryLabel: "Check again",
+          retry: function () { app.pollFails = 0; startPolling(); }
+        });
+      }
+    });
+  }
+
+  function paintWatching() {
+    var w = $("watching");
+    if (!w) return;
+    var paused = document.hidden || !app.timer;
+    w.setAttribute("data-paused", paused ? "1" : "0");
+    setText("watching-text", document.hidden
+      ? "paused — tab in the background"
+      : app.timer ? "waiting for the signature · every 2.5s" : "not checking");
+  }
+
+  function paintClock() {
+    var c = $("clock");
+    if (!c) return;
+    var t = expiresAtMs();
+    if (t === null) { c.textContent = ""; return; }
+    var left = t - Date.now();
+    if (left <= 0) { onExpired(); return; }
+    var s = Math.floor(left / 1000);
+    var mm = Math.floor(s / 60), ss = s % 60;
+    clear(c);
+    c.appendChild(document.createTextNode("expires in "));
+    c.appendChild(node("b", null, mm + ":" + (ss < 10 ? "0" + ss : String(ss))));
+  }
+
+  function onExpired() {
+    stopPolling();
+    rememberSignin(null);
+    paintProve();
+    var host = $("prove-err");
+    clear(host);
+    var box = node("div", "err err--warn");
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", "SIGNIN_EXPIRED"));
+    box.appendChild(node("div", "err__msg", "This sign-in request expired. Xaman payloads are short-lived on purpose — a code left on a screen should stop working once the person who opened it has walked away."));
+    var bar = node("div", "retry");
+    var b = node("button", "btn btn--quiet", "Start again");
+    b.type = "button";
+    b.addEventListener("click", function () { clear(host); startSignIn(); });
+    bar.appendChild(b);
+    box.appendChild(bar);
+    host.appendChild(box);
+  }
+
+  function onDeclined() {
+    stopPolling();
+    rememberSignin(null);
+    paintProve();
+    var host = $("prove-err");
+    clear(host);
+    var box = node("div", "err err--warn");
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", "SIGNIN_DECLINED"));
+    box.appendChild(node("div", "err__msg", "That sign-in was declined in Xaman. If that was not you — or was a mis-tap — start a new one; nothing was signed and nothing was recorded."));
+    var bar = node("div", "retry");
+    var b = node("button", "btn btn--quiet", "Try again");
+    b.type = "button";
+    b.addEventListener("click", function () { clear(host); startSignIn(); });
+    bar.appendChild(b);
+    box.appendChild(bar);
+    host.appendChild(box);
+  }
+
+  /** The one place an address is ever set, and it comes from a SIGNED payload. */
+  function onSigned(address) {
+    stopPolling();
+    rememberAddress(address);
+    clearError("prove-err");
+    goDetails();
+  }
+
+
+  /* ======================================================================
+     F. STEP TWO — THEIR DETAILS
+     ====================================================================== */
+
+  function goDetails() {
+    setText("proved-addr", app.address || "—");
+    paintWallet();
+    paintArt("art-preview", "art-preview-img");
+    showFace("details");
+    paintNameCount();
+    if (!app.coarse) { var dn = $("dn"); if (dn) dn.focus(); }
+  }
+
+  function paintNameCount() {
+    var dn = $("dn"), c = $("dn-count");
+    if (!dn || !c) return;
+    var n = dn.value.length;
+    c.textContent = n > MAX_NAME - 30 ? n + "/" + MAX_NAME : "";
+    c.className = "field__count" + (n >= MAX_NAME ? " warn" : "");
+  }
+
+  function submitRegistration() {
+    if (app.busy || !app.signin) return;
+    clearError("details-err");
+
+    var name = ($("dn").value || "").trim().slice(0, MAX_NAME);
+    var email = ($("em").value || "").trim();
+
+    /* "Required-ish": the server does not need a name, so this page does not
+       pretend it does. It asks once, then gets out of the way. */
+    if (!name && !app.nudged) {
+      app.nudged = true;
+      var host = $("details-nudge");
+      clear(host);
+      var n = node("p", "nudge");
+      n.appendChild(node("b", null, "No name?"));
+      n.appendChild(document.createTextNode(" Then the desk sees only your address, and finding you means reading 33 characters off a screen. Add one, or press again to register without it."));
+      host.appendChild(n);
+      paintDock();
+      return;
+    }
+    clear($("details-nudge"));
+
+    /* Checked here only to save a round trip; the server's schema is the one
+       that decides. Nothing is blocked that the server would have accepted. */
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      showLocalError("details-err", "CHECK_THE_EMAIL",
+        "\"" + email + "\" is missing an @ or a domain, and the server will refuse it.",
+        "Fix it, or clear the field — it is optional, and leaving it empty changes nothing about your badge.");
+      return;
+    }
+
+    /* ------------------------------------------------------------------
+       NO `address` FIELD, DELIBERATELY.
+
+       The server takes the address off the Xaman sign-in it created and
+       resolved itself, and ignores anything the body says about it — a
+       preValidation hook in src/api/routes/registrations.ts logs a warning if
+       it sees one. A typed address is a claim; a signed sign-in is proof, and
+       a page that sends an address is a page whose author misunderstood the
+       design. `signinUuid` is the whole credential.
+       ------------------------------------------------------------------ */
+    var body = { signinUuid: app.signin.uuid };
+    if (name) body.displayName = name;
+    if (email) body.email = email;
+
+    app.busy = true;
+    paintDock();
+
+    call("POST", "/api/events/" + encodeURIComponent(String(app.eventId)) + "/registrations", body)
+      .then(function (r) {
+        app.busy = false;
+        paintDock();
+
+        if (r.ok && r.json) {
+          rememberSignin(null);          /* one registration per proof */
+          showDone(r.json.registration || r.json, false);
+          return;
+        }
+
+        /* 409: already registered. That is not an error to an attendee — it is
+           the answer they wanted, arriving by a different route. The server
+           returns the existing row alongside the error body. */
+        if (r.status === 409) {
+          var existing = r.json && (r.json.registration || r.json.existing);
+          if (existing) { rememberSignin(null); showDone(existing, true); return; }
+          /* No row attached: the sign-in itself was already spent. */
+          rememberSignin(null);
+          rememberAddress(null);
+          showFace("prove");
+          paintProve();
+          showError("prove-err", r, {
+            warn: true,
+            hint: "A sign-in can only be used once. Start a new one — it takes a single tap in Xaman.",
+            retryLabel: "Start a new sign-in",
+            retry: startSignIn
+          });
+          return;
+        }
+
+        /* 400: the server says the payload is not signed, or was declined. The
+           proof is void, so there is nothing to do here but go back a step. */
+        if (r.status === 400) {
+          rememberSignin(null);
+          rememberAddress(null);
+          paintWallet();
+          showFace("prove");
+          paintProve();
+          showError("prove-err", r, {
+            warn: true,
+            hint: "The wallet was never proven, so nothing was stored. Start the sign-in again and approve it in Xaman.",
+            retryLabel: "Start again",
+            retry: startSignIn
+          });
+          return;
+        }
+
+        if (isUnconfigured(r)) { showUnavailable(r); return; }
+        if (r.status === 404) { showClosed(r); return; }
+
+        showError("details-err", r, {
+          warn: r.status === 429,
+          hint: r.status === 429
+            ? "Too many registrations from here in the last minute. Nothing was written — wait a moment and press again."
+            : "Nothing was written. Your sign-in is still valid, so pressing again is safe.",
+          retryLabel: "Try again",
+          retry: submitRegistration
+        });
+      });
+  }
+
+
+  /* ======================================================================
+     G. STEP THREE — CONFIRMED
+     ====================================================================== */
+
+  function showDone(reg, already) {
+    if (!reg || typeof reg !== "object") return;
+    app.registration = reg;
+    if (reg.address) rememberAddress(String(reg.address));
+    if (reg.id) rememberRegistration(String(reg.id));
+    paintWallet();
+
+    var ev = reg.event || app.event || {};
+    var when = reg.registeredAt ? fmtStamp(reg.registeredAt) : fmtStamp(new Date().toISOString());
+    setText("stamp-date", when);
+
+    var already_ = $("done-already");
+    clear(already_);
+    if (already) {
+      var box = node("div", "already");
+      box.appendChild(node("div", "already__t", "you were already on the list"));
+      box.appendChild(node("p", null,
+        "This wallet was registered for this event before, so nothing changed. The registration below is the one that already exists — the same one the desk will see."));
+      already_.appendChild(box);
+    }
+
+    /* One line: what happens next, in the order it happens. */
+    var venue = ev.venue ? String(ev.venue) : "the event";
+    setText("done-next",
+      "Bring this wallet to " + venue + ", show the address to a volunteer, and the badge is minted straight to it — soulbound, yours, and impossible to hand to anyone else.");
+
+    var rows = $("done-rows");
+    clear(rows);
+    rows.appendChild(row("name", reg.displayName || "— not given —", { prose: true }));
+    rows.appendChild(row("verified wallet", reg.address || app.address, { ok: true }));
+    rows.appendChild(row("event", (ev.name || "event " + app.eventId) + " · " + (ev.eventId || app.eventId), { prose: true }));
+    if (reg.registeredAt) rows.appendChild(row("registered", fmtStamp(reg.registeredAt)));
+    rows.appendChild(row("registration id", reg.id));
+
+    var links = $("done-links");
+    clear(links);
+    if (reg.id) {
+      var a = node("a", "link", "your registration record");
+      /* Same-origin, and built from an id the server just gave us. */
+      a.href = "/api/registrations/" + encodeURIComponent(String(reg.id));
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      links.appendChild(a);
+    }
+
+    paintArt("art-hero", "art-hero-img");
+    showFace("done");
+  }
+
+
+  /* ======================================================================
+     H. THE TWO DEAD ENDS
+     ====================================================================== */
+
+  /** The event is missing, a draft, or closed — one answer, on purpose. */
+  function showClosed(r) {
+    stopPolling();
+    clearError("closed-err");
+    if (r) showError("closed-err", r, { warn: true });
+    /* Only when there is no event to name. An event that closes mid-flow keeps
+       its letterhead — the attendee should still see what they came for. */
+    if (!app.event) {
+      setText("head-eyebrow", "registration");
+      setText("head-name", app.eventId === null ? "Registration" : "Event " + app.eventId);
+      show("head-meta", false);
+      show("head-desc", false);
+    }
+    showFace("closed");
+  }
+
+  /**
+   * Xaman has no credentials on this server.
+   *
+   * This is a configuration fact, not a failure of anything the attendee did,
+   * and it is the state the server is in right now with XUMM_API_KEY unset. It
+   * gets its own face rather than a spinner that never resolves: there is no
+   * QR to draw, nothing to poll, and nothing to wait for.
+   */
+  function showUnavailable(r) {
+    stopPolling();
+    rememberSignin(null);
+    clearError("unavail-err");
+    if (r) showError("unavail-err", r, { warn: true });
+    showFace("unavailable");
+  }
+
+
+  /* ======================================================================
+     I. THE PICKER — bare /register, no event id
+     ====================================================================== */
+
+  function loadPicker() {
+    showFace("picker");
+    setText("head-eyebrow", "registration");
+    setText("head-name", "Which event?");
+    show("head-meta", false);
+    show("head-desc", false);
+
+    call("GET", "/api/events").then(function (r) {
+      if (!r.ok) {
+        showError("picker-err", r, { hint: "Nothing to choose from until that call succeeds.", retryLabel: "Try again", retry: loadPicker });
+        return;
+      }
+      var list = (r.json && r.json.events) || [];
+      var box = $("picks");
+      clear(box);
+      if (!list.length) {
+        box.appendChild(node("p", "empty", "No events are open for registration right now. If you were given a link, use that — an event can be live without being listed."));
+        return;
+      }
+      for (var i = 0; i < list.length; i++) {
+        box.appendChild(pickCard(list[i]));
+      }
+    });
+  }
+
+  function pickCard(e) {
+    var a = node("a", "pick");
+    a.href = "/register/" + encodeURIComponent(String(e.eventId));
+    var top = node("div", "pick__top");
+    top.appendChild(node("span", "pick__n", e.name || ("Event " + e.eventId)));
+    top.appendChild(node("span", "pick__go", e.status === "live" ? "happening now" : "register"));
+    a.appendChild(top);
+    var bits = [];
+    if (e.eventDate) bits.push(fmtDate(e.eventDate));
+    if (e.venue) bits.push(String(e.venue));
+    bits.push("#" + e.eventId);
+    a.appendChild(node("p", "pick__meta", bits.join("  ·  ")));
+    if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
+    return a;
+  }
+
+
+  /* ======================================================================
+     J. BOOT
+
+     The event id comes from the path — /register/700001 — and from nowhere
+     else. A query parameter would put it somewhere a link can be edited
+     without it looking edited.
+     ====================================================================== */
+
+  function eventIdFromPath() {
+    var m = /^\/register\/([^/]+)\/?$/.exec(location.pathname);
+    if (!m) return null;
+    var raw = decodeURIComponent(m[1]);
+    return /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;   /* NaN = "there was one, and it is not an event id" */
+  }
+
+  function loadHealth() {
+    return call("GET", "/health").then(function (r) {
+      if (r.ok && r.json) {
+        app.health = r.json;
+        setText("f-net", String(r.json.network || "—"));
+        var f = $("f-net");
+        if (f) f.className = "fact__v" + (r.json.network === "mainnet" ? " warn" : "");
+      }
+      return null;
+    });
+  }
+
+  function loadEvent() {
+    return call("GET", "/api/events/" + encodeURIComponent(String(app.eventId))).then(function (r) {
+      if (!r.ok) {
+        if (r.status === 404) { showClosed(r); return false; }
+        showClosed(r);
+        return false;
+      }
+      /* The route wraps it: { event: {...} }. Accept a bare object too, so a
+         change of shape on the server is a shrug rather than a blank page. */
+      app.event = (r.json && r.json.event) || r.json;
+      if (!app.event || typeof app.event !== "object") { showClosed(r); return false; }
+      paintHead();
+      return true;
+    });
+  }
+
+  /** Resume whatever was in flight when the tab was reloaded. */
+  function resume() {
+    var savedReg = ssGet(ssKey("reg"));
+    if (savedReg) {
+      return call("GET", "/api/registrations/" + encodeURIComponent(savedReg)).then(function (r) {
+        if (r.ok && r.json) {
+          var reg = r.json.registration || r.json;
+          if (reg && reg.id) { showDone(reg, false); return true; }
+        }
+        rememberRegistration(null);     /* stale id, or a different deployment */
+        return false;
+      });
+    }
+    return Promise.resolve(false);
+  }
+
+  function startFlow() {
+    app.address = ssGet(ssKey("address"));
+    var rawSignin = ssGet(ssKey("signin"));
+    if (rawSignin) {
+      try { app.signin = JSON.parse(rawSignin); } catch (e) { app.signin = null; }
+      if (app.signin && isExpired()) { rememberSignin(null); }
+    }
+    paintWallet();
+
+    /* A proven address and a live proof: they got as far as the form. */
+    if (app.address && app.signin) { goDetails(); return; }
+
+    /* A proven address with no proof left is not resumable — the uuid is the
+       credential, and without it the server cannot be asked for anything. */
+    if (app.address && !app.signin) rememberAddress(null);
+    paintWallet();
+
+    if (app.signin) { showFace("prove"); paintProve(); startPolling(); return; }
+
+    /* /health answers `xamanConfigured` — so a server that cannot do this says
+       so before the attendee taps a button that was never going to work. */
+    if (app.health && app.health.xamanConfigured === false) {
+      showUnavailable({
+        network: true, ok: false, status: 500, text: "",
+        json: { error: {
+          code: "CONFIG_INVALID",
+          message: "Xaman sign-in is not configured on this server (XUMM_API_KEY / XUMM_API_SECRET are unset), so a wallet cannot be proven and nobody can register."
+        } }
+      });
+      return;
+    }
+
+    showFace("prove");
+    paintProve();
+  }
+
+  function boot() {
+    /* Pointer, not user agent. A phone, a tablet and a laptop in tablet mode
+       all want the deeplink; a desktop with a mouse wants the QR. */
+    if (window.matchMedia) {
+      var mq = window.matchMedia("(pointer: coarse)");
+      app.coarse = mq.matches || window.matchMedia("(hover: none)").matches;
+      var onChange = function () {
+        app.coarse = window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(hover: none)").matches;
+        if (app.face === "prove") paintProve(); else paintDock();
+      };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+
+    $("act").addEventListener("click", function () {
+      if (app.face === "prove") startSignIn();
+      else if (app.face === "details") submitRegistration();
+    });
+    $("recheck").addEventListener("click", function () {
+      clearError("unavail-err");
+      showFace("prove");
+      paintProve();
+      startSignIn();
+    });
+    $("restart").addEventListener("click", function () {
+      forgetAll();
+      paintWallet();
+      showFace("prove");
+      paintProve();
+    });
+    $("dn").addEventListener("input", paintNameCount);
+    $("form").addEventListener("submit", function (ev) { ev.preventDefault(); submitRegistration(); });
+    $("em").addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); submitRegistration(); } });
+
+    var id = eventIdFromPath();
+
+    if (id === null) { loadHealth(); loadPicker(); return; }
+    if (isNaN(id)) { showClosed(null); loadHealth(); return; }
+
+    app.eventId = id;
+    setText("f-event", String(id));
+
+    loadHealth().then(loadEvent).then(function (ok) {
+      if (!ok) return null;
+      return resume().then(function (done) {
+        if (!done) startFlow();
+        return null;
+      });
+    });
+  }
+
+  /* Nothing polls in a background tab. Resuming re-checks the expiry first, so
+     a tab left overnight comes back to "this expired", not to a live spinner. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (app.timer) { clearInterval(app.timer); app.timer = null; }
+      if (app.tick) { clearInterval(app.tick); app.tick = null; }
+      paintWatching();
+    } else if (app.face === "prove" && app.signin) {
+      startPolling();
+    } else {
+      paintWatching();
+    }
+  });
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>
