@@ -84,6 +84,7 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     xumm: {},
     demoEnabled: false,
     badgeImageUriMode: "https" as const,
+    badgeMetadataUriMode: "https" as const,
     admin: { sessionTtlHours: 12 },
     api: { port: 0, host: "127.0.0.1", trustProxy: false, secureCookies: false },
     ...overrides,

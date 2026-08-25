@@ -19,6 +19,7 @@ import { registerAdminAuthRoutes } from "./routes/admin-auth.js";
 import { registerAttendanceRoute } from "./routes/attendance.js";
 import { registerClaimRoutes } from "./routes/claims.js";
 import { registerDemoRoutes } from "./routes/demo.js";
+import { registerBadgeRoutes } from "./routes/badge.js";
 import { registerPageRoutes } from "./routes/pages.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerRegistrationRoutes } from "./routes/registrations.js";
@@ -58,6 +59,10 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
   // Product pages. Outside the rate-limited scope: a static file read should
   // not consume an attendee's claim budget.
   registerPageRoutes(app);
+
+  // Badge metadata and artwork, served directly. Outside the rate limiter:
+  // a wallet indexer fetching a badge must not consume an attendee's budget.
+  registerBadgeRoutes(app, deps);
 
   /**
    * ADMIN AUTHENTICATION, BEFORE ANY ROUTE.

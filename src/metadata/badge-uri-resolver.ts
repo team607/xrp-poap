@@ -286,6 +286,8 @@ export interface PinningBadgeUriResolverOptions {
    * AppConfig.badgeImageUriMode.
    */
   imageUriMode?: "ipfs" | "https";
+  /** What NFTokenMint's URI points at. Defaults to "https" — see AppConfig. */
+  metadataUriMode?: "ipfs" | "https";
   /** Called once per address that was actually pinned. Never on a cache hit. */
   onPin?: (address: string, uri: BadgeUri) => void;
   onWarn?: ManifestWarn;
@@ -397,6 +399,7 @@ export class PinningBadgeUriResolver implements BadgeUriResolver {
 
       const published = await publishBadge(this.#pinner, {
         imageUriMode: this.#options.imageUriMode ?? "https",
+        metadataUriMode: this.#options.metadataUriMode ?? "https",
       image: {
         data: png,
         filename: `badge-${eventId}-${address}.png`,
@@ -533,6 +536,63 @@ export class StaticBadgeUriResolver implements BadgeUriResolver {
     return {
       metadataUri: this.metadataUri,
       imageUri: this.imageUri,
+      pinnedOnDemand: false,
+    };
+  }
+}
+
+/**
+ * Badge URIs served by this application, with no pinning at all.
+ *
+ * WHY THIS EXISTS, MEASURED END TO END:
+ *   - `ipfs://<CID>` — Xaman and Bithomp cannot resolve it. Pinata's free tier
+ *     never announces content widely enough for a third-party gateway to find;
+ *     only gateways we had explicitly warmed ever served it.
+ *   - `https://gateway.pinata.cloud/ipfs/<CID>` — resolves, but takes 4-7
+ *     SECONDS for a 700-byte JSON even on a cache hit. Browser-side viewers
+ *     wait; server-side indexers time out and report the metadata missing.
+ *   - Served from here — ~3ms locally, and it renders.
+ *
+ * There is nothing to pin, nothing to propagate and no manifest: the artwork
+ * and the metadata are pure functions of (eventId, address), computed per
+ * request by registerBadgeRoutes.
+ *
+ * THE TRADE IS PERMANENT. NFTokenMint's URI cannot be edited, so every badge
+ * minted this way depends on `baseUrl` resolving forever. IPFS content outlives
+ * its host; this does not. Never point baseUrl at a tunnel or a hostname you
+ * might not keep. Attendance is unaffected either way — verifyClaim reads the
+ * accept transaction, so a dead URL costs the picture and never the proof.
+ */
+export class SelfHostedBadgeUriResolver implements BadgeUriResolver {
+  readonly #baseUrl: string;
+
+  constructor(options: { baseUrl: string }) {
+    const base = options.baseUrl.replace(/\/+$/, "");
+    if (!/^https?:\/\//.test(base)) {
+      throw new MetadataError(
+        "CONFIG_INVALID",
+        `BADGE_BASE_URL must be an absolute http(s) origin, got "${options.baseUrl}"`,
+        { baseUrl: options.baseUrl },
+      );
+    }
+    this.#baseUrl = base;
+  }
+
+  async resolve(input: { eventId: EventId; address: string }): Promise<BadgeUri> {
+    assertValidTaxon(input.eventId);
+    assertValidAddress(input.address, "address");
+    const metadataUri = `${this.#baseUrl}/badge/${input.eventId}/${input.address}.json`;
+    if (Buffer.byteLength(metadataUri, "utf8") > MAX_URI_BYTES) {
+      throw new MetadataError(
+        "URI_TOO_LONG",
+        `Badge URI is ${Buffer.byteLength(metadataUri, "utf8")} bytes; NFTokenMint caps at ${MAX_URI_BYTES}. Use a shorter BADGE_BASE_URL.`,
+        { metadataUri },
+      );
+    }
+    return {
+      metadataUri,
+      imageUri: `${this.#baseUrl}/badge/${input.eventId}/${input.address}.png`,
+      // Nothing is pinned, so nothing was pinned during the claim.
       pinnedOnDemand: false,
     };
   }

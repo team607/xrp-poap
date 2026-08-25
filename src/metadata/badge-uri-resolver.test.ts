@@ -196,6 +196,7 @@ describe("PinningBadgeUriResolver", () => {
       manifestPath,
       onWarn,
       imageUriMode: "ipfs",
+      metadataUriMode: "ipfs",
       ...options,
     });
   }
@@ -211,9 +212,13 @@ describe("PinningBadgeUriResolver", () => {
       }).resolve({ eventId: EVENT, address: ALICE });
 
       expect(uri.imageUri).toMatch(/^https:\/\//);
-      // The metadata itself is still content-addressed; only the image it
-      // points at is served over https.
-      expect(uri.metadataUri).toMatch(/^ipfs:\/\//);
+      // The metadata URI too. Measured: Xaman and Bithomp both refuse to
+      // resolve ipfs:// for our CIDs — Bithomp says outright "the given URI is
+      // missing the metadata for that NFT" — because Pinata's free tier never
+      // announces them widely enough for a third-party gateway to find. The
+      // CID is still inside the https URL, so the bytes stay re-pinnable.
+      expect(uri.metadataUri).toMatch(/^https:\/\//);
+      expect(uri.metadataUri).toContain("/ipfs/");
     });
 
     it("uses ipfs:// when asked, for a roster pre-pinned well ahead of time", async () => {

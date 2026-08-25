@@ -865,12 +865,12 @@ code,.mono{font-family:var(--font-mono)}
         <div class="call" data-s="wait" id="call-1">
           <span class="call__m">•</span>
           <span class="call__t">Your approval in Xaman</span>
-          <span class="call__p"><b>GET</b> <span id="call-1-p">/api/registrations/signin/{uuid}</span></span>
+          <span class="call__p"><b>GET</b> <span id="call-1-p">/api/claims/payload/{uuid}</span></span>
         </div>
         <div class="call" data-s="wait" id="call-2">
           <span class="call__m">•</span>
-          <span class="call__t">Find the transaction it produced</span>
-          <span class="call__p"><b>GET</b> <span id="call-2-p">/events/{eventId}/attendance</span></span>
+          <span class="call__t" id="call-2-t">The transaction it produced</span>
+          <span class="call__p"><b id="call-2-m">GET</b> <span id="call-2-p">/api/claims/payload/{uuid}</span></span>
         </div>
         <div class="call" data-s="wait" id="call-3">
           <span class="call__m">•</span>
@@ -1371,22 +1371,34 @@ code,.mono{font-family:var(--font-mono)}
        GET  /api/events                                  the picker, at bare /attend
        GET  /api/events/{eventId}                        the ticket's letterhead
        POST /api/events/{eventId}/registrations/signin   prove the wallet
-       GET  /api/registrations/signin/{uuid}             ...and both payload polls
+       GET  /api/registrations/signin/{uuid}             ...did they sign in?
+       GET  /api/claims/payload/{uuid}                   ...and did they approve,
+                                                         and WHAT did it produce?
        GET  /demo/lookup?address&eventId                 name, activation, balance
        GET  /demo/art?address&eventId                    the badge, before it exists
        POST /events/{eventId}/claims                     the Xaman handle for the offer
-       GET  /events/{eventId}/attendance                 the accept transaction hash
+       GET  /events/{eventId}/attendance                 a fallback source of the hash
        POST /events/{eventId}/claims/{offerId}/confirm   re-derive, then index
 
-     TWO THINGS ABOUT THAT LIST ARE WORTH KNOWING, because they are not obvious
-     and they are why this page is shaped the way it is.
+     THREE THINGS ABOUT THAT LIST ARE WORTH KNOWING, because they are not
+     obvious and they are why this page is shaped the way it is.
 
-     1. GET /api/registrations/signin/{uuid} IS THE ONLY PAYLOAD POLL THERE IS.
-        It is named for registration because registration is what it was built
-        for, but the handler just asks Xaman what happened to a payload uuid, so
-        it answers for the accept payload too — verified live. What it does NOT
-        forward is Xaman's `txid`, so a signature is all this page learns from
-        it; the hash has to come from somewhere else. See section I, huntHash().
+     1. THE TWO PAYLOAD POLLS ARE NOT INTERCHANGEABLE, and using the wrong one
+        is what used to make an attendee copy a hash out of Xaman by hand.
+
+          /api/registrations/signin/{uuid}  {resolved, signed, rejected, address?}
+          /api/claims/payload/{uuid}        {resolved, signed, txHash?, account?}
+
+        A SignIn is not a transaction, so the first route has no hash to report
+        and is right as it is — that is the one this page uses for step one. An
+        NFTokenAcceptOffer IS a transaction, and the second route carries the
+        `txid` Xaman had all along. Claim payloads go there.
+
+        Two differences to hold on to. The claims route has no `rejected`
+        field, so it is derived here: resolved and not signed is a decline.
+        And it reports `account` on an UNSIGNED payload too — Xaman knows which
+        wallet a request was addressed to — so `signed === true` is the only
+        thing this page ever treats as a signature.
 
      2. THERE IS NO ENDPOINT THAT TURNS AN EXISTING offerId INTO A XAMAN PAYLOAD.
         POST /events/{eventId}/claims is the one that makes them, and it is
@@ -1395,6 +1407,12 @@ code,.mono{font-family:var(--font-mono)}
         payload for it, rather than minting a second badge. That is how this
         page gets a QR for an offer the desk created. Verified live: two calls
         in a row returned one offer id, one nftoken id, and two payload uuids.
+
+     3. THE HASH IS A HINT, NEVER EVIDENCE. Whichever of the three sources in
+        section I produces it, /confirm re-reads that transaction off the
+        ledger and runs all five checks before a row exists. Nothing this page
+        hands the server is trusted by the server, and the page never suggests
+        otherwise to the attendee.
      ====================================================================== */
 
   var POLL_MS = 2500;            /* every poll on this page */
@@ -1433,7 +1451,13 @@ code,.mono{font-family:var(--font-mono)}
        the most expensive thing on this server and the hardest rate limited; a
        poll that re-asks for the same offer every 2.5s because the first attempt
        failed is exactly the loop that gets a phone throttled at a door. */
-    autoAsked: null
+    autoAsked: null,
+    /* True between "they tapped the one-tap button" and the navigation to
+       Xaman. Only used to label the pending state honestly: the tap is doing
+       two things and the button should say the one the attendee cares about. */
+    pendingOpen: false,
+    /* "xaman" | "index" | "lookup" | "paste". Labelling only — see section I. */
+    hashSource: null
   };
 
   /* ---- storage: a phone reload mid-flow must not dead-end ----------------
@@ -1736,15 +1760,26 @@ code,.mono{font-family:var(--font-mono)}
       }
       return null;   /* desktop mid-proof: the QR is the action, not a button */
     }
+    /* One tap. On a coarse pointer this button fetches the offer AND lands the
+       attendee in Xaman, so it promises Xaman rather than "the desk" — and
+       while the round trip is in flight it says which half is happening. */
     if (app.face === "wait") {
-      return {
-        label: app.busy ? "Asking the desk…" : "Collect my badge",
-        note: "asks the server for the offer waiting on this address"
-      };
+      if (app.busy) {
+        return {
+          label: app.pendingOpen ? "Opening Xaman…" : "Asking the desk…",
+          note: app.pendingOpen ? "fetching your offer, then handing you to xaman" : "asks the server for the offer waiting on this address"
+        };
+      }
+      return app.coarse
+        ? { label: "Collect my badge", note: "one tap · opens xaman to approve it" }
+        : { label: "Collect my badge", note: "asks the server for the offer waiting on this address" };
     }
     if (app.face === "offer") {
       if (!app.claim || !app.claim.xaman) {
-        return { label: app.busy ? "Preparing…" : "Approve it in Xaman", note: "builds the request · you sign it, we cannot" };
+        return {
+          label: app.busy ? (app.pendingOpen ? "Opening Xaman…" : "Preparing…") : "Approve it in Xaman",
+          note: "builds the request · you sign it, we cannot"
+        };
       }
       var h2 = safeDeeplink(app.claim.xaman.deeplink);
       if (h2 && (app.coarse || !safeImage(app.claim.xaman.qrPng))) {
@@ -2027,7 +2062,7 @@ code,.mono{font-family:var(--font-mono)}
       paintProve();
       showLocalError("prove-err", "SIGNIN_EXPIRED",
         "This sign-in request expired. Xaman payloads are short-lived on purpose — a code left on a screen should stop working once the person who opened it has walked away.",
-        null, "Start again", startSignIn);
+        null, "Start again", function () { startSignIn({ thenOpen: true }); });
       return;
     }
     if (app.face === "offer" && app.claim) {
@@ -2036,7 +2071,7 @@ code,.mono{font-family:var(--font-mono)}
       showLocalError("offer-err", "REQUEST_EXPIRED",
         "That Xaman request expired before it was approved. The badge is untouched — it is still minted and still locked to your address. Ask for a fresh request and approve that one.",
         "A new request names the same offer. Nothing is minted twice.",
-        "New Xaman request", requestAccept);
+        "New Xaman request", function () { requestAccept({ thenOpen: true }); });
     }
   }
 
@@ -2050,7 +2085,15 @@ code,.mono{font-family:var(--font-mono)}
        -> 200 {resolved, signed, rejected, address?}
      ====================================================================== */
 
-  function startSignIn() { createSignIn(true); }
+  /**
+   * Step one is the same two-tap shape step four had, and the same fix
+   * applies: on a phone, one press should create the sign-in AND land the
+   * attendee in Xaman. `thenOpen` travels through the return_url retry so a
+   * second attempt still finishes the journey.
+   */
+  function startSignIn(opts) {
+    createSignIn(true, !!(opts && opts.thenOpen === true));
+  }
 
   /**
    * `withReturnUrl` sends Xaman a return_url so a phone taken over by the app
@@ -2058,10 +2101,11 @@ code,.mono{font-family:var(--font-mono)}
    * URL must not cost anyone their badge — so an unrecognised failure retries
    * once without it.
    */
-  function createSignIn(withReturnUrl) {
+  function createSignIn(withReturnUrl, thenOpen) {
     if (app.busy) return;
     clearError("prove-err");
     app.busy = true;
+    app.pendingOpen = !!thenOpen && app.coarse;
     paintDock();
 
     var body = {};
@@ -2072,6 +2116,8 @@ code,.mono{font-family:var(--font-mono)}
     call("POST", "/api/events/" + encodeURIComponent(String(app.eventId)) + "/registrations/signin", body)
       .then(function (r) {
         app.busy = false;
+        var wantedOpen = app.pendingOpen;
+        app.pendingOpen = false;
 
         if (r.ok && r.json && r.json.uuid) {
           rememberSignin({
@@ -2081,8 +2127,15 @@ code,.mono{font-family:var(--font-mono)}
             expiresAt: r.json.expiresAt ? String(r.json.expiresAt) : ""
           });
           app.pollFails = 0;
+          /* Painted and persisted before any navigation, so a phone that leaves
+             for Xaman comes back to a live sign-in rather than a blank start. */
           paintProve();
           restartPolling();
+          var href = safeDeeplink(app.signin.deeplink);
+          if (wantedOpen && href) {
+            setText("dock-note", "opening xaman…");
+            window.location.assign(href);
+          }
           return;
         }
         if (isUnconfigured(r)) { showUnavailable(r); return; }
@@ -2092,15 +2145,15 @@ code,.mono{font-family:var(--font-mono)}
           showError("prove-err", r, {
             warn: true,
             hint: "That is this server protecting Xaman's rate limit, not a problem with your wallet. Wait a moment and start again.",
-            retryLabel: "Start again", retry: startSignIn
+            retryLabel: "Start again", retry: function () { startSignIn({ thenOpen: true }); }
           });
           return;
         }
-        if (withReturnUrl) { createSignIn(false); return; }
+        if (withReturnUrl) { createSignIn(false, wantedOpen); return; }
         paintDock();
         showError("prove-err", r, {
           hint: "Nothing was created, so nothing is half-done. Try again.",
-          retryLabel: "Try again", retry: startSignIn
+          retryLabel: "Try again", retry: function () { startSignIn({ thenOpen: true }); }
         });
       });
   }
@@ -2130,7 +2183,7 @@ code,.mono{font-family:var(--font-mono)}
         rememberSignin(null);
         clearError("prove-err");
         paintProve();
-        startSignIn();
+        startSignIn({ thenOpen: true });
       }
     });
   }
@@ -2167,7 +2220,8 @@ code,.mono{font-family:var(--font-mono)}
     altBox.appendChild(again);
   }
 
-  /** GET the payload status. The one poll route this server exposes. */
+  /** Step one's poll. A SignIn produces no transaction, so this is the right
+      route for it and there is no hash to want. */
   function readPayload(uuid) {
     return call("GET", "/api/registrations/signin/" + encodeURIComponent(uuid));
   }
@@ -2197,7 +2251,7 @@ code,.mono{font-family:var(--font-mono)}
         showError("prove-err", r, {
           warn: true,
           hint: "That sign-in is not on the server any more — it restarted, or the id came from a different deployment. Nothing was lost; start a new one.",
-          retryLabel: "Start again", retry: startSignIn
+          retryLabel: "Start again", retry: function () { startSignIn({ thenOpen: true }); }
         });
         return;
       }
@@ -2222,7 +2276,7 @@ code,.mono{font-family:var(--font-mono)}
     paintProve();
     showLocalError("prove-err", "SIGNIN_DECLINED",
       "That sign-in was declined in Xaman. If that was not you — or was a mis-tap — start a new one; nothing was signed and nothing was recorded.",
-      null, "Try again", startSignIn);
+      null, "Try again", function () { startSignIn({ thenOpen: true }); });
   }
 
   /** The ONE place an address is set, and it comes from a SIGNED payload. */
@@ -2337,6 +2391,9 @@ code,.mono{font-family:var(--font-mono)}
         nftokenId: st.claim.nftokenId ? String(st.claim.nftokenId) : null,
         reused: true
       });
+      /* No `thenOpen`: nobody tapped anything. The desk issued a badge and
+         this page noticed, which is not consent to be thrown into another
+         app. The dock button below is the tap that does that. */
       requestAccept();
     }
   }
@@ -2393,9 +2450,38 @@ code,.mono{font-family:var(--font-mono)}
        409 DUPLICATE_CLAIM, no record a concurrent claim holds the slot
      ====================================================================== */
 
-  function requestAccept() {
+  /**
+   * `opts.thenOpen` is ONE TAP INTO XAMAN, and it is the only reason this
+   * function takes an argument.
+   *
+   * Creating the payload is a network round trip, so the old shape was: press
+   * to create, watch the screen change, press again to open. On a phone the
+   * first press reads as a broken button. With `thenOpen` a single press does
+   * both — but only where it makes sense:
+   *
+   *   coarse pointer  the deeplink IS the destination, so navigate to it;
+   *   fine pointer    a laptop cannot open Xaman, so render the QR and stop.
+   *
+   * It is set ONLY by call sites that are a real user gesture. The automatic
+   * trigger — the lookup noticing the desk has issued a badge — never sets it,
+   * because a page that hijacks the phone into another app without a tap is
+   * indistinguishable from a hostile one.
+   *
+   * NAVIGATION: `window.location.assign`, not `window.open`. The tap has been
+   * spent by the time the POST resolves, so the call is outside the user
+   * gesture context and iOS Safari blocks `window.open` there. Top-level
+   * same-tab navigation is not popup-blocked, and it is also the better
+   * behaviour: sessionStorage survives it, so coming back from Xaman resumes.
+   * Verified on this build — the plain form works, so the synchronous
+   * open-then-set-location workaround is deliberately NOT here.
+   */
+  function requestAccept(opts) {
+    /* Tolerant of being handed a click Event by an addEventListener that was
+       passed this function directly. An Event has no `thenOpen`. */
+    var thenOpen = !!(opts && opts.thenOpen === true);
     if (app.busy) return;
     app.busy = true;
+    app.pendingOpen = thenOpen && app.coarse;
     clearError("offer-err");
     clearError("wait-err");
     paintDock();
@@ -2408,6 +2494,8 @@ code,.mono{font-family:var(--font-mono)}
     call("POST", "/events/" + encodeURIComponent(String(app.eventId)) + "/claims", body)
       .then(function (r) {
         app.busy = false;
+        var wantedOpen = app.pendingOpen;
+        app.pendingOpen = false;
 
         if (r.ok && r.json && r.json.offerId) {
           var j = r.json;
@@ -2425,8 +2513,17 @@ code,.mono{font-family:var(--font-mono)}
             } : null
           });
           app.pollFails = 0;
+          /* Painted BEFORE any navigation. The claim is already in
+             sessionStorage by now, so a phone that leaves for Xaman and comes
+             back lands here — on the offer, polling — rather than at the top. */
           showFace("offer");
           paintOffer();
+
+          var href = x ? safeDeeplink(x.deeplink) : null;
+          if (wantedOpen && href) {
+            setText("dock-note", "opening xaman…");
+            window.location.assign(href);
+          }
           return;
         }
 
@@ -2442,7 +2539,7 @@ code,.mono{font-family:var(--font-mono)}
           showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
             warn: true,
             hint: "Another request for this address is being served right now — most likely the desk pressing issue at the same moment. Give it a few seconds.",
-            retryLabel: "Try again", retry: requestAccept
+            retryLabel: "Try again", retry: function () { requestAccept({ thenOpen: true }); }
           });
           return;
         }
@@ -2450,7 +2547,7 @@ code,.mono{font-family:var(--font-mono)}
           showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
             warn: true,
             hint: "The claim route is rate limited harder than anything else here, because it spends the issuer's XRP. Nothing was minted. Wait a moment and press again.",
-            retryLabel: "Try again", retry: requestAccept
+            retryLabel: "Try again", retry: function () { requestAccept({ thenOpen: true }); }
           });
           return;
         }
@@ -2458,7 +2555,7 @@ code,.mono{font-family:var(--font-mono)}
 
         showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
           hint: "Nothing is half-done: the claim route takes its slot before it spends anything, and it hands the same offer back rather than minting twice.",
-          retryLabel: "Try again", retry: requestAccept
+          retryLabel: "Try again", retry: function () { requestAccept({ thenOpen: true }); }
         });
       });
   }
@@ -2511,7 +2608,7 @@ code,.mono{font-family:var(--font-mono)}
         rememberClaim({ offerId: c.offerId, nftokenId: c.nftokenId, reused: c.reused });
         clearError("offer-err");
         paintOffer();
-        requestAccept();
+        requestAccept({ thenOpen: true });
       }
     });
     restartPolling();
@@ -2533,14 +2630,18 @@ code,.mono{font-family:var(--font-mono)}
       ", then come back and paste the transaction hash below."));
     var rows = node("div", "rows rows--quiet");
     var accept = (c && c.accept) || { TransactionType: "NFTokenAcceptOffer", Account: app.address, NFTokenSellOffer: c ? c.offerId : "" };
-    rows.appendChild(row("TransactionType", accept.TransactionType));
-    rows.appendChild(row("Account", accept.Account));
-    rows.appendChild(row("NFTokenSellOffer", accept.NFTokenSellOffer));
+    /* Every field, whatever the server put there. Naming three by hand hid a
+       `SourceTag` the moment the claim route started adding one, and a partial
+       transcription of a transaction is worse than none. */
+    for (var k in accept) {
+      if (!Object.prototype.hasOwnProperty.call(accept, k)) continue;
+      rows.appendChild(row(k, accept[k]));
+    }
     box.appendChild(rows);
     var bar = node("div", "retry");
     var b = node("button", "btn btn--quiet", "Try Xaman again");
     b.type = "button";
-    b.addEventListener("click", requestAccept);
+    b.addEventListener("click", function () { requestAccept({ thenOpen: true }); });
     bar.appendChild(b);
     var b2 = node("button", "btn btn--quiet", "I already signed it");
     b2.type = "button";
@@ -2550,34 +2651,53 @@ code,.mono{font-family:var(--font-mono)}
     host.appendChild(box);
   }
 
+  /**
+   * Step four's poll — and, now, step five's only necessary one.
+   *
+   * GET /api/claims/payload/{uuid} -> {uuid, resolved, signed, txHash?, account?}
+   *
+   * Two shape differences from the sign-in route, both load-bearing:
+   *   · there is no `rejected` field, so a decline is derived — resolved and
+   *     not signed;
+   *   · `account` is present on an unsigned payload too, because Xaman knows
+   *     who a request was addressed to. Only `signed === true` is a signature,
+   *     and the account is read only inside that branch.
+   */
   function pollOffer() {
     if (app.inFlight || !app.claim || !app.claim.xaman) return;
     if (isExpired()) { onPayloadExpired(); return; }
     app.inFlight = true;
 
-    readPayload(app.claim.xaman.uuid).then(function (r) {
+    call("GET", "/api/claims/payload/" + encodeURIComponent(app.claim.xaman.uuid)).then(function (r) {
       app.inFlight = false;
       if (!app.claim || app.face !== "offer") return;
 
       if (r.ok) {
         app.pollFails = 0;
         var j = r.json || {};
-        if (j.signed) {
-          /* The signing account should be ours. It is a cross-check, not a
-             gate: the ledger decides, and confirm re-derives everything. */
-          if (j.address && String(j.address) !== String(app.address)) {
+        if (j.signed === true) {
+          /* The signing account should be ours. A cross-check, not a gate:
+             the ledger decides, and confirm re-derives everything. */
+          if (j.account && String(j.account) !== String(app.address)) {
+            stopPolling();
             showLocalError("offer-err", "SIGNED_BY_ANOTHER_WALLET",
-              "That request was approved by " + String(j.address) + ", not by " + app.address +
+              "That request was approved by " + String(j.account) + ", not by " + app.address +
               ". The offer is locked to your address, so the transaction would have failed.",
               "Switch Xaman to the wallet you signed in with, then ask for a new request.",
-              "New Xaman request", requestAccept);
-            stopPolling();
+              "New Xaman request", function () { requestAccept({ thenOpen: true }); });
             return;
           }
+          /* THE WHOLE POINT OF THIS ROUTE. Xaman knows the hash the moment it
+             submits; with it here there is no hunt, no index to wait on, and
+             nothing for the attendee to copy. Straight to confirm. */
+          if (j.txHash) { rememberTx(String(j.txHash)); }
           goRecord(true);
           return;
         }
-        if (j.rejected) { onAcceptDeclined(); return; }
+        /* No `rejected` field on this route: resolved without a signature is a
+           decline, an expiry, or a Xaman-side failure. All three need a new
+           payload, and none of them is "still waiting". */
+        if (j.resolved === true) { onAcceptDeclined(); return; }
         return;
       }
       if (r.status === 404) {
@@ -2587,7 +2707,7 @@ code,.mono{font-family:var(--font-mono)}
         showError("offer-err", r, {
           warn: true,
           hint: "That Xaman request is not on the server any more. The badge is untouched — ask for a fresh request.",
-          retryLabel: "New Xaman request", retry: requestAccept
+          retryLabel: "New Xaman request", retry: function () { requestAccept({ thenOpen: true }); }
         });
         return;
       }
@@ -2613,27 +2733,36 @@ code,.mono{font-family:var(--font-mono)}
     showLocalError("offer-err", "APPROVAL_DECLINED",
       "That request was declined in Xaman. The badge is still there, still minted, still locked to your address — nothing was lost by saying no.",
       "If Xaman showed an error rather than a choice, check it is on the right network before trying again.",
-      "New Xaman request", requestAccept);
+      "New Xaman request", function () { requestAccept({ thenOpen: true }); });
   }
 
 
   /* ======================================================================
      I. STEP FIVE — GETTING THE HASH, AND RECORDING IT
 
-     The gap this section exists to close: the payload poll tells us the
-     attendee signed, but not WHAT they signed — GET /api/registrations/signin
-     forwards `signed`, `rejected` and `address`, and drops Xaman's `txid`.
-     Confirm needs the hash, so it has to come from the chain's side:
+     Four sources, in this order, and the first one is now the normal path:
 
+       0. GET /api/claims/payload/{uuid} — Xaman's own `txid`, arriving in the
+          same poll that told us the payload was signed. No extra request, no
+          wait, nothing for the attendee to do. pollOffer() has already stored
+          it by the time anything below runs, so on a healthy flow the whole of
+          this section is one call: confirm.
        1. GET /events/{eventId}/attendance — the index. A row lands here on its
           own when Xaman's webhook reaches this server, and it carries the hash.
-       2. GET /demo/lookup — `attendedTxHash`, when the desk's event happens to
-          be the demo's own. Free, because we are polling it anyway.
-       3. The attendee reads it out of Xaman. Not a nice ending, but a real one:
-          without a hash there is nothing to confirm, and a page that shrugs is
-          worse than a page that asks.
+       2. GET /demo/lookup — `attendedTxHash`. Free, because we poll it anyway.
+       3. The attendee reads it out of Xaman. A GENUINE LAST RESORT, reached
+          only when 0-2 have all failed for ~40s — which now means Xaman itself
+          did not report the hash. It stays because without a hash there is
+          nothing to confirm, and a page that shrugs is worse than one that
+          asks. It is not what makes them attend: /confirm re-reads the
+          transaction off the ledger either way, and the copy says so.
      ====================================================================== */
 
+  /**
+   * `hashSource` is only ever used to label the middle row honestly. Where a
+   * hash came from changes nothing about how it is treated — the server
+   * re-derives it from the chain regardless.
+   */
   function goRecord(signedInXaman) {
     stopPolling();
     clearError("record-err");
@@ -2644,12 +2773,41 @@ code,.mono{font-family:var(--font-mono)}
     markCall(3, "wait");
     setText("call-3-p", "/events/" + app.eventId + "/claims/" + (app.claim ? short(app.claim.offerId, 8, 6) : "{offerId}") + "/confirm");
 
-    if (app.txHash) { showFace("record"); confirmAttendance(); return; }
+    /* The good case: Xaman handed the hash back with the signature. */
+    if (app.txHash) {
+      paintHashSource(app.hashSource || "xaman");
+      markCall(2, "ok");
+      showFace("record");
+      confirmAttendance();
+      return;
+    }
 
     app.hunting = true;
     app.huntTries = 0;
+    paintHashSource("index");
     markCall(2, "run");
     showFace("record");
+  }
+
+  /** The middle row names whichever source is being used or was used. */
+  function paintHashSource(which) {
+    app.hashSource = which;
+    if (which === "xaman") {
+      setText("call-2-m", "GET");
+      setText("call-2-t", "Xaman reported the transaction it submitted");
+      setText("call-2-p", "/api/claims/payload/" + (app.claim && app.claim.xaman ? short(app.claim.xaman.uuid, 8, 4) : "{uuid}"));
+      return;
+    }
+    if (which === "paste") {
+      /* No verb: this is the one row that is not a request. */
+      setText("call-2-m", "");
+      setText("call-2-t", "The transaction hash, read out of Xaman");
+      setText("call-2-p", "no request — you gave it to this page");
+      return;
+    }
+    setText("call-2-m", "GET");
+    setText("call-2-t", "Find the transaction it produced");
+    setText("call-2-p", "/events/" + app.eventId + "/attendance");
   }
 
   function markCall(n, s) {
@@ -2681,6 +2839,7 @@ code,.mono{font-family:var(--font-mono)}
         if (found) {
           app.hunting = false;
           rememberTx(String(found.txHash));
+          paintHashSource("index");
           markCall(2, "ok");
           confirmAttendance();
           return;
@@ -2692,6 +2851,10 @@ code,.mono{font-family:var(--font-mono)}
             String(app.look.eventId) === String(app.eventId)) {
           app.hunting = false;
           rememberTx(String(app.look.attendedTxHash));
+          app.hashSource = "lookup";
+          setText("call-2-m", "GET");
+          setText("call-2-t", "Found in the desk’s view of this event");
+          setText("call-2-p", "/demo/lookup?address&eventId");
           markCall(2, "ok");
           confirmAttendance();
           return;
@@ -2710,17 +2873,28 @@ code,.mono{font-family:var(--font-mono)}
    * signed-transaction screen and lets it be copied, so this is a paste, not a
    * transcription.
    */
+  /**
+   * THE LAST RESORT, and it should now be a rare screen.
+   *
+   * Reached only when Xaman reported a signature but no `txid`, the event's
+   * attendance index stayed empty, and the desk's view had nothing either —
+   * three independent sources, over about forty seconds. The copy says what
+   * actually failed rather than blaming the attendee, and it is careful not
+   * to imply that pasting a hash is what makes them attend: the accept is
+   * already on the ledger, and /confirm re-reads it there before a row exists.
+   */
   function askForHash() {
     var host = $("record-hash");
     clear(host);
+    paintHashSource("paste");
 
     var box = node("div", "err err--warn");
     box.setAttribute("role", "alert");
-    box.appendChild(node("div", "err__code", "TX_HASH_NOT_FOUND_YET"));
+    box.appendChild(node("div", "err__code", "TX_HASH_NOT_REPORTED"));
     box.appendChild(node("div", "err__msg",
-      "Xaman told us you approved it, but it did not tell this page which transaction that produced — the payload route forwards the signature and not the hash — and nothing has appeared in this event's index yet."));
+      "Xaman confirmed your approval but did not report which transaction it submitted, and nothing has reached this event's index yet either. This is unusual — normally the hash arrives together with the signature and there is nothing for you to do here."));
     box.appendChild(node("div", "err__hint",
-      "Your badge is fine. The accept is on the ledger; what is missing is the row that indexes it. Open the request in Xaman, copy the transaction hash from the signed screen, and paste it here."));
+      "Your badge is not at risk. The accept is on the ledger whether or not this page can name it; what is missing is only the row that indexes it. If you would rather not go hunting, a volunteer can record it for you — or leave this page open and press keep looking."));
     host.appendChild(box);
 
     var field = node("div", "field");
@@ -2737,7 +2911,7 @@ code,.mono{font-family:var(--font-mono)}
     input.setAttribute("maxlength", "70");
     input.placeholder = "64 hexadecimal characters";
     field.appendChild(input);
-    field.appendChild(node("p", "field__why", "Nothing is taken on trust: the confirm call re-reads the transaction off the chain and checks all five things about it before a row is written."));
+    field.appendChild(node("p", "field__why", "In Xaman it is on the signed transaction, beside the explorer link. This hash is only a pointer, never the proof: the confirm call re-reads that transaction off the chain and checks all five things about it before a row is written, so a wrong one records nothing rather than recording the wrong thing."));
     host.appendChild(field);
 
     var bar = node("div", "retry");
@@ -2753,6 +2927,7 @@ code,.mono{font-family:var(--font-mono)}
       }
       clearError("record-err");
       rememberTx(v.toUpperCase());
+      paintHashSource("paste");
       markCall(2, "ok");
       confirmAttendance();
     });
@@ -2764,6 +2939,7 @@ code,.mono{font-family:var(--font-mono)}
       clearError("record-err");
       app.hunting = true;
       app.huntTries = 0;
+      paintHashSource("index");
       markCall(2, "run");
       restartPolling();
     });
@@ -2981,8 +3157,10 @@ code,.mono{font-family:var(--font-mono)}
       paintArt("art-preview", "art-preview-img");
 
       /* A hash already in hand: finish the job rather than showing a half
-         state. Confirm is idempotent, so this is safe on every reload. */
-      if (app.txHash) { showFace("record"); confirmAttendance(); return; }
+         state. Confirm is idempotent, so this is safe on every reload. Routed
+         through goRecord so the three rows are labelled the same way they
+         would have been had the tab never closed. */
+      if (app.txHash) { goRecord(true); return; }
 
       if (app.claim && app.claim.xaman && app.claim.xaman.uuid) {
         showFace("offer");
@@ -2992,7 +3170,7 @@ code,.mono{font-family:var(--font-mono)}
       if (app.claim && app.claim.offerId) {
         showFace("offer");
         paintOffer();
-        requestAccept();
+        requestAccept();   /* a reload, not a tap: fetch the handle, navigate nowhere */
         return;
       }
       goWait();
@@ -3061,9 +3239,9 @@ code,.mono{font-family:var(--font-mono)}
   }
 
   function onAct() {
-    if (app.face === "prove") startSignIn();
-    else if (app.face === "wait") requestAccept();
-    else if (app.face === "offer") requestAccept();
+    if (app.face === "prove") startSignIn({ thenOpen: true });
+    else if (app.face === "wait") requestAccept({ thenOpen: true });
+    else if (app.face === "offer") requestAccept({ thenOpen: true });
     else if (app.face === "record") confirmAttendance();
   }
 
@@ -3089,7 +3267,7 @@ code,.mono{font-family:var(--font-mono)}
       clearError("unavail-err");
       showFace("prove");
       paintProve();
-      startSignIn();
+      startSignIn({ thenOpen: true });
     });
 
     var id = eventIdFromPath();

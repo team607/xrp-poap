@@ -27,6 +27,7 @@ import type {
   VerifyClaimResult,
   XrplGateway,
 } from "../types.js";
+import { ConfigError } from "../errors.js";
 import { createGateway } from "../xrpl/client.js";
 import { NullXamanService, XummXamanService, type XamanService } from "../xaman/client.js";
 import { NullSignInService, XummSignInService, type SignInService } from "../xaman/signin.js";
@@ -439,6 +440,21 @@ export function parseTrustProxy(raw: string | undefined): boolean | string {
  * with no Pinata credentials should not load it at all.
  */
 async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolver | undefined> {
+  // Self-hosted needs no Pinata at all — the badge routes generate the
+  // metadata and the artwork per request, so there is nothing to pin and
+  // nothing to wait on. Checked first for exactly that reason.
+  if (config.badgeMetadataUriMode === "selfhosted") {
+    if (!config.badgeBaseUrl) {
+      throw new ConfigError(
+        "BADGE_METADATA_URI_MODE=selfhosted requires BADGE_BASE_URL — the public origin " +
+          "badge metadata is served from. It lands inside an immutable NFTokenMint URI, so " +
+          "it must be a hostname you intend to keep.",
+      );
+    }
+    const { SelfHostedBadgeUriResolver } = await import("../metadata/badge-uri-resolver.js");
+    return new SelfHostedBadgeUriResolver({ baseUrl: config.badgeBaseUrl });
+  }
+
   const jwt = config.pinata.jwt;
   if (!jwt) return undefined;
 
@@ -465,6 +481,10 @@ async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolve
   return new PinningBadgeUriResolver({
     pinner: new PinataPinner({ jwt, gateway: config.pinata.gateway }),
     imageUriMode: config.badgeImageUriMode,
+    // "selfhosted" is not a pinning mode — those badges never go to IPFS at
+    // all, they are served by registerBadgeRoutes. The pinning resolver only
+    // ever sees the two modes it understands.
+    metadataUriMode: config.badgeMetadataUriMode === "ipfs" ? "ipfs" : "https",
     // Same source as the demo's preview label. If these two ever diverge the
     // preview a page draws stops matching the bytes on IPFS.
     ...(config.eventName ? { eventName: config.eventName } : {}),
@@ -479,7 +499,22 @@ async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolve
  * something you want to find out after the event. Same reason, same voice, and
  * same sink as the DATABASE_URL warning above.
  */
-function announceBadgeArtMode(perAttendee: boolean, defaultMetadataUri?: string): void {
+function announceBadgeArtMode(
+  perAttendee: boolean,
+  defaultMetadataUri?: string,
+  selfHostedBaseUrl?: string,
+): void {
+  // Self-hosted says nothing about Pinata: nothing is pinned at all.
+  if (selfHostedBaseUrl) {
+    console.info(
+      `[api] badge art: SELF-HOSTED at ${selfHostedBaseUrl}. Each attendee gets unique ` +
+        "deterministic artwork, generated per request — nothing is pinned and nothing has to " +
+        "propagate. NFTokenMint's URI is immutable, so every badge minted here depends on that " +
+        "origin resolving forever; never point it at a tunnel you will not keep.",
+    );
+    return;
+  }
+
   if (perAttendee) {
     console.info(
       "[api] badge art: PER-ATTENDEE. PINATA_JWT is set, so each attendee gets unique " +
@@ -671,7 +706,11 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     ...(demo ? { demo } : {}),
   };
 
-  announceBadgeArtMode(Boolean(badgeUris), defaultMetadataUri);
+  announceBadgeArtMode(
+    Boolean(badgeUris),
+    defaultMetadataUri,
+    config.badgeMetadataUriMode === "selfhosted" ? config.badgeBaseUrl : undefined,
+  );
   announceSignInMode(xamanConfigured);
 
   return {

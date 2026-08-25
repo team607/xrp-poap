@@ -97,9 +97,21 @@ describe("MemoryPinner", () => {
 });
 
 describe("publishBadge", () => {
-  it("pins the image, then the validated metadata, and returns both URIs", async () => {
+  it("defaults the mint URI to https, because ipfs:// resolvers cannot find our CIDs", async () => {
+    // Measured: Xaman and Bithomp both fail to resolve ipfs:// for content on
+    // Pinata's free tier — Bithomp says outright "the given URI is missing the
+    // metadata for that NFT". Only gateways we explicitly warmed can find it.
+    // The CID stays inside the https URL, so the bytes are still re-pinnable.
     const pinner = new MemoryPinner();
     const result = await publishBadge(pinner, input);
+    expect(result.metadataUri).toMatch(/^https:\/\//);
+    expect(result.metadataUri).toContain("/ipfs/");
+    expect(result.metadataUri).toBe(result.pin.gatewayUrl);
+  });
+
+  it("pins the image, then the validated metadata, and returns both URIs", async () => {
+    const pinner = new MemoryPinner();
+    const result = await publishBadge(pinner, { ...input, metadataUriMode: "ipfs" });
 
     expect(result.imageUri).toBe(`ipfs://${fakeCidFor(IMAGE)}`);
     expect(result.metadataUri).toBe(result.pin.uri);
@@ -132,7 +144,7 @@ describe("publishBadge", () => {
   it("skips the image pin when the artwork is already on IPFS", async () => {
     const pinner = new MemoryPinner();
     const alreadyPinnedUri = "ipfs://bafybeigdyrzt5sfp7udm7hu76uh7y26nf3efuylqabf3oclgtqy55fbzdi";
-    const result = await publishBadge(pinner, {
+    const result = await publishBadge(pinner, { metadataUriMode: "ipfs" as const, 
       image: { alreadyPinnedUri },
       metadata: input.metadata,
     });
@@ -183,7 +195,7 @@ describe("publishBadge", () => {
 
     it("rejects a metadata URI over the cap, naming the byte length", async () => {
       const suffix = "deeply/".repeat(40) + "metadata.json";
-      const error = await publishBadge(longUriPinner(suffix), input)
+      const error = await publishBadge(longUriPinner(suffix), { ...input, metadataUriMode: "ipfs" })
         .then(() => null)
         .catch((e: unknown) => e as XrplLayerError);
 
@@ -203,6 +215,9 @@ describe("publishBadge", () => {
       const result = await publishBadge(longUriPinner(suffix), {
         image: { alreadyPinnedUri: "ipfs://bafkimage" },
         metadata: input.metadata,
+        // The cap applies to whatever lands on chain; longUriPinner lengthens
+        // the ipfs form, so measure that one.
+        metadataUriMode: "ipfs",
       });
       expect(Buffer.byteLength(result.metadataUri, "utf8")).toBe(MAX_URI_BYTES);
     });

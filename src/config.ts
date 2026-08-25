@@ -60,6 +60,22 @@ export interface AppConfig {
    * when you pre-pin well ahead of the event.
    */
   badgeImageUriMode: "ipfs" | "https";
+  /**
+   * What NFTokenMint's URI field points at. Defaults to "https".
+   *
+   * ipfs:// is the standard, and measured across Xaman, Bithomp and
+   * testnet.xrpl.org it is also the one nothing renders — they show the raw
+   * string and never resolve it. Permanent per badge.
+   */
+  badgeMetadataUriMode: "ipfs" | "https" | "selfhosted";
+  /**
+   * Public origin badge metadata and artwork are served from, when
+   * badgeMetadataUriMode is "selfhosted". e.g. https://badges.example.com
+   *
+   * PERMANENT: this origin ends up inside an immutable NFTokenMint URI. Never
+   * point it at a tunnel or a hostname you might not keep.
+   */
+  badgeBaseUrl?: string;
   admin: {
     email?: string;
     /** scrypt hash, produced by `npm run admin:hash`. Never a plaintext password. */
@@ -242,6 +258,12 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     eventName: env("EVENT_NAME"),
     sourceTag: sourceTag(),
     badgeImageUriMode: env("BADGE_IMAGE_URI_MODE") === "ipfs" ? "ipfs" : "https",
+    badgeMetadataUriMode: ((): "ipfs" | "https" | "selfhosted" => {
+      const m = env("BADGE_METADATA_URI_MODE");
+      if (m === "ipfs" || m === "selfhosted") return m;
+      return "https";
+    })(),
+    badgeBaseUrl: env("BADGE_BASE_URL"),
     admin: {
       email: env("ADMIN_EMAIL"),
       passwordHash: env("ADMIN_PASSWORD_HASH"),
@@ -283,6 +305,8 @@ export function describeConfig(cfg: AppConfig): Record<string, unknown> {
     eventName: cfg.eventName ?? "[unset]",
     sourceTag: cfg.sourceTag ?? "[unset]",
     badgeImageUriMode: cfg.badgeImageUriMode,
+    badgeMetadataUriMode: cfg.badgeMetadataUriMode,
+    badgeBaseUrl: cfg.badgeBaseUrl ?? "[unset]",
     api: cfg.api,
   };
 }

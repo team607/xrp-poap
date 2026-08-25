@@ -37,6 +37,23 @@ export interface PublishBadgeInput {
    * the event; pick "https" when a badge must render the moment it lands.
    */
   imageUriMode?: "ipfs" | "https";
+  /**
+   * What goes in NFTokenMint's URI field — the pointer to the metadata JSON.
+   *
+   * "ipfs" is the standard and what XLS-24d specifies. It is also, measured
+   * across Xaman, Bithomp and testnet.xrpl.org, the one nothing renders: they
+   * display the raw `ipfs://CID` string and never resolve it. A correct URI
+   * that no viewer follows is worth nothing to an attendee looking at a blank
+   * tile.
+   *
+   * "https" puts the pinning gateway's URL on the token, so any viewer can
+   * fetch it with a plain GET and no IPFS resolution at all. The CID is still
+   * inside that URL, so the content stays content-addressed and re-pinnable —
+   * what breaks if the gateway dies is the URL, not the bytes.
+   *
+   * PERMANENT PER BADGE: NFTokenMint's URI cannot be edited.
+   */
+  metadataUriMode?: "ipfs" | "https";
   /** Everything buildBadgeMetadata needs except the image URI, which we derive. */
   metadata: Omit<BuildBadgeMetadataInput, "imageUri">;
 }
@@ -103,7 +120,10 @@ export async function publishBadge(
     json: metadata,
     name: `badge-${input.metadata.eventId}-metadata.json`,
   });
-  assertUriFitsMintField(pin.uri);
 
-  return { metadata, imageUri, metadataUri: pin.uri, pin };
+  // This is the string that goes on the ledger and can never be changed.
+  const metadataUri = input.metadataUriMode === "ipfs" ? pin.uri : pin.gatewayUrl;
+  assertUriFitsMintField(metadataUri);
+
+  return { metadata, imageUri, metadataUri, pin };
 }

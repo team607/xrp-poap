@@ -28,13 +28,16 @@
  * REFUSES TO RUN ON MAINNET, three times over: here, in buildDeps(), and once
  * per request inside the routes themselves.
  */
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { networkInterfaces } from "node:os";
+import { dirname, join } from "node:path";
 import { config as loadDotenv } from "dotenv";
-import type { Wallet } from "xrpl";
+import { Wallet } from "xrpl";
 import { buildDeps } from "../src/api/deps.js";
 import { buildServer } from "../src/api/server.js";
 import { loadConfig, type AppConfig } from "../src/config.js";
 import { XrplConnection } from "../src/xrpl/client.js";
+import { getAccountBalanceXrp } from "../src/xrpl/sponsor.js";
 import { createReport, exitWith, explorerAccountUrl, registerSecret } from "./lib/report.js";
 
 // ---------------------------------------------------------------------------
@@ -89,6 +92,32 @@ function lanOrigins(port: number): string[] {
 // Run
 // ---------------------------------------------------------------------------
 
+/** Where a durable demo keeps its issuer between runs. Gitignored. */
+const DEMO_STATE_DIR = "out";
+
+/**
+ * Read back the issuer seed from a previous run, if there is one.
+ *
+ * Mode 0600 and under out/, which is gitignored — this is faucet money on a
+ * testnet throwaway, but it is still a signing key and gets treated like one.
+ * Any problem reading it is answered with "no remembered issuer" rather than a
+ * throw: the worst case is a fresh wallet, which is where we started.
+ */
+async function readRememberedIssuer(path: string): Promise<string | undefined> {
+  try {
+    const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+    const seed = (parsed as { seed?: unknown } | null)?.seed;
+    return typeof seed === "string" && seed !== "" ? seed : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+async function rememberIssuer(path: string, seed: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, `${JSON.stringify({ seed }, null, 2)}\n`, { mode: 0o600 });
+}
+
 async function run(): Promise<void> {
   // Load .env FIRST, so a configured endpoint still wins over the default
   // below. loadConfig() calls this again; it is idempotent and never overrides
@@ -119,21 +148,48 @@ async function run(): Promise<void> {
   }
 
   // -- 1: a throwaway issuer ------------------------------------------------
-  r.step(1, "Faucet-fund a throwaway issuer");
-  r.note("The faucet is rate limited. If this hangs or 503s, wait a minute and re-run.");
+  // A throwaway faucet issuer is right for a stateless demo and WRONG the
+  // moment storage is durable. Claims, attendance and events live in Postgres
+  // and outlive the process; a fresh issuer every restart does not. A persisted
+  // claim then points at a badge minted by yesterday's issuer, the idempotent
+  // claim path hands that offer straight back, and verification correctly
+  // refuses it — "issuer is rX..., expected rY...". Measured exactly that way.
+  r.step(1, "The issuer");
 
-  const boot = await XrplConnection.connect(cfg, { connectTimeoutMs: 20_000 });
+  const issuerFile = join(DEMO_STATE_DIR, `issuer-${cfg.network}.json`);
+  const remembered = cfg.databaseUrl ? await readRememberedIssuer(issuerFile) : undefined;
+
   let issuer: Wallet;
   let issuerBalance: string;
-  try {
-    const funding = await boot.client.fundWallet();
-    issuer = funding.wallet;
-    issuerBalance = String(funding.balance);
-    // Pin it before the first line that could possibly contain it. Everything
-    // the reporter prints from here on is scrubbed of this value.
+
+  if (remembered) {
+    issuer = Wallet.fromSeed(remembered);
     registerSecret(issuer.seed);
-  } finally {
-    await boot.disconnect();
+    const conn = await XrplConnection.connect(cfg, { connectTimeoutMs: 20_000 });
+    try {
+      issuerBalance = await getAccountBalanceXrp(conn, issuer.classicAddress);
+    } finally {
+      await conn.disconnect();
+    }
+    r.ok("reusing the issuer from the last run — durable storage needs a durable issuer");
+    r.info("remembered in", issuerFile);
+  } else {
+    r.note("The faucet is rate limited. If this hangs or 503s, wait a minute and re-run.");
+    const boot = await XrplConnection.connect(cfg, { connectTimeoutMs: 20_000 });
+    try {
+      const funding = await boot.client.fundWallet();
+      issuer = funding.wallet;
+      issuerBalance = String(funding.balance);
+      // Pin it before the first line that could possibly contain it.
+      registerSecret(issuer.seed);
+    } finally {
+      await boot.disconnect();
+    }
+    if (cfg.databaseUrl && issuer.seed) {
+      await rememberIssuer(issuerFile, issuer.seed);
+      r.info("remembered in", issuerFile);
+      r.note("Delete that file to start over with a fresh issuer and a clean slate.");
+    }
   }
 
   if (!issuer.seed) {

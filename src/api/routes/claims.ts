@@ -717,6 +717,42 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
    * 200 verified and indexed | 400 bad input | 422 verification failed
    * 502 ledger trouble
    */
+  /**
+   * What happened to a claim's Xaman payload, INCLUDING the transaction hash.
+   *
+   * This exists because the registration sign-in route deliberately returns
+   * only `{resolved, signed, account}` — a SignIn produces no transaction, so
+   * it has no hash to report. A page polling that route for a CLAIM sees
+   * `signed: true` and then has nothing to confirm with, which is how an
+   * attendee ends up copying a 64-character hash out of Xaman by hand. Xaman
+   * had the hash the whole time; nothing was asking for it.
+   *
+   * The hash is a hint, never evidence: /confirm still re-reads the
+   * transaction off the ledger and runs all five checks before a row exists.
+   *
+   * 200 status | 400 bad uuid | 404 unknown payload | 502 Xaman unreachable
+   */
+  app.get<{ Params: { uuid: string } }>(
+    "/api/claims/payload/:uuid",
+    { schema: { params: z.object({ uuid: z.string().uuid() }) } },
+    async (request, reply) => {
+      if (!deps.xaman) {
+        throw new XrplLayerError(
+          "CONFIG_INVALID",
+          "Xaman is not configured on this server, so payload status cannot be read.",
+        );
+      }
+      const status = await deps.xaman.getPayload(request.params.uuid);
+      return reply.code(200).send({
+        uuid: request.params.uuid,
+        resolved: status.resolved,
+        signed: status.signed,
+        ...(status.txHash ? { txHash: status.txHash } : {}),
+        ...(status.account ? { account: status.account } : {}),
+      });
+    },
+  );
+
   app.post<{ Params: ConfirmParams; Body: ConfirmBody }>(
     "/events/:eventId/claims/:offerId/confirm",
     { schema: { params: confirmParamsSchema, body: confirmBodySchema } },
