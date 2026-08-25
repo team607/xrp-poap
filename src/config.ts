@@ -43,6 +43,23 @@ export interface AppConfig {
    * Read once here so there is no second place to set it inconsistently.
    */
   eventName?: string;
+  /**
+   * SourceTag stamped on every transaction this app submits, and on the
+   * accept payload the attendee signs. A uint32 used for attribution — it
+   * moves no funds and changes no behaviour, it just makes our traffic
+   * identifiable on the ledger.
+   */
+  sourceTag?: number;
+  /**
+   * What a badge's metadata points at for its image.
+   *
+   * "https" (default) uses the pinning gateway, which serves the bytes
+   * immediately. "ipfs" is content-addressed but unfindable on public
+   * gateways for hours after pinning — and the choice is permanent, because
+   * the metadata CID lands in an immutable NFTokenMint URI. Use "ipfs" only
+   * when you pre-pin well ahead of the event.
+   */
+  badgeImageUriMode: "ipfs" | "https";
   admin: {
     email?: string;
     /** scrypt hash, produced by `npm run admin:hash`. Never a plaintext password. */
@@ -116,6 +133,24 @@ function decimal(key: string, fallback: string): string {
     throw new ConfigError(`${key} must be a positive decimal, got "${v}"`, { key });
   }
   return v;
+}
+
+/**
+ * SOURCE_TAG must fit a uint32 — the ledger rejects anything wider, and it
+ * would be rejected at submit time rather than at boot, which is the wrong
+ * place to find out.
+ */
+function sourceTag(): number | undefined {
+  const raw = env("SOURCE_TAG");
+  if (raw === undefined) return undefined;
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 0 || n > 4_294_967_295) {
+    throw new ConfigError(
+      `SOURCE_TAG must be an integer in [0, 4294967295] (uint32), got "${raw}"`,
+      { sourceTag: raw },
+    );
+  }
+  return n;
 }
 
 function int(key: string, fallback: number): number {
@@ -205,6 +240,8 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     defaultMetadataUri: env("EVENT_METADATA_URI"),
     demoEnabled: bool("DEMO_ENABLED", false),
     eventName: env("EVENT_NAME"),
+    sourceTag: sourceTag(),
+    badgeImageUriMode: env("BADGE_IMAGE_URI_MODE") === "ipfs" ? "ipfs" : "https",
     admin: {
       email: env("ADMIN_EMAIL"),
       passwordHash: env("ADMIN_PASSWORD_HASH"),
@@ -244,6 +281,8 @@ export function describeConfig(cfg: AppConfig): Record<string, unknown> {
     },
     demoEnabled: cfg.demoEnabled,
     eventName: cfg.eventName ?? "[unset]",
+    sourceTag: cfg.sourceTag ?? "[unset]",
+    badgeImageUriMode: cfg.badgeImageUriMode,
     api: cfg.api,
   };
 }

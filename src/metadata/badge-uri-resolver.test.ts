@@ -67,8 +67,12 @@ function jsonAt(pinner: CountingPinner, uri: string): BadgeMetadata {
   return pinner.inner.getByUri(uri)?.json as BadgeMetadata;
 }
 
-function svgAt(pinner: CountingPinner, uri: string): string {
-  return new TextDecoder().decode(pinner.inner.getByUri(uri)?.data);
+/** True when the bytes really are a PNG, not just labelled as one. */
+function isPng(pinner: CountingPinner, uri: string): boolean {
+  const d = pinner.inner.getByUri(uri)?.data;
+  if (!d || d.length < 8) return false;
+  const b = Buffer.from(d);
+  return b.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]));
 }
 
 let dir: string;
@@ -183,8 +187,44 @@ describe("PinningBadgeUriResolver", () => {
     pinner: IpfsPinner,
     options: Partial<ConstructorParameters<typeof PinningBadgeUriResolver>[0]> = {},
   ): PinningBadgeUriResolver {
-    return new PinningBadgeUriResolver({ pinner, manifestPath, onWarn, ...options });
+    // These assertions were written against ipfs:// image URIs and look pinned
+    // bytes up by that key. The resolver now defaults to "https" because a
+    // fresh CID does not render; pin the mode here so each test states which
+    // one it is exercising. The default is covered by its own test below.
+    return new PinningBadgeUriResolver({
+      pinner,
+      manifestPath,
+      onWarn,
+      imageUriMode: "ipfs",
+      ...options,
+    });
   }
+
+  describe("image uri mode", () => {
+    it("defaults to an https gateway url, because a fresh ipfs CID does not render", async () => {
+      const pinner = new CountingPinner();
+      // No imageUriMode: take the production default.
+      const uri = await new PinningBadgeUriResolver({
+        pinner,
+        manifestPath,
+        onWarn,
+      }).resolve({ eventId: EVENT, address: ALICE });
+
+      expect(uri.imageUri).toMatch(/^https:\/\//);
+      // The metadata itself is still content-addressed; only the image it
+      // points at is served over https.
+      expect(uri.metadataUri).toMatch(/^ipfs:\/\//);
+    });
+
+    it("uses ipfs:// when asked, for a roster pre-pinned well ahead of time", async () => {
+      const pinner = new CountingPinner();
+      const uri = await resolver(pinner, { imageUriMode: "ipfs" }).resolve({
+        eventId: EVENT,
+        address: ALICE,
+      });
+      expect(uri.imageUri).toMatch(/^ipfs:\/\//);
+    });
+  });
 
   describe("the pre-pinned path", () => {
     it("returns a manifest hit without touching the pinner", async () => {
@@ -391,18 +431,22 @@ describe("PinningBadgeUriResolver", () => {
   });
 
   describe("what gets pinned", () => {
-    it("pins the SVG as image/svg+xml and points the metadata at it", async () => {
+    it("pins a PNG, because wallets will not render an SVG badge", async () => {
       const pinner = new CountingPinner();
       const uri = await resolver(pinner, { eventName: "Feooh 2026" }).resolve({
         eventId: EVENT,
         address: ALICE,
       });
 
+      // Measured in Xaman: an image/svg+xml badge renders as a blank tile, and
+      // NFTokenMint's URI cannot be edited afterwards, so the pinned format is
+      // permanent. PNG is the one raster format every viewer handles.
       const image = pinner.inner.getByUri(uri.imageUri);
-      expect(image?.contentType).toBe("image/svg+xml");
-      expect(image?.filename).toBe(`badge-${EVENT}-${ALICE}.svg`);
-      expect(svgAt(pinner, uri.imageUri)).toContain("<svg ");
-      expect(svgAt(pinner, uri.imageUri)).toContain("FEOOH 2026");
+      expect(image?.contentType).toBe("image/png");
+      expect(image?.filename).toBe(`badge-${EVENT}-${ALICE}.png`);
+      expect(isPng(pinner, uri.imageUri)).toBe(true);
+      // Real raster output, not an empty file.
+      expect((image?.data.length ?? 0)).toBeGreaterThan(5_000);
 
       const metadata = jsonAt(pinner, uri.metadataUri);
       expect(metadata.image).toBe(uri.imageUri);
@@ -441,9 +485,15 @@ describe("PinningBadgeUriResolver", () => {
         eventId: EVENT,
         address: ALICE,
       });
-      const svg = svgAt(pinner, uri.imageUri);
-      expect(svg).not.toMatch(/&(?!(?:amp|lt|gt|quot|apos|#\d+|#x[0-9a-fA-F]+);)/);
-      expect(svg).toContain("ROCK ROLL 26");
+      // The pinned image is a PNG now, so the SVG text is not there to read.
+      // Assert the unit that actually does the sanitising, plus that the badge
+      // still rasterised — an unescaped name used to produce an SVG no parser
+      // would accept, which would fail here as a rasterise error.
+      expect(artLabel(`Rock & <Roll> "26"`)).not.toMatch(/[&<>"']/);
+      expect(isPng(pinner, uri.imageUri)).toBe(true);
+      // The metadata keeps the operator's name verbatim; JSON has no problem
+      // with these characters and an attendee should see the real event name.
+      expect(jsonAt(pinner, uri.metadataUri).name).toContain(`Rock & <Roll> "26"`);
       // The unmodified name still describes the badge in the metadata.
       const metadata = jsonAt(pinner, uri.metadataUri);
       expect(metadata.attributes).toContainEqual({
@@ -459,7 +509,10 @@ describe("PinningBadgeUriResolver", () => {
         address: ALICE,
       });
       // Captionless would be worse than the default caption.
-      expect(svgAt(pinner, uri.imageUri)).toContain(`EVENT ${EVENT}`);
+      // A name that is nothing but metacharacters sanitises to empty, so the
+      // artwork falls back to the event id. The badge must still rasterise.
+      expect(artLabel("<<&&>>")).toBe("");
+      expect(isPng(pinner, uri.imageUri)).toBe(true);
     });
   });
 

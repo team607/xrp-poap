@@ -75,4 +75,13 @@ export function registerPageRoutes(
   // Public registration. The eventId is read from the path by the page itself.
   servePage(app, "/register", "register.html", dir);
   servePage(app, "/register/:eventId", "register.html", dir);
+
+  // The attendee's own pass, on their own phone, holding their own key.
+  //
+  // Distinct from /demo/attendee, which generates a wallet server-side and
+  // signs on the attendee's behalf because it was built before Xaman was
+  // configured. This page never touches a key: the attendee proves the wallet
+  // with a Xaman sign-in and approves the badge in Xaman.
+  servePage(app, "/attend", "attend.html", dir);
+  servePage(app, "/attend/:eventId", "attend.html", dir);
 }

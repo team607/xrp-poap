@@ -7,10 +7,12 @@
  * still decided by the ledger, not by Xaman; see src/xrpl/verify.ts.
  */
 import { XummSdk } from "xumm-sdk";
+import type { NetworkName } from "../types.js";
 import { ConnectionError, NotFoundError, XrplLayerError } from "../errors.js";
 import {
   CLAIM_PAYLOAD_EXPIRE_MINUTES,
   buildClaimSignRequest,
+  xamanForceNetwork,
   type ClaimSignRequestParams,
 } from "./payloads.js";
 
@@ -64,15 +66,29 @@ export interface XummFetchedPayload {
 export interface XummXamanServiceOptions {
   apiKey: string;
   apiSecret: string;
+  /**
+   * Pins every payload to this network.
+   *
+   * Omit it and Xaman signs against whatever network the attendee's app is
+   * set to — mainnet for almost everyone — so a testnet offer comes back
+   * "unable to find the offer object".
+   */
+  network?: NetworkName;
+  /** Attribution tag stamped on the transaction the attendee signs. */
+  sourceTag?: number;
   /** Injected in tests. Defaults to a real XummSdk. */
   sdk?: XummSdkLike;
 }
 
 export class XummXamanService implements XamanService {
   private readonly sdk: XummSdkLike;
+  private readonly network: NetworkName | undefined;
+  private readonly sourceTag: number | undefined;
 
   constructor(options: XummXamanServiceOptions) {
     const { apiKey, apiSecret, sdk } = options;
+    this.network = options.network;
+    this.sourceTag = options.sourceTag;
     if (!sdk && (!apiKey || !apiSecret)) {
       throw new XrplLayerError(
         "CONFIG_INVALID",
@@ -83,7 +99,17 @@ export class XummXamanService implements XamanService {
   }
 
   async createClaimRequest(params: ClaimSignRequestParams): Promise<XamanClaimRequest> {
-    const request = buildClaimSignRequest(params);
+    const request = buildClaimSignRequest({
+      ...params,
+      ...(params.sourceTag === undefined && this.sourceTag !== undefined
+        ? { sourceTag: this.sourceTag }
+        : {}),
+    });
+    // Without this the attendee's app decides the network, and a testnet
+    // offer is looked for on mainnet.
+    if (this.network) {
+      request.options.force_network = xamanForceNetwork(this.network);
+    }
 
     let created: XummCreatedPayload | null;
     try {

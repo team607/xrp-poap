@@ -133,7 +133,17 @@ type AcceptBody = z.infer<typeof acceptBodySchema>;
  * came out of the camera is text, and "that QR was not an XRPL address" is an
  * answer the volunteer's screen has to render, not a 400 it has to explain.
  */
-const lookupQuerySchema = z.object({ address: z.string() });
+/**
+ * `eventId` is optional and defaults to the demo's own event.
+ *
+ * A desk working a real event needs to look the attendee up against THAT
+ * event: registrations belong to real events, and a lookup against the demo's
+ * counter-generated taxon would report every registered attendee as a walk-up.
+ */
+const lookupQuerySchema = z.object({
+  address: z.string(),
+  eventId: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
+});
 type LookupQuery = z.infer<typeof lookupQuerySchema>;
 
 const sponsorBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
@@ -169,6 +179,43 @@ function readHtml(path: string): string | undefined {
     return readFileSync(path, "utf8");
   } catch {
     return undefined;
+  }
+}
+
+/**
+ * Who is this, if we know them?
+ *
+ * A registered attendee gave us a name before the event and proved the wallet
+ * with a Xaman sign-in. At the desk that is the difference between "issue a
+ * badge to r9xK…" and "issue a badge to Inderdeep Khanna" — the volunteer can
+ * actually check they are handing the right badge to the right person.
+ *
+ * Optional in every sense: registrations may not be configured, the attendee
+ * may be a walk-up, and neither case is an error.
+ */
+async function readRegistration(
+  deps: ApiDeps,
+  eventId: EventId,
+  address: string,
+): Promise<{
+  displayName: string | null;
+  addressProof: string;
+  registeredAt: string | null;
+  checkedInAt: string | null;
+} | null> {
+  if (!deps.registrations) return null;
+  try {
+    const r = await deps.registrations.findByAddress(eventId, address);
+    if (!r) return null;
+    return {
+      displayName: r.displayName ?? null,
+      addressProof: r.addressProof,
+      registeredAt: r.registeredAt ? new Date(r.registeredAt).toISOString() : null,
+      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt).toISOString() : null,
+    };
+  } catch {
+    // A desk must keep working when the registrations table does not.
+    return null;
   }
 }
 
@@ -246,8 +293,16 @@ async function readAddressFacts(
   deps: ApiDeps,
   state: DemoState,
   address: string,
+  /**
+   * The event to answer about. Defaults to the demo's own.
+   *
+   * A desk working a real event asks about THAT event: claims and attendance
+   * are per-taxon, so answering from the demo's counter-generated id reports a
+   * real attendee's pending offer as absent and the badge trigger never fires.
+   */
+  forEventId?: EventId,
 ): Promise<AddressFacts> {
-  const eventId = state.eventId;
+  const eventId = forEventId ?? state.eventId;
   const [claim, attendance] = await Promise.all([
     deps.claims.find(eventId, address),
     deps.attendance.findByEventAndAddress(eventId, address),
@@ -1020,6 +1075,8 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
       { schema: { querystring: lookupQuerySchema } },
       async (request, reply) => {
         const scanned = request.query.address.trim();
+        // The event the desk is working, not necessarily the demo's own.
+        const lookupEventId = request.query.eventId ?? state.eventId;
         const sponsorAmountXrp = deps.config.sponsor.amountXrp;
 
         if (!isValidClassicAddress(scanned)) {
@@ -1039,14 +1096,16 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
             // Badge art is a function of an address, and there is no address
             // here — a `previewUrl` built from a mis-scan would point at a 400
             // and a page would render it as a broken image.
+            registration: null,
             art: null,
           });
         }
 
-        const [{ balanceXrp, activated }, facts, art] = await Promise.all([
+        const [{ balanceXrp, activated }, facts, art, registration] = await Promise.all([
           liveAccount(deps, demo, scanned),
-          readAddressFacts(deps, state, scanned),
-          readBadgeArtLinks(deps, state.eventId, scanned),
+          readAddressFacts(deps, state, scanned, lookupEventId),
+          readBadgeArtLinks(deps, lookupEventId, scanned),
+          readRegistration(deps, lookupEventId, scanned),
         ]);
 
         const attended = facts.attendance !== null;
@@ -1075,6 +1134,9 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
           // has not signed. POST /claims hands that same offer back rather than
           // minting twice, so the volunteer may still press issue.
           alreadyHasBadge: attended || facts.claim?.status === "claimed",
+          // Null for a walk-up who never registered — a normal case at a door,
+          // not an error.
+          registration,
           // The volunteer sees the same image the attendee's phone does, from
           // the same URL, before anything is issued.
           art,

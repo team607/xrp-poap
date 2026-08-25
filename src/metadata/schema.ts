@@ -49,7 +49,21 @@ export const badgeMetadataSchema = z.looseObject({
   nftType: z.literal(BADGE_NFT_TYPE),
   name: z.string().min(1),
   description: z.string(),
-  image: z.string().regex(IPFS_URI, "image must be an ipfs:// URI"),
+  /**
+   * `ipfs://CID` or an `https://` URL.
+   *
+   * ipfs:// is the content-addressed ideal. https is what renders when a CID
+   * has not propagated to public gateways yet — which for a fresh pin is
+   * measured in hours, and NFTokenMint's URI is immutable, so a badge minted
+   * against unfindable content stays broken. Both are legitimate; the caller
+   * chooses with publishBadge's `imageUriMode`.
+   */
+  image: z
+    .string()
+    .refine(
+      (v) => IPFS_URI.test(v) || /^https:\/\/[^\s]+$/.test(v),
+      "image must be an ipfs:// URI or an https:// URL",
+    ),
   collection: badgeCollectionSchema.optional(),
   attributes: z.array(badgeAttributeSchema),
 });

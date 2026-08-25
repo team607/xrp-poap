@@ -1,0 +1,3125 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<title>Your pass — XRPL attendance badge</title>
+<style>
+/* ==========================================================================
+   THE PASS — the REAL attendee page, on the attendee's own phone.
+
+   Three siblings, one stationery set:
+
+     /register       the INVITATION  — engraved, centred, read on a sofa
+     /demo/attendee  the DEMO TICKET — built on a server-generated wallet
+     /attend         THIS            — the same ticket, with the attendee's
+                                       own key in their own Xaman
+
+   The visual language is lifted wholesale from those two: bone paper, deep
+   ink, editorial serif for prose, monospace for anything the ledger said.
+   Amber is "live", jade is "confirmed", vermilion is "wrong". The variables
+   below are the register.html set verbatim, plus the ticket chrome — ribbon,
+   perforation, stub — from the demo pass.
+
+   What is different is the object's status. The demo pass is a rehearsal: the
+   server holds the key and signs on the attendee's behalf. This one holds no
+   key at all. Everything that needs a signature happens inside Xaman, on the
+   phone in the attendee's hand, and this page never sees, asks for, or could
+   use a seed. That is said out loud on the page, more than once, because it is
+   the whole reason this file exists.
+
+   Phone first. 375px is the design width; everything above it is the same
+   ticket with more air. Two things must be effortless — the address QR (a
+   volunteer reads it across a desk) and the primary action (a thumb reaches
+   it) — so they get the screen and the fixed dock respectively.
+
+   No webfonts, no images, no CDN, no build step, no library. The QR encoder is
+   lifted from /demo/attendee, where it was verified against BarcodeDetector.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --sunk:#e4dccc;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --on-signal:#fffaf2;
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+  --vermilion:#a8331a;
+  --vermilion-wash:rgba(168,51,26,.11);
+
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
+  --grid:rgba(93,74,44,.09);
+  --grain-opacity:.055;
+
+  /* Both QR plates are deliberately NOT theme-aware. Scanners want dark on
+     light; inverting a QR code for dark mode is how a badge handover dies at
+     the moment it matters. `--qr-plate` backs the code this page DRAWS (the
+     address); `--qr-png` backs the PNG Xaman hands back, which arrives with a
+     white ground of its own. */
+  --qr-plate:#f7f3ea;
+  --qr-ink:#17140f;
+  --qr-png:#ffffff;
+}
+
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --sunk:#101312;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+
+    --signal:#e0a24a;
+    --signal-2:rgba(201,135,48,.56);
+    --signal-wash:rgba(224,162,74,.12);
+    --on-signal:#17130c;
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+    --vermilion:#e8724f;
+    --vermilion-wash:rgba(232,114,79,.12);
+
+    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
+    --grid:rgba(224,214,190,.055);
+    --grain-opacity:.04;
+  }
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:16.5px;
+  line-height:1.58;
+  overflow-x:hidden;
+  -webkit-tap-highlight-color:var(--signal-wash);
+}
+body.is-docked{padding-bottom:118px}
+
+/* Atmosphere: the plate grid and paper grain of the other two pages, so all
+   three read as one product rather than three skins. */
+body::before{
+  content:"";
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
+  background-size:34px 34px;
+  -webkit-mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
+  mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
+}
+.grain{
+  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.018em; line-height:1.12}
+p{margin:0 0 .8em}
+p:last-child{margin-bottom:0}
+a{color:var(--signal)}
+code,.mono{font-family:var(--font-mono)}
+.label{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+}
+.prose{color:var(--ink-2); font-size:15.5px}
+.prose strong{color:var(--ink); font-weight:600}
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+
+/* ---- status strip -------------------------------------------------------
+   One sticky row. On a phone the QR needs the screen, so this never grows to
+   two rows: the facts scroll sideways instead. */
+.strip{
+  position:sticky; top:0; z-index:40;
+  background:color-mix(in srgb, var(--paper) 90%, transparent);
+  -webkit-backdrop-filter:saturate(150%) blur(9px);
+  backdrop-filter:saturate(150%) blur(9px);
+  border-bottom:1px solid var(--rule);
+}
+.strip__in{display:flex; align-items:center; gap:12px; padding:7px 13px; max-width:640px; margin:0 auto}
+.mark{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; font-weight:700;
+  color:var(--on-signal); background:var(--signal); padding:3px 6px; border-radius:2px; flex:none;
+}
+.facts{
+  display:flex; align-items:baseline; gap:0 16px; flex:1; min-width:0;
+  overflow-x:auto; scrollbar-width:none; -webkit-overflow-scrolling:touch;
+}
+.facts::-webkit-scrollbar{display:none}
+.fact{display:flex; align-items:baseline; gap:6px; flex:none}
+.fact__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.fact__v{font-family:var(--font-mono); font-size:11.5px; color:var(--ink); white-space:nowrap}
+.fact__v.ok{color:var(--jade)}
+.fact__v.warn{color:var(--signal)}
+
+.wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:0 13px}
+
+/* ---- banners ------------------------------------------------------------ */
+.banner{
+  display:flex; gap:11px; align-items:flex-start; margin:14px 0 0;
+  border:1px solid var(--vermilion); border-left-width:3px; background:var(--vermilion-wash);
+  padding:11px 13px; border-radius:2px;
+}
+.banner--warn{border-color:var(--signal); background:var(--signal-wash)}
+.banner--quiet{border-color:var(--rule-2); background:var(--sunk)}
+.banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
+.banner p{font-size:14px; color:var(--ink-2); margin:.3em 0 0}
+
+/* ---- the ticket ---------------------------------------------------------- */
+.pass{
+  position:relative; margin:18px 0 0;
+  border:1.5px solid var(--ink); border-radius:3px;
+  background:var(--surface); box-shadow:var(--shadow);
+}
+.pass__ribbon{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 14px; border-radius:2px 2px 0 0;
+  background:var(--ink); color:var(--paper);
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; font-weight:700;
+}
+.pass__ribbon .grow{margin-left:auto; font-weight:600; letter-spacing:.13em; opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+.dot{
+  width:7px; height:7px; border-radius:50%; flex:none;
+  background:currentColor; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+}
+.pass[data-tone="live"]{border-color:var(--signal-2)}
+.pass[data-tone="live"] .pass__ribbon{background:var(--signal); color:var(--on-signal)}
+.pass[data-tone="live"] .dot{animation:blink 1.7s ease-in-out infinite}
+.pass[data-tone="good"]{border-color:var(--jade)}
+.pass[data-tone="good"] .pass__ribbon{background:var(--jade); color:#fbfaf6}
+.pass[data-tone="warn"]{border-color:var(--signal-2)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
+
+.face{padding:20px 15px 18px; animation:rise .42s cubic-bezier(.2,.75,.3,1) both}
+@keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
+.face__eyebrow{display:flex; align-items:center; gap:11px; margin-bottom:11px}
+.face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
+.face__eyebrow--mid{margin-top:22px}
+.face h1{font-size:clamp(1.68rem,7.2vw,2.15rem); letter-spacing:-.03em; text-wrap:balance}
+.face h1 em{font-style:italic; color:var(--signal)}
+.face h1 + .prose{margin-top:13px}
+
+/* ---- the name plate ------------------------------------------------------
+   The one thing on this ticket that the demo pass has no use for: a person's
+   name, because a volunteer at a desk finds people by name and not by 33
+   characters of base58. Set in the display serif at ticket size, over the
+   event, the way a boarding pass does it. */
+.plate-name{
+  margin:0 0 16px; padding:0 0 15px; border-bottom:1px solid var(--rule);
+}
+.plate-name .label{display:block; margin-bottom:6px}
+.plate-name__n{
+  display:block; font-size:clamp(1.5rem,6.4vw,1.95rem); line-height:1.1;
+  letter-spacing:-.03em; font-weight:600; color:var(--ink); overflow-wrap:anywhere;
+}
+.plate-name__e{
+  display:block; margin-top:7px; font-family:var(--font-mono); font-size:10.5px;
+  letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+}
+
+/* ---- perforation + stub -------------------------------------------------- */
+.perf{position:relative; height:1px; margin:0 15px; border-top:1px dashed var(--rule-2)}
+.perf::before,.perf::after{
+  content:""; position:absolute; top:-11px; width:21px; height:21px; border-radius:50%;
+  background:var(--paper); border:1px solid var(--rule-2);
+}
+.perf::before{left:-26px}
+.perf::after{right:-26px}
+.stub{padding:14px 15px 15px; display:grid; gap:11px}
+.stub__addr{
+  display:block; width:100%; text-align:left; cursor:pointer;
+  font-family:var(--font-mono); font-size:12.5px; line-height:1.5; color:var(--ink);
+  background:var(--sunk); border:1px solid var(--rule); border-radius:2px;
+  padding:10px 11px; overflow-wrap:anywhere; min-height:44px;
+}
+.stub__addr:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.stub__addr .label{display:flex; justify-content:space-between; gap:10px; margin-bottom:5px}
+.stub__addr .cta{color:var(--signal); letter-spacing:.12em; text-align:right}
+/* Selectable so the clipboard fallback (and a plain long-press) both work. */
+#stub-addr-v{-webkit-user-select:text; user-select:text}
+.stub__row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.pill{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:700;
+  padding:3px 7px; border-radius:2px; flex:none;
+}
+.pill--no{color:var(--signal); background:var(--signal-wash); border:1px solid var(--signal-2)}
+.pill--yes{color:var(--jade); background:var(--jade-wash); border:1px solid color-mix(in srgb, var(--jade) 45%, transparent)}
+.pill--unknown{color:var(--ink-3); background:var(--sunk); border:1px dashed var(--rule-2)}
+.bal{font-family:var(--font-display); font-size:1.5rem; line-height:1; letter-spacing:-.02em; color:var(--ink)}
+.bal small{font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; color:var(--ink-3); margin-left:5px}
+.bal.flash{animation:flash 1.1s ease-out}
+@keyframes flash{0%{background:var(--jade-wash); box-shadow:0 0 0 6px var(--jade-wash)}100%{background:transparent; box-shadow:none}}
+.stub__note{font-size:13.5px; color:var(--ink-3); margin:0}
+.stub__note b{color:var(--ink-2); font-weight:600}
+
+/* ---- QR plates -----------------------------------------------------------
+   The SVG carries its own 4-module quiet zone and the padding here is on top
+   of it; the viewfinder brackets sit OUTSIDE the plate so nothing can ever
+   encroach on that zone. */
+.scan{text-align:center}
+.scan__cue{font-size:clamp(1.24rem,5.4vw,1.46rem); letter-spacing:-.02em; margin:0 0 4px; font-weight:600}
+.scan__sub{font-size:14px; color:var(--ink-3); margin:0 0 16px}
+.scan__cap{font-size:13.5px; color:var(--ink-3); margin:14px 0 0}
+.plate{
+  position:relative; width:min(320px,100%); margin:0 auto;
+  aspect-ratio:1/1; padding:9px; border-radius:3px;
+  background:var(--qr-plate); border:1px solid var(--rule-2);
+  box-shadow:0 14px 30px -22px rgba(30,20,6,.8);
+}
+.plate svg{display:block; width:100%; height:100%}
+.plate img{display:block; width:100%; height:100%; object-fit:contain}
+.plate--png{background:var(--qr-png); width:min(272px,100%)}
+.bracket{position:absolute; width:19px; height:19px; border:2.5px solid var(--signal); pointer-events:none}
+.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:3px 0 0 0}
+.bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
+.bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 3px}
+.bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 3px 0}
+.plate.is-live .bracket{animation:hunt 2.2s ease-in-out infinite}
+@keyframes hunt{0%,100%{opacity:1; transform:translate(0,0)}50%{opacity:.4; transform:translate(var(--bx,0),var(--by,0))}}
+.bracket--tl{--bx:-3px; --by:-3px}
+.bracket--tr{--bx:3px;  --by:-3px}
+.bracket--bl{--bx:-3px; --by:3px}
+.bracket--br{--bx:3px;  --by:3px}
+.plate__fail{
+  position:absolute; inset:9px; display:grid; place-items:center; padding:14px;
+  font-family:var(--font-mono); font-size:12px; color:#8a2d16; text-align:center; line-height:1.5;
+}
+
+/* On a coarse pointer a QR the holder cannot scan folds away behind a
+   disclosure — still one tap from a second device. */
+.fold{margin-top:18px; border:1px dashed var(--rule-2); border-radius:2px; background:var(--sunk)}
+.fold>summary{
+  cursor:pointer; list-style:none; padding:11px 12px; min-height:44px; display:flex; align-items:center; gap:9px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::before{content:"▸"; color:var(--signal)}
+.fold[open]>summary::before{content:"▾"}
+.fold__body{padding:0 12px 16px}
+
+/* ---- the live ticker ------------------------------------------------------ */
+.ticker{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px}
+.watching{
+  display:inline-flex; align-items:center; gap:8px;
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:2px; padding:6px 10px;
+}
+.watching .dot{color:var(--signal); animation:blink 1.7s ease-in-out infinite}
+.watching[data-paused="1"] .dot{color:var(--ink-3); animation:none}
+.clock{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin-left:auto}
+.clock b{color:var(--ink-2); font-weight:700}
+
+/* ---- something landed ----------------------------------------------------- */
+.landed{
+  margin:0 0 18px; border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  background:var(--jade-wash); padding:12px 13px; text-align:left;
+  animation:land .55s cubic-bezier(.2,.85,.25,1) both;
+}
+@keyframes land{from{opacity:0; transform:scale(.96) translateY(-8px)}to{opacity:1; transform:none}}
+.landed__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--jade); font-weight:700}
+.landed p{font-size:14px; color:var(--ink-2); margin:.35em 0 0}
+
+/* ---- THE NETWORK WARNING --------------------------------------------------
+   The single most likely thing to go wrong, so it is not a footnote. Xaman
+   opens on mainnet by default; a mainnet Xaman signing a testnet offer id
+   fails, and the failure looks like "the badge is broken" rather than "the
+   app is pointed at the wrong ledger". */
+.netwarn{
+  margin:0 0 18px; border:1.5px solid var(--signal); border-radius:2px;
+  background:var(--signal-wash); padding:13px 14px;
+}
+.netwarn__t{
+  display:flex; align-items:center; gap:9px;
+  font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink); font-weight:700;
+}
+.netwarn__t::before{
+  content:"!"; flex:none; width:19px; height:19px; border-radius:50%;
+  background:var(--signal); color:var(--on-signal);
+  display:grid; place-items:center; font-size:12px; line-height:1;
+}
+.netwarn p{font-size:14.5px; color:var(--ink-2); margin:.5em 0 0}
+.netwarn ol{margin:.6em 0 0; padding-left:1.15em; font-size:14px; color:var(--ink-2)}
+.netwarn li{margin:.25em 0}
+.netwarn .path{
+  font-family:var(--font-mono); font-size:12.5px; color:var(--ink); font-weight:700;
+  overflow-wrap:anywhere;
+}
+
+/* ---- ledger rows ---------------------------------------------------------- */
+.rows{margin-top:16px; border-top:1px solid var(--rule)}
+.row{padding:10px 0; border-bottom:1px dotted var(--rule)}
+.row__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600; display:block; margin-bottom:4px}
+/* `anywhere`, not `break-all`: a 64-character hash must break mid-token, but a
+   line of prose must still wrap at its spaces. */
+.row__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; line-height:1.5}
+.row__v.ok{color:var(--jade)}
+.row__v.prose-v{font-family:var(--font-display); font-size:15px}
+.rows--quiet .row__k{font-size:9px}
+.rows--quiet .row__v{font-size:11.5px; color:var(--ink-2)}
+.rows--quiet .row__v.ok{color:var(--jade)}
+.rows--quiet .row__v.prose-v{font-size:14.5px; color:var(--ink)}
+.links{display:flex; flex-wrap:wrap; gap:8px; margin-top:7px}
+.link{
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
+  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:2px;
+  padding:7px 12px; min-height:40px; display:inline-flex; align-items:center;
+}
+.link::after{content:" ↗"; opacity:.6}
+
+/* ---- the three calls of the record path ----------------------------------- */
+.calls{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:2px; margin-top:6px}
+.call{background:var(--surface); padding:11px 12px; display:grid; grid-template-columns:20px minmax(0,1fr); gap:2px 10px; align-items:start}
+.call__m{grid-row:1/3; font-family:var(--font-mono); font-size:13px; font-weight:700; color:var(--ink-3); line-height:1.35}
+.call[data-s="run"] .call__m{color:var(--signal); animation:blink 1s ease-in-out infinite}
+.call[data-s="ok"] .call__m{color:var(--jade)}
+.call[data-s="err"] .call__m{color:var(--vermilion)}
+.call__t{font-size:14.5px; color:var(--ink)}
+.call__p{font-family:var(--font-mono); font-size:10.5px; color:var(--ink-3); word-break:break-all; line-height:1.45}
+.call__p b{color:var(--signal); font-weight:700; letter-spacing:.06em}
+
+/* ---- notes, errors, fields ------------------------------------------------ */
+.note{
+  margin-top:16px; font-size:14px; color:var(--ink-2);
+  border-left:2px solid var(--rule-2); background:var(--sunk); padding:10px 12px; border-radius:0 2px 2px 0;
+}
+.note b{color:var(--ink); font-weight:600}
+.note--key{border-left-color:var(--jade); background:var(--jade-wash)}
+.err{
+  margin-top:16px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
+  padding:11px 13px; border-radius:0 2px 2px 0;
+}
+.err__code{font-family:var(--font-mono); font-size:11.5px; font-weight:700; letter-spacing:.1em; color:var(--vermilion)}
+.err__msg{font-size:14.5px; color:var(--ink); margin-top:5px; overflow-wrap:anywhere}
+.err__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px; font-style:italic}
+.err--warn{border-left-color:var(--signal); background:var(--signal-wash)}
+.err--warn .err__code{color:var(--signal)}
+.retry{margin-top:13px; display:flex; gap:9px; flex-wrap:wrap}
+
+.field{margin-top:16px}
+.field > .label{display:block; margin-bottom:7px}
+/* 16px is not a taste decision: anything smaller and iOS Safari zooms on focus,
+   which here scrolls the dock button out of reach. */
+.field input{
+  display:block; width:100%; font-family:var(--font-mono); font-size:16px; line-height:1.4;
+  padding:12px 12px; border:1px solid var(--rule-2); border-radius:2px;
+  background:var(--sunk); color:var(--ink);
+}
+.field input:focus{outline:2px solid var(--signal); outline-offset:1px}
+.field input::placeholder{color:var(--ink-3); opacity:.7}
+.field__why{font-size:13.5px; color:var(--ink-3); margin:7px 0 0}
+.field__why b{color:var(--ink-2); font-weight:600}
+
+/* ---- buttons -------------------------------------------------------------- */
+.btn{
+  font-family:var(--font-mono); letter-spacing:.14em; text-transform:uppercase; font-weight:700;
+  border-radius:2px; cursor:pointer; position:relative; overflow:hidden; text-decoration:none;
+  transition:transform .12s ease, filter .16s ease, background .16s ease;
+}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn[aria-busy="true"]::after{
+  content:""; position:absolute; left:0; bottom:0; height:3px; width:100%;
+  background:linear-gradient(90deg,transparent,currentColor,transparent);
+  animation:sweep 1s linear infinite;
+}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+.btn--act{
+  display:flex; align-items:center; justify-content:center; width:100%; min-height:58px; font-size:14px;
+  background:var(--signal); color:var(--on-signal); border:0;
+  box-shadow:0 1px 0 rgba(255,255,255,.22) inset, 0 12px 24px -16px rgba(0,0,0,.9);
+}
+.btn--act:hover:not(:disabled){filter:brightness(1.07)}
+.btn--quiet{
+  background:transparent; color:var(--ink-2); border:1px solid var(--rule-2);
+  font-size:11px; padding:11px 14px; min-height:44px;
+  display:inline-flex; align-items:center; justify-content:center;
+}
+.btn--quiet:hover:not(:disabled){color:var(--ink); border-color:var(--ink-3)}
+
+/* ---- the dock: the primary action lives in the thumb zone ----------------- */
+.dock{
+  position:fixed; left:0; right:0; bottom:0; z-index:50;
+  padding:11px 13px calc(11px + env(safe-area-inset-bottom,0px));
+  background:color-mix(in srgb, var(--paper) 93%, transparent);
+  -webkit-backdrop-filter:saturate(150%) blur(12px);
+  backdrop-filter:saturate(150%) blur(12px);
+  border-top:1px solid var(--rule);
+  animation:dockin .34s cubic-bezier(.2,.8,.3,1) both;
+}
+.dock__in{max-width:640px; margin:0 auto}
+.dock__note{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+  color:var(--ink-3); text-align:center; margin:8px 0 0;
+}
+/* A small offset and no opacity: this bar carries the primary tap target, and
+   an animation that gets throttled must still leave the button on screen. */
+@keyframes dockin{from{transform:translateY(15px)}to{transform:none}}
+
+/* ---- the picker (bare /attend) -------------------------------------------- */
+.picks{display:grid; gap:11px; margin-top:14px}
+.pick{
+  display:block; text-decoration:none; color:inherit;
+  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  padding:13px 14px; transition:border-color .16s ease, background .16s ease;
+}
+.pick:hover{border-color:var(--signal); background:var(--signal-wash)}
+.pick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.pick__top{display:flex; align-items:baseline; gap:10px}
+.pick__n{font-family:var(--font-display); font-size:1.14rem; font-weight:600; color:var(--ink); letter-spacing:-.02em; min-width:0}
+.pick__go{margin-left:auto; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); flex:none}
+.pick__meta{font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:6px 0 0}
+.pick__desc{font-size:14px; color:var(--ink-2); margin:7px 0 0}
+.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:2px; padding:16px; text-align:center; margin-top:14px}
+
+/* ---- the stamp: the payoff ------------------------------------------------ */
+.stampwrap{display:flex; justify-content:center; margin:18px 0 4px}
+.stamp{
+  position:relative; color:var(--jade); border:2px solid currentColor; border-radius:3px;
+  padding:9px 16px 10px; transform:rotate(-1.6deg); text-align:center; max-width:100%;
+  animation:press .5s cubic-bezier(.2,.9,.3,1) both;
+}
+.stamp::before{content:""; position:absolute; inset:3px; border:1px solid currentColor; border-radius:2px; opacity:.5}
+.stamp__t{font-family:var(--font-mono); font-size:15px; letter-spacing:.26em; text-transform:uppercase; font-weight:700; display:block}
+.stamp__d{font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; display:block; margin-top:3px}
+@keyframes press{from{opacity:0; transform:rotate(-7deg) scale(1.3)}to{opacity:1; transform:rotate(-1.6deg) scale(1)}}
+
+/* ---- wire log + footer ---------------------------------------------------- */
+.wire{margin-top:26px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk)}
+.wire>summary{
+  cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+}
+.wire>summary::-webkit-details-marker{display:none}
+.wire>summary::before{content:"▸"; color:var(--signal)}
+.wire[open]>summary::before{content:"▾"}
+.wire__box{border-top:1px solid var(--rule); max-height:230px; overflow-y:auto}
+.wire__row{
+  display:grid; grid-template-columns:42px minmax(0,1fr) auto; gap:9px; align-items:baseline;
+  padding:6px 12px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11px;
+}
+.wire__row:last-child{border-bottom:0}
+.wire__m{font-weight:700; color:var(--signal)}
+.wire__p{color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.wire__s{font-weight:700}
+.wire__s.ok{color:var(--jade)}
+.wire__s.err{color:var(--vermilion)}
+.wire__empty{padding:11px 12px; font-family:var(--font-mono); font-size:11px; color:var(--ink-3)}
+
+.foot{margin:20px 0 34px; padding-top:16px; border-top:1px solid var(--rule); font-size:13px; color:var(--ink-3)}
+.foot b{color:var(--ink-2); font-weight:600}
+
+/* ---- the badge artwork ----------------------------------------------------
+   GET /demo/art?address&eventId is a pure function of the two, so the badge
+   exists the moment the wallet is proven and long before anything is minted.
+   The mount is the demo pass's: a board, a hairline keyline, and a bed painted
+   the artwork's OWN outer black so the seam disappears. Theme-fixed, because
+   the artwork is an object and not a skin. */
+:root{
+  --art-bed:#080a0c;
+  --art-mount:var(--sunk);
+  --art-edge:var(--rule-2);
+  --art-keyline:rgba(24,17,5,.6);
+  --art-shadow:0 16px 32px -24px rgba(30,20,6,.85);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --art-mount:var(--surface-2);
+    --art-keyline:rgba(236,230,218,.15);
+    --art-shadow:0 20px 38px -28px rgba(0,0,0,.95);
+  }
+}
+.art{margin:0}
+.art__mount{
+  position:relative; padding:9px; border-radius:3px;
+  background:var(--art-mount); border:1px solid var(--art-edge);
+  box-shadow:var(--art-shadow);
+}
+.art__bed{position:relative; aspect-ratio:1/1; overflow:hidden; background:var(--art-bed); border:1px solid var(--art-keyline)}
+.art__img{display:block; width:100%; height:auto}
+.art__cap{margin:0; min-width:0}
+.art__prov{font-size:12.5px; line-height:1.45; color:var(--ink-3); margin:0}
+.art--preview{
+  display:grid; grid-template-columns:88px minmax(0,1fr); gap:14px; align-items:center;
+  margin-top:18px; padding-top:16px; border-top:1px dashed var(--rule-2); text-align:left;
+}
+.art--preview .art__mount{padding:5px; border-radius:2px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
+.art--preview .art__cap .label{display:block; margin-bottom:5px}
+.art--big{margin:18px auto; max-width:340px}
+/* Crop marks: eight hairlines in one pseudo-element. A print artefact, not the
+   QR's amber viewfinder — same stationery, different job. */
+.art--big .art__mount::after{
+  content:""; position:absolute; inset:-8px; pointer-events:none;
+  background:
+    linear-gradient(var(--art-edge),var(--art-edge)) left top/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left top/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right top/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right top/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left bottom/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) left bottom/14px 1px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right bottom/1px 14px no-repeat,
+    linear-gradient(var(--art-edge),var(--art-edge)) right bottom/14px 1px no-repeat;
+}
+.art--big .art__cap{margin-top:12px; text-align:center}
+.art--big .art__img{animation:art-place .78s cubic-bezier(.18,.72,.24,1) both}
+@keyframes art-place{from{opacity:0; transform:translateY(-9px) scale(1.045)}to{opacity:1; transform:none}}
+
+@media (min-width:560px){
+  .wrap{padding:0 20px}
+  .face{padding:26px 24px 24px}
+  .stub{padding:16px 24px 20px}
+  .perf{margin:0 24px}
+  .perf::before{left:-35px}
+  .perf::after{right:-35px}
+  .art--preview{grid-template-columns:112px minmax(0,1fr); gap:18px}
+}
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+}
+</style>
+</head>
+<body>
+<div class="grain" aria-hidden="true"></div>
+
+<header class="strip">
+  <div class="strip__in">
+    <span class="mark">XRPL</span>
+    <div class="facts">
+      <span class="fact"><span class="fact__k">net</span><span class="fact__v" id="f-net">—</span></span>
+      <span class="fact"><span class="fact__k">event</span><span class="fact__v" id="f-event">—</span></span>
+      <span class="fact"><span class="fact__k">you</span><span class="fact__v" id="f-addr">—</span></span>
+      <span class="fact"><span class="fact__k">active</span><span class="fact__v" id="f-active">—</span></span>
+      <span class="fact"><span class="fact__k">bal</span><span class="fact__v" id="f-bal">—</span></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <noscript>
+    <div class="banner">
+      <div><span class="banner__t">JavaScript required</span>
+      <p>This page talks to a live API, draws its own QR code and waits on Xaman. Nothing here is pre-rendered.</p></div>
+    </div>
+  </noscript>
+
+  <div class="banner" id="b-offline" hidden>
+    <div>
+      <span class="banner__t">The server is not answering</span>
+      <p>A request from this page failed at the network layer. This page is served by the API itself, so if it loaded but a request did not, the process is down or restarting. Nothing you have approved is lost — the ledger has it. Try again, or ask a volunteer.</p>
+    </div>
+  </div>
+
+  <div class="banner banner--quiet" id="b-demo" hidden>
+    <div>
+      <span class="banner__t">Running without the desk helpers</span>
+      <p id="b-demo-msg"></p>
+    </div>
+  </div>
+
+  <section class="pass" id="pass" data-tone="neutral">
+    <div class="pass__ribbon">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="ribbon">reading the event</span>
+      <span class="grow" id="ribbon-side">attendee pass</span>
+    </div>
+
+    <!-- ============ boot ============ -->
+    <div class="face" data-face="boot">
+      <p class="prose">Reading the event…</p>
+    </div>
+
+    <!-- ============ bare /attend — which event? ============ -->
+    <div class="face" data-face="picker" hidden>
+      <div class="face__eyebrow"><span class="label">Open events</span></div>
+      <h1>Which event are you <em>at</em>?</h1>
+      <p class="prose">Pick the one you are standing in. If you were given a link, use that instead — an event can be live without being listed here.</p>
+      <div class="picks" id="picks"></div>
+      <div id="picker-err"></div>
+    </div>
+
+    <!-- ============ no such event, or not open ============ -->
+    <div class="face" data-face="closed" hidden>
+      <div class="face__eyebrow"><span class="label">Nothing to collect</span></div>
+      <h1>This event is not <em>open</em>.</h1>
+      <p class="prose">
+        Either there is no event behind this link, or the organiser has not opened it. Both look the
+        same from out here, deliberately — a draft event is the organiser's scratch space and is never
+        public.
+      </p>
+      <div id="closed-err"></div>
+      <div class="retry"><a class="btn btn--quiet" href="/attend">See what is open</a></div>
+    </div>
+
+    <!-- ============ Xaman is not configured on this server ============ -->
+    <div class="face" data-face="unavailable" hidden>
+      <div class="face__eyebrow"><span class="label">Unavailable</span></div>
+      <h1>This desk cannot reach <em>Xaman</em>.</h1>
+      <p class="prose">
+        Every step of this page runs through Xaman on your phone — proving the wallet, and approving
+        the badge. This server has no Xaman credentials configured, so there is nothing for you to
+        approve. Nothing is wrong with your wallet or this link.
+      </p>
+      <div id="unavail-err"></div>
+      <p class="note">
+        <b>For the organiser:</b> set <code>XUMM_API_KEY</code> and <code>XUMM_API_SECRET</code> and
+        restart the API. There is deliberately no "just type your address" fallback: an unverified
+        address is a claim, not a proof, and a badge minted to the wrong address is soulbound and
+        unrecoverable.
+      </p>
+      <div class="retry"><button class="btn btn--quiet" id="recheck" type="button">Check again</button></div>
+    </div>
+
+    <!-- ============ 1 · prove the wallet ============ -->
+    <div class="face" data-face="prove" hidden>
+      <div class="face__eyebrow"><span class="label">Step one</span></div>
+      <h1>Open your <em>wallet</em>.</h1>
+      <p class="prose">
+        Xaman will ask you to sign in. <strong>It is not a transaction</strong> — no fee, nothing
+        submitted, nothing moved. It proves this wallet is yours, which matters because the badge is
+        <strong>soulbound</strong>: one issued to the wrong address can never be moved and never be
+        recovered.
+      </p>
+
+      <div id="prove-live" hidden>
+        <details class="fold" id="prove-fold">
+          <summary id="prove-fold-summary">Signing on another device? Show the code</summary>
+          <div class="fold__body">
+            <div class="scan">
+              <div class="plate plate--png is-live">
+                <img id="prove-qr" alt="" width="272" height="272">
+                <span class="bracket bracket--tl"></span>
+                <span class="bracket bracket--tr"></span>
+                <span class="bracket bracket--bl"></span>
+                <span class="bracket bracket--br"></span>
+              </div>
+              <p class="scan__cap" id="prove-cap">Open Xaman and scan this.</p>
+            </div>
+          </div>
+        </details>
+        <p class="sr" id="prove-alt-text"></p>
+
+        <div class="ticker">
+          <span class="watching" id="prove-watch" data-paused="0">
+            <span class="dot" aria-hidden="true"></span><span id="prove-watch-text">waiting for the signature</span>
+          </span>
+          <span class="clock" id="prove-clock"></span>
+        </div>
+
+        <div class="retry" id="prove-alt"></div>
+      </div>
+
+      <p class="note note--key">
+        <b>You will never be asked for a seed, a secret or a private key.</b> Not here, not in Xaman,
+        not at the desk. This page could not use one if you gave it one — a sign-in is a signature
+        over a challenge, made inside Xaman, and the only thing it hands back is which account made it.
+      </p>
+
+      <div id="prove-err"></div>
+    </div>
+
+    <!-- ============ 2 & 3 · the pass, waiting for the desk ============ -->
+    <div class="face" data-face="wait" hidden>
+      <div id="wait-banner"></div>
+      <div class="plate-name" id="nameplate" hidden>
+        <span class="label">admit</span>
+        <span class="plate-name__n" id="nameplate-n">—</span>
+        <span class="plate-name__e" id="nameplate-e"></span>
+      </div>
+
+      <div class="scan">
+        <p class="scan__cue">Show this to the volunteer.</p>
+        <p class="scan__sub" id="wait-sub">They scan it, and the desk issues your badge to this address.</p>
+        <div class="plate is-live" id="wait-plate">
+          <div id="wait-qr" aria-hidden="true"></div>
+          <span class="bracket bracket--tl"></span>
+          <span class="bracket bracket--tr"></span>
+          <span class="bracket bracket--bl"></span>
+          <span class="bracket bracket--br"></span>
+        </div>
+        <p class="sr" id="wait-qr-alt"></p>
+        <div class="ticker" style="justify-content:center">
+          <span class="watching" id="wait-watch" data-paused="0">
+            <span class="dot" aria-hidden="true"></span><span id="wait-watch-text">watching for the badge</span>
+          </span>
+        </div>
+      </div>
+
+      <figure class="art art--preview" id="art-preview" hidden>
+        <div class="art__mount">
+          <div class="art__bed"><img class="art__img" id="art-preview-img" alt="" width="512" height="512"></div>
+        </div>
+        <figcaption class="art__cap">
+          <span class="label">your badge</span>
+          <p class="art__prov">Drawn from your address, so it already exists. This exact image is what gets issued to you.</p>
+        </figcaption>
+      </figure>
+
+      <div id="wait-sponsor"></div>
+      <div id="wait-err"></div>
+
+      <p class="note">
+        <b>Nothing is on the ledger for you yet.</b> When the desk issues the badge it lands as an
+        offer locked to this address — and you will be asked to approve it in Xaman. That approval is
+        the only signature that counts, and it happens on your phone.
+      </p>
+    </div>
+
+    <!-- ============ 4 · a badge is waiting ============ -->
+    <div class="face" data-face="offer" hidden>
+      <div class="face__eyebrow"><span class="label">The desk has issued it</span></div>
+      <h1>A badge is <em>waiting</em> for you.</h1>
+
+      <figure class="art art--big" id="art-offer" hidden>
+        <div class="art__mount">
+          <div class="art__bed"><img class="art__img" id="art-offer-img" alt="" width="512" height="512"></div>
+        </div>
+      </figure>
+
+      <p class="prose">
+        It is minted and on the ledger already, held by a zero-price offer locked to your address that
+        nobody else can take. Nothing is yours until you approve it in Xaman.
+      </p>
+
+      <div class="netwarn" id="netwarn">
+        <div class="netwarn__t">Xaman must be on <span id="netwarn-net">testnet</span></div>
+        <p>
+          Xaman opens on <b>mainnet</b> by default. This badge lives on <b id="netwarn-net-2">testnet</b>,
+          and a Xaman pointed at the wrong ledger will fail the approval — usually with an error that
+          looks like the badge is broken when it is not.
+        </p>
+        <ol>
+          <li>In Xaman: <span class="path">Settings → Advanced → Node</span></li>
+          <li>Choose a <b>Testnet</b> node, then come back and approve.</li>
+        </ol>
+      </div>
+
+      <div id="offer-live" hidden>
+        <details class="fold" id="offer-fold">
+          <summary id="offer-fold-summary">Approving on another device? Show the code</summary>
+          <div class="fold__body">
+            <div class="scan">
+              <div class="plate plate--png is-live">
+                <img id="offer-qr" alt="" width="272" height="272">
+                <span class="bracket bracket--tl"></span>
+                <span class="bracket bracket--tr"></span>
+                <span class="bracket bracket--bl"></span>
+                <span class="bracket bracket--br"></span>
+              </div>
+              <p class="scan__cap" id="offer-cap">Open Xaman and scan this to approve.</p>
+            </div>
+          </div>
+        </details>
+        <p class="sr" id="offer-alt-text"></p>
+
+        <div class="ticker">
+          <span class="watching" id="offer-watch" data-paused="0">
+            <span class="dot" aria-hidden="true"></span><span id="offer-watch-text">waiting for your approval</span>
+          </span>
+          <span class="clock" id="offer-clock"></span>
+        </div>
+
+        <div class="retry" id="offer-alt"></div>
+      </div>
+
+      <div class="face__eyebrow face__eyebrow--mid"><span class="label">what you are approving</span></div>
+      <div class="rows rows--quiet" id="offer-rows"></div>
+
+      <p class="note note--key">
+        <b>You sign this, not us.</b> The transaction is an <code>NFTokenAcceptOffer</code> naming one
+        offer id. It is built by the server, shown to you by Xaman, and signed by a key that never
+        leaves your phone. The issuer never sees it.
+      </p>
+
+      <div id="offer-err"></div>
+    </div>
+
+    <!-- ============ 5 · record it ============ -->
+    <div class="face" data-face="record" hidden>
+      <div class="face__eyebrow"><span class="label">Three steps, in order</span></div>
+      <h1>Taking the badge.</h1>
+      <div class="calls" id="calls">
+        <div class="call" data-s="wait" id="call-1">
+          <span class="call__m">•</span>
+          <span class="call__t">Your approval in Xaman</span>
+          <span class="call__p"><b>GET</b> <span id="call-1-p">/api/registrations/signin/{uuid}</span></span>
+        </div>
+        <div class="call" data-s="wait" id="call-2">
+          <span class="call__m">•</span>
+          <span class="call__t">Find the transaction it produced</span>
+          <span class="call__p"><b>GET</b> <span id="call-2-p">/events/{eventId}/attendance</span></span>
+        </div>
+        <div class="call" data-s="wait" id="call-3">
+          <span class="call__m">•</span>
+          <span class="call__t">Re-derive it from the chain, then index it</span>
+          <span class="call__p"><b>POST</b> <span id="call-3-p">/events/{eventId}/claims/{offerId}/confirm</span></span>
+        </div>
+      </div>
+      <div class="rows" id="record-rows"></div>
+      <div id="record-hash"></div>
+      <div id="record-err"></div>
+    </div>
+
+    <!-- ============ 6 · done ============ -->
+    <div class="face" data-face="done" hidden>
+      <div class="face__eyebrow"><span class="label">Recorded on the ledger</span></div>
+      <h1>It's <em>yours</em>.</h1>
+
+      <div class="stampwrap">
+        <div class="stamp">
+          <span class="stamp__t">Attended</span>
+          <span class="stamp__d" id="stamp-date">—</span>
+        </div>
+      </div>
+
+      <figure class="art art--big" id="art-hero" hidden>
+        <div class="art__mount">
+          <div class="art__bed"><img class="art__img" id="art-hero-img" alt="" width="512" height="512"></div>
+        </div>
+        <figcaption class="art__cap"><span class="label" id="art-hero-cap">your badge</span></figcaption>
+      </figure>
+
+      <p class="prose" id="done-lede">
+        The chain was asked five questions about your transaction and answered yes to all five, so the
+        attendance index has a row for you.
+      </p>
+
+      <div class="face__eyebrow face__eyebrow--mid"><span class="label">the record</span></div>
+      <div class="rows rows--quiet" id="done-rows"></div>
+
+      <p class="note" style="margin-top:18px">
+        <b>That transaction is the attendance record — not the badge.</b> Verification never asks who
+        holds the token now; it replays your <code>NFTokenAcceptOffer</code>. Burn the badge tomorrow
+        and the hash above still says you were here.
+      </p>
+    </div>
+
+    <!-- shared: perforation + stub, from the moment an address is proven -->
+    <div class="perf" id="perf" hidden></div>
+    <div class="stub" id="stub" hidden>
+      <button class="stub__addr" id="stub-addr" type="button">
+        <span class="label"><span>your verified wallet</span><span class="cta" id="copy-cta">tap to copy</span></span>
+        <span id="stub-addr-v">—</span>
+      </button>
+      <div class="stub__row">
+        <span class="pill pill--unknown" id="stub-pill">checking</span>
+        <span class="bal" id="stub-bal">—</span>
+      </div>
+      <p class="stub__note" id="stub-note"></p>
+    </div>
+  </section>
+
+  <details class="wire">
+    <summary>Every request this page made</summary>
+    <div class="wire__box" id="wire">
+      <p class="wire__empty">Nothing yet.</p>
+    </div>
+  </details>
+
+  <p class="foot">
+    <b>This page never holds a key.</b> It cannot ask for a seed, and it could not use one if you typed
+    it — every signature on this page is made inside Xaman on your own device. What it keeps in this
+    browser tab, and only until you close it: which event you are at, the address your sign-in proved,
+    and the id of whatever Xaman request is in flight. Testnet: the XRP is faucet money and none of it
+    is real.
+  </p>
+</main>
+
+<div class="dock" id="dock" hidden>
+  <div class="dock__in">
+    <button class="btn btn--act" id="act" type="button">Start</button>
+    <a class="btn btn--act" id="act-link" href="#" hidden rel="noopener noreferrer" target="_blank">Open in Xaman</a>
+    <p class="dock__note" id="dock-note"></p>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ======================================================================
+     A. QR CODE ENCODER — byte mode, ECC level M, versions 1..10.
+
+     Lifted verbatim from /demo/attendee, where it was written by hand and
+     verified end to end against Chrome's BarcodeDetector. Xaman hands this page
+     a QR for its own payloads, but the address on the pass is a plain string
+     that nothing on the server draws — so it is drawn here.
+
+     An XRPL classic address is 25-35 characters, which lands in version 2 or 3;
+     the encoder goes to 10 and throws above it rather than pretending to
+     implement all forty. All eight masks are generated and scored with the
+     standard penalty rules (§7.8.3.1); the lowest scoring one wins.
+     ====================================================================== */
+  var QR = (function () {
+
+    /* ---- GF(256), primitive polynomial x^8+x^4+x^3+x^2+1 (0x11d) ---- */
+    var EXP = new Uint8Array(512);
+    var LOG = new Uint8Array(256);
+    (function () {
+      var x = 1;
+      for (var i = 0; i < 255; i++) {
+        EXP[i] = x;
+        LOG[x] = i;
+        x <<= 1;
+        if (x & 0x100) x ^= 0x11d;
+      }
+      for (var j = 255; j < 512; j++) EXP[j] = EXP[j - 255];
+    })();
+    function mul(a, b) { return (a === 0 || b === 0) ? 0 : EXP[LOG[a] + LOG[b]]; }
+
+    /* ---- ISO/IEC 18004 block structure, error-correction level M only.
+       [totalCodewords, ecPerBlock, blocks1, dataPerBlock1, blocks2, dataPerBlock2] ---- */
+    var SPEC = [
+      null,
+      [26, 10, 1, 16, 0, 0],
+      [44, 16, 1, 28, 0, 0],
+      [70, 26, 1, 44, 0, 0],
+      [100, 18, 2, 32, 0, 0],
+      [134, 24, 2, 43, 0, 0],
+      [172, 16, 4, 27, 0, 0],
+      [196, 18, 4, 31, 0, 0],
+      [242, 22, 2, 38, 2, 39],
+      [292, 22, 3, 36, 2, 37],
+      [346, 26, 4, 43, 1, 44]
+    ];
+    var ALIGN = [
+      null, [], [6, 18], [6, 22], [6, 26], [6, 30],
+      [6, 34], [6, 22, 38], [6, 24, 42], [6, 26, 46], [6, 28, 50]
+    ];
+    var MAX_VERSION = 10;
+
+    function capacityBytes(version) {
+      var s = SPEC[version];
+      var dataCodewords = s[2] * s[3] + s[4] * s[5];
+      var headerBits = 4 + (version < 10 ? 8 : 16);
+      return Math.floor((dataCodewords * 8 - headerBits) / 8);
+    }
+
+    function utf8Bytes(str) {
+      if (typeof TextEncoder === "function") return new TextEncoder().encode(str);
+      var out = [];
+      for (var i = 0; i < str.length; i++) {
+        var c = str.charCodeAt(i);
+        if (c < 0x80) out.push(c);
+        else if (c < 0x800) out.push(0xc0 | (c >> 6), 0x80 | (c & 63));
+        else out.push(0xe0 | (c >> 12), 0x80 | ((c >> 6) & 63), 0x80 | (c & 63));
+      }
+      return new Uint8Array(out);
+    }
+
+    /* ---- Reed-Solomon ---- */
+    function generatorPoly(degree) {
+      var poly = [1];
+      for (var d = 0; d < degree; d++) {
+        var next = new Array(poly.length + 1);
+        for (var k = 0; k < next.length; k++) next[k] = 0;
+        for (var i = 0; i < poly.length; i++) {
+          next[i] ^= poly[i];
+          next[i + 1] ^= mul(poly[i], EXP[d]);
+        }
+        poly = next;
+      }
+      return poly;
+    }
+    function ecFor(block, ecLen) {
+      var gen = generatorPoly(ecLen);
+      var buf = new Uint8Array(block.length + ecLen);
+      buf.set(block, 0);
+      for (var i = 0; i < block.length; i++) {
+        var factor = buf[i];
+        if (factor === 0) continue;
+        for (var j = 0; j < gen.length; j++) buf[i + j] ^= mul(gen[j], factor);
+      }
+      return buf.subarray(block.length);
+    }
+
+    /* ---- header + payload + padding, split into blocks, interleaved ---- */
+    function codewords(bytes, version) {
+      var s = SPEC[version];
+      var ecLen = s[1], b1 = s[2], d1 = s[3], b2 = s[4], d2 = s[5];
+      var blockCount = b1 + b2;
+      var dataCodewords = b1 * d1 + b2 * d2;
+
+      var bits = [];
+      function push(value, len) {
+        for (var i = len - 1; i >= 0; i--) bits.push((value >> i) & 1);
+      }
+      push(0x4, 4);                                 /* mode: byte */
+      push(bytes.length, version < 10 ? 8 : 16);    /* character count */
+      for (var i = 0; i < bytes.length; i++) push(bytes[i], 8);
+
+      var capacity = dataCodewords * 8;
+      var terminator = Math.min(4, capacity - bits.length);
+      for (var t = 0; t < terminator; t++) bits.push(0);
+      while (bits.length % 8 !== 0) bits.push(0);
+
+      var data = new Uint8Array(dataCodewords);
+      for (var b = 0; b < bits.length; b += 8) {
+        var v = 0;
+        for (var k = 0; k < 8; k++) v = (v << 1) | bits[b + k];
+        data[b >> 3] = v;
+      }
+      for (var p = bits.length >> 3, alt = 0; p < dataCodewords; p++, alt++) {
+        data[p] = alt % 2 === 0 ? 0xec : 0x11;      /* the two standard pad codewords */
+      }
+
+      var blocks = [], eccs = [], offset = 0;
+      for (var n = 0; n < blockCount; n++) {
+        var len = n < b1 ? d1 : d2;
+        var blk = data.subarray(offset, offset + len);
+        offset += len;
+        blocks.push(blk);
+        eccs.push(ecFor(blk, ecLen));
+      }
+      var out = new Uint8Array(s[0]);
+      var w = 0, maxData = Math.max(d1, d2), col;
+      for (col = 0; col < maxData; col++) {
+        for (var q = 0; q < blockCount; q++) {
+          if (col < blocks[q].length) out[w++] = blocks[q][col];
+        }
+      }
+      for (col = 0; col < ecLen; col++) {
+        for (var e = 0; e < blockCount; e++) out[w++] = eccs[e][col];
+      }
+      return out;
+    }
+
+    /* ---- function patterns, then the data snake ---- */
+    function buildBase(version, cw) {
+      var size = version * 4 + 17;
+      var mods = new Uint8Array(size * size);
+      var fn = new Uint8Array(size * size);
+      function set(r, c, dark) { mods[r * size + c] = dark ? 1 : 0; fn[r * size + c] = 1; }
+
+      var corners = [[0, 0], [0, size - 7], [size - 7, 0]];
+      for (var f = 0; f < 3; f++) {
+        var r0 = corners[f][0], c0 = corners[f][1];
+        for (var dr = -1; dr <= 7; dr++) {
+          for (var dc = -1; dc <= 7; dc++) {
+            var r = r0 + dr, c = c0 + dc;
+            if (r < 0 || r >= size || c < 0 || c >= size) continue;
+            var ring = (dr >= 0 && dr <= 6 && (dc === 0 || dc === 6)) ||
+                       (dc >= 0 && dc <= 6 && (dr === 0 || dr === 6));
+            var core = dr >= 2 && dr <= 4 && dc >= 2 && dc <= 4;
+            set(r, c, ring || core);                /* dr/dc of -1 or 7 is the separator */
+          }
+        }
+      }
+
+      for (var i = 8; i < size - 8; i++) {          /* timing */
+        set(6, i, i % 2 === 0);
+        set(i, 6, i % 2 === 0);
+      }
+
+      var pos = ALIGN[version];                     /* alignment */
+      for (var a = 0; a < pos.length; a++) {
+        for (var b = 0; b < pos.length; b++) {
+          var atFinder = (a === 0 && b === 0) ||
+                         (a === 0 && b === pos.length - 1) ||
+                         (a === pos.length - 1 && b === 0);
+          if (atFinder) continue;
+          for (var y = -2; y <= 2; y++) {
+            for (var x = -2; x <= 2; x++) {
+              set(pos[a] + y, pos[b] + x, Math.max(Math.abs(y), Math.abs(x)) !== 1);
+            }
+          }
+        }
+      }
+
+      set(size - 8, 8, true);                       /* the dark module */
+      for (var k = 0; k <= 8; k++) {                /* format info, copy 1 */
+        if (k !== 6) { set(8, k, false); set(k, 8, false); }
+      }
+      for (var m = size - 8; m < size; m++) set(8, m, false);   /* copy 2, horizontal */
+      for (var n = size - 7; n < size; n++) set(n, 8, false);   /* copy 2, vertical */
+
+      if (version >= 7) {                           /* version info blocks */
+        for (var vi = 0; vi < 18; vi++) {
+          var aa = size - 11 + (vi % 3), bb = Math.floor(vi / 3);
+          set(aa, bb, false);
+          set(bb, aa, false);
+        }
+      }
+
+      /* Two columns at a time, right to left, alternating up and down, skipping
+         the vertical timing column. Any leftover module is a remainder bit: 0. */
+      var bitTotal = cw.length * 8, idx = 0, dir = -1, row = size - 1;
+      for (var colPair = size - 1; colPair > 0; colPair -= 2) {
+        if (colPair === 6) colPair--;
+        for (;;) {
+          for (var s2 = 0; s2 < 2; s2++) {
+            var cc = colPair - s2;
+            if (!fn[row * size + cc]) {
+              var bit = 0;
+              if (idx < bitTotal) bit = (cw[idx >> 3] >> (7 - (idx & 7))) & 1;
+              idx++;
+              mods[row * size + cc] = bit;
+            }
+          }
+          row += dir;
+          if (row < 0 || row >= size) { row -= dir; dir = -dir; break; }
+        }
+      }
+      return { size: size, mods: mods, fn: fn, version: version };
+    }
+
+    var MASKS = [
+      function (r, c) { return (r + c) % 2 === 0; },
+      function (r) { return r % 2 === 0; },
+      function (r, c) { return c % 3 === 0; },
+      function (r, c) { return (r + c) % 3 === 0; },
+      function (r, c) { return (Math.floor(r / 2) + Math.floor(c / 3)) % 2 === 0; },
+      function (r, c) { return ((r * c) % 2) + ((r * c) % 3) === 0; },
+      function (r, c) { return (((r * c) % 2) + ((r * c) % 3)) % 2 === 0; },
+      function (r, c) { return (((r + c) % 2) + ((r * c) % 3)) % 2 === 0; }
+    ];
+
+    /* BCH(15,5) over the 2-bit level and 3-bit mask, then the 0x5412 mask.
+       Level M is 0b00, so the data word is just the mask number. */
+    function formatBits(mask) {
+      var data = mask;
+      var rem = data;
+      for (var i = 0; i < 10; i++) rem = (rem << 1) ^ ((rem >> 9) * 0x537);
+      return ((data << 10) | rem) ^ 0x5412;
+    }
+    /* BCH(18,6). Only drawn from version 7 up. */
+    function versionBits(version) {
+      var rem = version;
+      for (var i = 0; i < 12; i++) rem = (rem << 1) ^ ((rem >> 11) * 0x1f25);
+      return (version << 12) | rem;
+    }
+
+    function applyMask(base, mask) {
+      var size = base.size;
+      var mods = new Uint8Array(base.mods);
+      var fn = base.fn;
+      for (var r = 0; r < size; r++) {
+        for (var c = 0; c < size; c++) {
+          if (fn[r * size + c]) continue;
+          if (MASKS[mask](r, c)) mods[r * size + c] ^= 1;
+        }
+      }
+      var bits = formatBits(mask);
+      function bit(i) { return (bits >> i) & 1; }
+      for (var i = 0; i <= 5; i++) mods[i * size + 8] = bit(i);
+      mods[7 * size + 8] = bit(6);
+      mods[8 * size + 8] = bit(7);
+      mods[8 * size + 7] = bit(8);
+      for (var j = 9; j <= 14; j++) mods[8 * size + (14 - j)] = bit(j);
+      for (var k = 0; k <= 7; k++) mods[8 * size + (size - 1 - k)] = bit(k);
+      for (var m = 8; m <= 14; m++) mods[(size - 15 + m) * size + 8] = bit(m);
+      mods[(size - 8) * size + 8] = 1;
+      if (base.version >= 7) {
+        var vb = versionBits(base.version);
+        for (var v = 0; v < 18; v++) {
+          var val = (vb >> v) & 1;
+          var a = size - 11 + (v % 3), b = Math.floor(v / 3);
+          mods[a * size + b] = val;
+          mods[b * size + a] = val;
+        }
+      }
+      return mods;
+    }
+
+    var FINDERISH = [
+      [1, 0, 1, 1, 1, 0, 1, 0, 0, 0, 0],
+      [0, 0, 0, 0, 1, 0, 1, 1, 1, 0, 1]
+    ];
+
+    function penalty(mods, size) {
+      var score = 0, r, c, i, h;
+
+      for (r = 0; r < size; r++) {                  /* N1 rows */
+        var rv = mods[r * size], rn = 1;
+        for (c = 1; c < size; c++) {
+          if (mods[r * size + c] === rv) rn++;
+          else { if (rn >= 5) score += 3 + (rn - 5); rv = mods[r * size + c]; rn = 1; }
+        }
+        if (rn >= 5) score += 3 + (rn - 5);
+      }
+      for (c = 0; c < size; c++) {                  /* N1 columns */
+        var cv = mods[c], cn = 1;
+        for (r = 1; r < size; r++) {
+          if (mods[r * size + c] === cv) cn++;
+          else { if (cn >= 5) score += 3 + (cn - 5); cv = mods[r * size + c]; cn = 1; }
+        }
+        if (cn >= 5) score += 3 + (cn - 5);
+      }
+      for (r = 0; r < size - 1; r++) {              /* N2 blocks of 2x2 */
+        for (c = 0; c < size - 1; c++) {
+          var v = mods[r * size + c];
+          if (v === mods[r * size + c + 1] && v === mods[(r + 1) * size + c] &&
+              v === mods[(r + 1) * size + c + 1]) score += 3;
+        }
+      }
+      for (r = 0; r < size; r++) {                  /* N3 finder-like, horizontal */
+        for (c = 0; c + 10 < size; c++) {
+          for (i = 0; i < 2; i++) {
+            var okH = true;
+            for (h = 0; h < 11; h++) {
+              if (mods[r * size + c + h] !== FINDERISH[i][h]) { okH = false; break; }
+            }
+            if (okH) score += 40;
+          }
+        }
+      }
+      for (c = 0; c < size; c++) {                  /* N3 finder-like, vertical */
+        for (r = 0; r + 10 < size; r++) {
+          for (i = 0; i < 2; i++) {
+            var okV = true;
+            for (h = 0; h < 11; h++) {
+              if (mods[(r + h) * size + c] !== FINDERISH[i][h]) { okV = false; break; }
+            }
+            if (okV) score += 40;
+          }
+        }
+      }
+      var dark = 0, total = size * size;            /* N4 dark proportion */
+      for (i = 0; i < total; i++) dark += mods[i];
+      score += Math.floor(Math.abs(dark * 100 / total - 50) / 5) * 10;
+      return score;
+    }
+
+    function encode(text) {
+      var bytes = utf8Bytes(String(text));
+      var version = 0;
+      for (var v = 1; v <= MAX_VERSION; v++) {
+        if (bytes.length <= capacityBytes(v)) { version = v; break; }
+      }
+      if (!version) {
+        throw new Error(
+          "QR payload of " + bytes.length + " bytes exceeds version " + MAX_VERSION +
+          " at level M (" + capacityBytes(MAX_VERSION) + " bytes). This encoder stops there on purpose."
+        );
+      }
+      var base = buildBase(version, codewords(bytes, version));
+      var best = null, bestScore = Infinity;
+      for (var mask = 0; mask < 8; mask++) {
+        var candidate = applyMask(base, mask);
+        var s = penalty(candidate, base.size);
+        if (s < bestScore) { bestScore = s; best = candidate; }
+      }
+      return { size: base.size, modules: best, version: version };
+    }
+
+    /* One <path> of merged horizontal runs on a fixed light plate. The 4-module
+       quiet zone is part of the viewBox, so nothing outside can eat into it. */
+    function render(text, plate, ink) {
+      var q = encode(text);
+      var quiet = 4;
+      var dim = q.size + quiet * 2;
+      var NS = "http://www.w3.org/2000/svg";
+      var svg = document.createElementNS(NS, "svg");
+      svg.setAttribute("viewBox", "0 0 " + dim + " " + dim);
+      svg.setAttribute("shape-rendering", "crispEdges");
+      svg.setAttribute("role", "img");
+      var bg = document.createElementNS(NS, "rect");
+      bg.setAttribute("width", String(dim));
+      bg.setAttribute("height", String(dim));
+      bg.setAttribute("fill", plate);
+      svg.appendChild(bg);
+      var d = "";
+      for (var r = 0; r < q.size; r++) {
+        var c = 0;
+        while (c < q.size) {
+          if (q.modules[r * q.size + c]) {
+            var run = 1;
+            while (c + run < q.size && q.modules[r * q.size + c + run]) run++;
+            d += "M" + (c + quiet) + " " + (r + quiet) + "h" + run + "v1h-" + run + "z";
+            c += run;
+          } else c++;
+        }
+      }
+      var path = document.createElementNS(NS, "path");
+      path.setAttribute("d", d);
+      path.setAttribute("fill", ink);
+      svg.appendChild(path);
+      return { svg: svg, version: q.version, modules: q.size };
+    }
+
+    return { encode: encode, render: render, capacity: capacityBytes };
+  })();
+
+
+  /* ======================================================================
+     B. WHAT THIS PAGE TALKS TO
+
+       GET  /health                                      network + is Xaman wired
+       GET  /api/events                                  the picker, at bare /attend
+       GET  /api/events/{eventId}                        the ticket's letterhead
+       POST /api/events/{eventId}/registrations/signin   prove the wallet
+       GET  /api/registrations/signin/{uuid}             ...and both payload polls
+       GET  /demo/lookup?address&eventId                 name, activation, balance
+       GET  /demo/art?address&eventId                    the badge, before it exists
+       POST /events/{eventId}/claims                     the Xaman handle for the offer
+       GET  /events/{eventId}/attendance                 the accept transaction hash
+       POST /events/{eventId}/claims/{offerId}/confirm   re-derive, then index
+
+     TWO THINGS ABOUT THAT LIST ARE WORTH KNOWING, because they are not obvious
+     and they are why this page is shaped the way it is.
+
+     1. GET /api/registrations/signin/{uuid} IS THE ONLY PAYLOAD POLL THERE IS.
+        It is named for registration because registration is what it was built
+        for, but the handler just asks Xaman what happened to a payload uuid, so
+        it answers for the accept payload too — verified live. What it does NOT
+        forward is Xaman's `txid`, so a signature is all this page learns from
+        it; the hash has to come from somewhere else. See section I, huntHash().
+
+     2. THERE IS NO ENDPOINT THAT TURNS AN EXISTING offerId INTO A XAMAN PAYLOAD.
+        POST /events/{eventId}/claims is the one that makes them, and it is
+        idempotent: for an address that already holds a pending claim it hands
+        back THE SAME offer with `reusedExistingOffer: true` and a fresh Xaman
+        payload for it, rather than minting a second badge. That is how this
+        page gets a QR for an offer the desk created. Verified live: two calls
+        in a row returned one offer id, one nftoken id, and two payload uuids.
+     ====================================================================== */
+
+  var POLL_MS = 2500;            /* every poll on this page */
+  var POLL_FAIL_LIMIT = 5;       /* consecutive failures before we stop and say so */
+  var HUNT_LIMIT = 16;           /* ~40s of looking for the accept hash */
+  var HASH_RE = /^[0-9A-Fa-f]{64}$/;
+
+  var app = {
+    eventId: null,       /* from location.pathname, never a query parameter */
+    event: null,         /* GET /api/events/{eventId} */
+    health: null,        /* GET /health */
+    coarse: false,       /* pointer:coarse — deeplink-first vs QR-first */
+
+    signin: null,        /* the identify payload {uuid,qrPng,deeplink,expiresAt} */
+    address: null,       /* ONLY ever set from a SIGNED sign-in resolution */
+
+    look: null,          /* last GET /demo/lookup body */
+    demoOff: false,      /* the desk helpers are not mounted on this build */
+    sawActivated: null,  /* for the false -> true moment */
+    lastBalance: null,
+    qrFor: null,
+
+    claim: null,         /* {offerId, nftokenId, reused, xaman:{...}} */
+    txHash: null,
+    done: null,          /* the confirm body */
+
+    face: "boot",
+    timer: null,
+    tick: null,
+    inFlight: false,
+    pollFails: 0,
+    hunting: false,
+    huntTries: 0,
+    busy: false,
+    /* The offer id the lookup has already made us ask about. The claim route is
+       the most expensive thing on this server and the hardest rate limited; a
+       poll that re-asks for the same offer every 2.5s because the first attempt
+       failed is exactly the loop that gets a phone throttled at a door. */
+    autoAsked: null
+  };
+
+  /* ---- storage: a phone reload mid-flow must not dead-end ----------------
+     Namespaced per event: two events open in two tabs on one phone must not
+     overwrite each other's proof or each other's offer. */
+  var SS = "poap.attend.";
+  function ssKey(part) { return SS + String(app.eventId) + "." + part; }
+  function ssGet(k) { try { return sessionStorage.getItem(k); } catch (e) { return null; } }
+  function ssSet(k, v) { try { sessionStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+  function ssDel(k) { try { sessionStorage.removeItem(k); } catch (e) { /* ignore */ } }
+  function ssJson(k) {
+    var raw = ssGet(k);
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  function rememberSignin(s) {
+    app.signin = s;
+    if (!s) { ssDel(ssKey("signin")); return; }
+    ssSet(ssKey("signin"), JSON.stringify(s));
+  }
+  function rememberAddress(a) {
+    app.address = a;
+    if (a) ssSet(ssKey("address"), a); else ssDel(ssKey("address"));
+  }
+  function rememberClaim(c) {
+    app.claim = c;
+    if (!c) { ssDel(ssKey("claim")); return; }
+    ssSet(ssKey("claim"), JSON.stringify(c));
+  }
+  function rememberTx(h) {
+    app.txHash = h;
+    if (h) ssSet(ssKey("tx"), h); else ssDel(ssKey("tx"));
+  }
+  function forgetWallet() {
+    stopPolling();
+    rememberSignin(null);
+    rememberAddress(null);
+    rememberClaim(null);
+    rememberTx(null);
+    app.look = null; app.done = null; app.sawActivated = null;
+    app.lastBalance = null; app.qrFor = null; app.pollFails = 0;
+    app.hunting = false; app.huntTries = 0;
+  }
+
+  /* ---- tiny DOM helpers, the same shapes as the other two pages ---- */
+  function $(id) { return document.getElementById(id); }
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function setText(id, s) { var n = $(id); if (n) n.textContent = s; }
+  function show(id, on) { var n = $(id); if (n) n.hidden = !on; }
+  function short(s, head, tail) {
+    s = String(s || "");
+    head = head || 6; tail = tail || 4;
+    return s.length > head + tail + 1 ? s.slice(0, head) + "…" + s.slice(-tail) : s;
+  }
+  function fmtXrp(v) {
+    if (v === undefined || v === null || v === "") return "0";
+    var n = Number(v);
+    if (!isFinite(n)) return String(v);
+    if (n === 0) return "0";
+    return n.toFixed(6).replace(/0+$/, "").replace(/\.$/, "");
+  }
+
+  var MONTHS = ["January","February","March","April","May","June","July",
+                "August","September","October","November","December"];
+  /* Parsed by hand rather than by `new Date("2026-12-04")`: that is UTC
+     midnight, and rendering it west of Greenwich moves the event a day early. */
+  function fmtDate(s) {
+    if (!s) return "";
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s));
+    if (!m) return String(s);
+    var mi = parseInt(m[2], 10) - 1;
+    if (mi < 0 || mi > 11) return String(s);
+    return parseInt(m[3], 10) + " " + MONTHS[mi] + " " + m[1];
+  }
+  function fmtStamp(iso) {
+    var t = iso ? Date.parse(iso) : Date.now();
+    if (!isFinite(t)) return String(iso);
+    var d = new Date(t);
+    var hh = d.getHours() < 10 ? "0" + d.getHours() : String(d.getHours());
+    var mm = d.getMinutes() < 10 ? "0" + d.getMinutes() : String(d.getMinutes());
+    return d.getDate() + " " + MONTHS[d.getMonth()].slice(0, 3) + " " + d.getFullYear() + " · " + hh + ":" + mm;
+  }
+
+  /* The only external URLs this page ever builds. */
+  function explorerLinks(hash) {
+    var box = node("div", "links");
+    var targets = [
+      ["bithomp", "https://test.bithomp.com/explorer/" + encodeURIComponent(hash)],
+      ["xrpl.org", "https://testnet.xrpl.org/transactions/" + encodeURIComponent(hash)]
+    ];
+    for (var i = 0; i < targets.length; i++) {
+      var a = node("a", "link", targets[i][0]);
+      a.href = targets[i][1];
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      box.appendChild(a);
+    }
+    return box;
+  }
+
+  function row(key, value, opts) {
+    opts = opts || {};
+    var r = node("div", "row");
+    r.appendChild(node("span", "row__k", key));
+    var cls = "row__v" + (opts.ok ? " ok" : "") + (opts.prose ? " prose-v" : "");
+    r.appendChild(node("span", cls, value === undefined || value === null || value === "" ? "—" : String(value)));
+    if (opts.explore && value) r.appendChild(explorerLinks(String(value)));
+    return r;
+  }
+
+  /* ---- the request log, so nothing here has to be taken on trust ---- */
+  var wireCount = 0;
+  function logWire(method, path, status) {
+    var box = $("wire");
+    if (!box) return;
+    if (wireCount === 0) clear(box);
+    wireCount++;
+    var r = node("div", "wire__row");
+    r.appendChild(node("span", "wire__m", method));
+    r.appendChild(node("span", "wire__p", path));
+    r.appendChild(node("span", "wire__s " + (status >= 200 && status < 300 ? "ok" : "err"),
+      status === 0 ? "NET" : String(status)));
+    box.insertBefore(r, box.firstChild);
+    while (box.childNodes.length > 40) box.removeChild(box.lastChild);
+  }
+
+  /* ---- fetch wrapper. Never throws; always returns something describable ---- */
+  function call(method, path, body) {
+    var init = { method: method, headers: { accept: "application/json" } };
+    if (body !== undefined) {
+      init.headers["content-type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+        logWire(method, path, res.status);
+        setOffline(false);
+        return { network: true, ok: res.ok, status: res.status, json: json, text: text };
+      });
+    }, function (err) {
+      logWire(method, path, 0);
+      setOffline(true);
+      return { network: false, ok: false, status: 0, json: null, text: String((err && err.message) || err) };
+    });
+  }
+
+  var offline = false;
+  function setOffline(v) {
+    if (offline === v) return;
+    offline = v;
+    show("b-offline", v);
+  }
+
+  function errorOf(r) {
+    if (!r.network) {
+      return {
+        code: "NETWORK_UNREACHABLE",
+        message: "The request never reached the server: " + r.text,
+        hint: "This page is served by the API itself, so a failed request means the process is down or restarting. Nothing you approved in Xaman is lost — that lives on the ledger."
+      };
+    }
+    var e = r.json && r.json.error;
+    if (e && typeof e === "object") {
+      return { code: String(e.code || "ERROR"), message: String(e.message || "") };
+    }
+    return {
+      code: "HTTP_" + r.status,
+      message: (r.text || "The server answered " + r.status + " with no error body.").slice(0, 400)
+    };
+  }
+
+  /** True when the server is telling us Xaman has no credentials. */
+  function isUnconfigured(r) {
+    return r.network && !r.ok && errorOf(r).code === "CONFIG_INVALID";
+  }
+
+  /** Render {error:{code,message}} where the attendee can see it, with a retry. */
+  function showError(hostId, r, opts) {
+    opts = opts || {};
+    var host = $(hostId);
+    if (!host) return null;
+    clear(host);
+    var e = errorOf(r);
+    var box = node("div", "err" + (opts.warn ? " err--warn" : ""));
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", e.code));
+    box.appendChild(node("div", "err__msg", e.message));
+    var h = e.hint || opts.hint;
+    if (h) box.appendChild(node("div", "err__hint", h));
+    if (opts.retry) {
+      var bar = node("div", "retry");
+      var b = node("button", "btn btn--quiet", opts.retryLabel || "Try again");
+      b.type = "button";
+      b.addEventListener("click", function () { clear(host); opts.retry(); });
+      bar.appendChild(b);
+      box.appendChild(bar);
+    }
+    host.appendChild(box);
+    return box;
+  }
+  function clearError(hostId) { var h = $(hostId); if (h) clear(h); }
+
+  /** The same block, for something this page worked out on its own. */
+  function showLocalError(hostId, code, message, hint, retryLabel, retryFn) {
+    showError(hostId, { network: true, ok: false, status: 0, json: { error: { code: code, message: message } }, text: "" },
+      { warn: true, hint: hint, retryLabel: retryLabel, retry: retryFn });
+  }
+
+
+  /* ======================================================================
+     C. URL SAFETY
+
+     Four server-supplied strings end up in an href or a src: the two Xaman
+     deeplinks, the two Xaman QR images, and the badge art. Parse them rather
+     than trust them — a javascript: URL in an href is the whole reason this
+     exists, even when the only writer is our own server.
+     ====================================================================== */
+
+  function safeUrl(value, sameOriginOnly) {
+    if (typeof value !== "string" || value === "") return null;
+    var u;
+    try { u = new URL(value, window.location.href); } catch (e) { return null; }
+    if (u.protocol !== "http:" && u.protocol !== "https:") return null;
+    if (sameOriginOnly) return u.origin === window.location.origin ? u.pathname + u.search : null;
+    return u.href;
+  }
+  /** Xaman hands back an https link; a custom scheme is allowed too, because
+      that is what "open the app I already have" looks like. */
+  function safeDeeplink(value) {
+    if (typeof value !== "string" || value === "") return null;
+    if (/^xumm:/i.test(value) || /^xaman:/i.test(value)) return value;
+    return safeUrl(value, false);
+  }
+  /** The QR: an https URL or an inline PNG. Nothing else can be an image. */
+  function safeImage(value) {
+    if (typeof value !== "string" || value === "") return null;
+    if (/^data:image\/(png|jpeg|gif|webp|svg\+xml);/i.test(value)) return value;
+    return safeUrl(value, false);
+  }
+
+
+  /* ======================================================================
+     D. PAINTING
+     ====================================================================== */
+
+  var RIBBONS = {
+    boot:        ["reading the event", "neutral"],
+    picker:      ["choose your event", "neutral"],
+    closed:      ["not open", "warn"],
+    unavailable: ["xaman not configured", "warn"],
+    prove:       ["prove your wallet", "live"],
+    wait:        ["waiting for the desk", "live"],
+    offer:       ["badge offered", "live"],
+    record:      ["recording", "live"],
+    done:        ["attendance recorded", "good"]
+  };
+
+  function showFace(name) {
+    var changed = app.face !== name;
+    app.face = name;
+    var faces = document.querySelectorAll("[data-face]");
+    for (var i = 0; i < faces.length; i++) {
+      faces[i].hidden = faces[i].getAttribute("data-face") !== name;
+    }
+    var meta = RIBBONS[name] || RIBBONS.boot;
+    setText("ribbon", meta[0]);
+    $("pass").setAttribute("data-tone", meta[1]);
+
+    var hasWallet = !!app.address && name !== "prove" && name !== "picker" && name !== "closed";
+    show("perf", hasWallet);
+    show("stub", hasWallet);
+    var wp = $("wait-plate");
+    if (wp) wp.classList.toggle("is-live", name === "wait");
+
+    paintDock();
+    /* Never leave a poll running for a face that is not on screen. */
+    restartPolling();
+    if (changed) window.scrollTo({ top: 0, behavior: "auto" });
+  }
+
+  /* The dock holds exactly one primary action, and mid-Xaman on a coarse
+     pointer that action is an anchor (the deeplink) rather than a button. */
+  function dockMode() {
+    if (app.face === "prove") {
+      if (!app.signin) {
+        return { label: "Prove my wallet in Xaman", note: "a signature, not a transaction · costs nothing" };
+      }
+      var href = safeDeeplink(app.signin.deeplink);
+      if (href && (app.coarse || !safeImage(app.signin.qrPng))) {
+        return { href: href, label: "Open in Xaman", note: "approve the sign-in, then come back here" };
+      }
+      return null;   /* desktop mid-proof: the QR is the action, not a button */
+    }
+    if (app.face === "wait") {
+      return {
+        label: app.busy ? "Asking the desk…" : "Collect my badge",
+        note: "asks the server for the offer waiting on this address"
+      };
+    }
+    if (app.face === "offer") {
+      if (!app.claim || !app.claim.xaman) {
+        return { label: app.busy ? "Preparing…" : "Approve it in Xaman", note: "builds the request · you sign it, we cannot" };
+      }
+      var h2 = safeDeeplink(app.claim.xaman.deeplink);
+      if (h2 && (app.coarse || !safeImage(app.claim.xaman.qrPng))) {
+        return { href: h2, label: "Approve in Xaman", note: "check Xaman is on testnet first" };
+      }
+      return null;
+    }
+    if (app.face === "record" && !app.hunting && !app.txHash) {
+      return { label: app.busy ? "Recording…" : "Record my attendance", note: "verifies against the chain before writing" };
+    }
+    return null;
+  }
+
+  function paintDock() {
+    var dock = $("dock"), btn = $("act"), link = $("act-link");
+    var mode = dockMode();
+    if (!mode) {
+      dock.hidden = true;
+      document.body.classList.remove("is-docked");
+      return;
+    }
+    dock.hidden = false;
+    document.body.classList.add("is-docked");
+    if (mode.href) {
+      link.hidden = false;
+      link.href = mode.href;
+      link.textContent = mode.label;
+      btn.hidden = true;
+    } else {
+      btn.hidden = false;
+      btn.textContent = mode.label;
+      btn.disabled = !!app.busy;
+      btn.setAttribute("aria-busy", app.busy ? "true" : "false");
+      link.hidden = true;
+    }
+    setText("dock-note", mode.note || "");
+  }
+
+  function paintHead() {
+    var e = app.event;
+    setText("f-event", app.eventId === null ? "—" : String(app.eventId));
+    if (!e) return;
+    var bits = [];
+    if (e.eventDate) bits.push(fmtDate(e.eventDate));
+    if (e.venue) bits.push(String(e.venue));
+    setText("ribbon-side", e.name ? String(e.name) : "attendee pass");
+    setText("nameplate-e", (e.name || ("Event " + app.eventId)) + (bits.length ? "  ·  " + bits.join("  ·  ") : ""));
+    document.title = (e.name ? e.name + " — " : "") + "your pass";
+  }
+
+  function paintStrip() {
+    var h = app.health;
+    setText("f-net", h && h.network ? String(h.network) : "—");
+    var fn = $("f-net");
+    if (fn) fn.className = "fact__v" + (h && h.network === "mainnet" ? " warn" : "");
+    setText("f-addr", app.address ? short(app.address, 6, 4) : "—");
+    var fa = $("f-addr");
+    if (fa) fa.className = "fact__v" + (app.address ? " ok" : "");
+
+    var st = app.look;
+    var active = $("f-active"), bal = $("f-bal");
+    if (!st || !st.valid) {
+      active.textContent = "—"; active.className = "fact__v";
+      bal.textContent = "—"; bal.className = "fact__v";
+      return;
+    }
+    active.textContent = st.activated ? "yes" : "no";
+    active.className = "fact__v " + (st.activated ? "ok" : "warn");
+    bal.textContent = fmtXrp(st.balanceXrp) + " XRP";
+    bal.className = "fact__v " + (st.activated ? "ok" : "warn");
+  }
+
+  function paintStub() {
+    if (!app.address) return;
+    setText("stub-addr-v", app.address);
+    var st = app.look;
+    var pill = $("stub-pill"), bal = $("stub-bal"), note = $("stub-note");
+
+    /* Until the first lookup lands there is nothing to claim either way, and
+       guessing "unactivated · 0 XRP" would be a number this page made up. */
+    if (!st || !st.valid) {
+      pill.textContent = app.demoOff ? "not checked" : "checking";
+      pill.className = "pill pill--unknown";
+      clear(bal);
+      bal.appendChild(document.createTextNode("—"));
+      clear(note);
+      note.textContent = app.demoOff
+        ? "This build has no desk helper to read the ledger from, so activation and balance are not shown here. Nothing about the badge depends on it."
+        : "Reading this address off the ledger…";
+      return;
+    }
+
+    var activated = !!st.activated;
+    pill.textContent = activated ? "activated" : "unactivated";
+    pill.className = "pill " + (activated ? "pill--yes" : "pill--no");
+
+    var amount = fmtXrp(st.balanceXrp);
+    clear(bal);
+    bal.appendChild(document.createTextNode(amount));
+    bal.appendChild(node("small", null, "XRP"));
+    if (app.lastBalance !== null && app.lastBalance !== amount) {
+      bal.classList.remove("flash");
+      void bal.offsetWidth;                          /* restart the animation */
+      bal.classList.add("flash");
+    }
+    app.lastBalance = amount;
+
+    clear(note);
+    if (!activated) {
+      var shortfall = st.reserveShortfallXrp;
+      var need = (shortfall !== undefined && shortfall !== null && Number(shortfall) > 0)
+        ? fmtXrp(shortfall) + " XRP short of the base reserve. " : "";
+      note.appendChild(node("b", null, "The ledger has never heard of this address. "));
+      note.appendChild(document.createTextNode(
+        need + "With no account root it cannot hold an NFTokenPage, so a badge cannot be delivered to it at all. " +
+        "The desk sends the reserve first."));
+    } else {
+      note.appendChild(node("b", null, "Account root exists. "));
+      note.appendChild(document.createTextNode("This address can hold an NFT."));
+    }
+  }
+
+  /* The address QR. Drawn once per address; re-painting is a no-op. */
+  function paintAddressQr() {
+    if (!app.address || app.qrFor === app.address) return;
+    var host = $("wait-qr");
+    if (!host) return;
+    clear(host);
+    try {
+      var out = QR.render(app.address, "#f7f3ea", "#17140f");
+      host.appendChild(out.svg);
+      app.qrFor = app.address;
+      setText("wait-qr-alt", "QR code encoding the XRPL address " + app.address);
+    } catch (e) {
+      host.appendChild(node("div", "plate__fail",
+        "Could not draw the QR: " + ((e && e.message) || e) + " — read the address out instead."));
+      app.qrFor = null;
+    }
+  }
+
+  function paintNameplate() {
+    var reg = app.look && app.look.registration;
+    var name = reg && reg.displayName ? String(reg.displayName) : "";
+    if (!name) { show("nameplate", false); return; }
+    setText("nameplate-n", name);
+    show("nameplate", true);
+  }
+
+  /* ---- the badge artwork ------------------------------------------------
+     GET /demo/art?address&eventId is a pure function of the two, so the badge
+     exists the moment the wallet is proven and long before anything is minted.
+     It is a delight, not a dependency: the endpoint only exists when the demo
+     helpers are mounted, so a 404 removes the figure and says nothing. */
+  function artUrl() {
+    if (!app.address || app.eventId === null) return null;
+    /* Prefer the server's own previewUrl when it sent one and it is
+       same-origin — identical by construction, but it means a server that
+       moves the path does not need this page to change. */
+    var given = app.look && app.look.art ? safeUrl(app.look.art.previewUrl, true) : null;
+    if (given) return given;
+    return "/demo/art?address=" + encodeURIComponent(app.address) +
+           "&eventId=" + encodeURIComponent(String(app.eventId));
+  }
+
+  function paintArt(figureId, imgId) {
+    var fig = $(figureId), img = $(imgId);
+    if (!fig || !img) return;
+    var src = artUrl();
+    if (!src) { fig.hidden = true; return; }
+    /* Re-painting the same URL must not un-hide a figure whose image already
+       failed — `data-ok` is the memory of the last load, not of the last src. */
+    if (img.getAttribute("src") === src) {
+      fig.hidden = img.getAttribute("data-ok") !== "1";
+      return;
+    }
+    img.removeAttribute("data-ok");
+    img.alt = "The attendance badge generated from the address " + String(app.address || "");
+    img.onload = function () { img.setAttribute("data-ok", "1"); fig.hidden = false; };
+    img.onerror = function () { fig.hidden = true; };
+    fig.hidden = true;               /* stays hidden until the bytes arrive */
+    img.setAttribute("src", src);
+  }
+
+
+  /* ======================================================================
+     E. POLLING — 2.5s, never in a background tab, never past an expiry,
+     and never for a face that is not on screen.
+     ====================================================================== */
+
+  /** The Xaman payload the current face is waiting on, if any. */
+  function activePayload() {
+    if (app.face === "prove") return app.signin;
+    if (app.face === "offer") return app.claim ? app.claim.xaman : null;
+    return null;
+  }
+  function expiresAtMs() {
+    var p = activePayload();
+    if (!p || !p.expiresAt) return null;
+    var t = Date.parse(p.expiresAt);
+    return isFinite(t) ? t : null;
+  }
+  function isExpired() {
+    var t = expiresAtMs();
+    return t !== null && Date.now() >= t;
+  }
+
+  function tickFn() {
+    if (app.face === "prove" && app.signin) return pollProve;
+    if (app.face === "wait" && app.address && !app.demoOff) return pollLookup;
+    if (app.face === "offer" && app.claim && app.claim.xaman) return pollOffer;
+    if (app.face === "record" && app.hunting) return huntHash;
+    return null;
+  }
+
+  function restartPolling() {
+    stopPolling();
+    var fn = tickFn();
+    if (!fn) { paintWatching(); return; }
+    /* Checked here and not only in the visibilitychange handler: a page
+       RESTORED into a background tab — a phone reload from the app switcher —
+       would otherwise start a loop nobody is looking at. */
+    if (document.hidden) { paintWatching(); return; }
+    if (isExpired()) { onPayloadExpired(); return; }
+    fn();
+    app.timer = setInterval(function () {
+      var f = tickFn();
+      if (!f) { stopPolling(); return; }
+      f();
+    }, POLL_MS);
+    if (expiresAtMs() !== null) app.tick = setInterval(paintClock, 1000);
+    paintWatching();
+    paintClock();
+  }
+  function stopPolling() {
+    if (app.timer) { clearInterval(app.timer); app.timer = null; }
+    if (app.tick) { clearInterval(app.tick); app.tick = null; }
+    paintWatching();
+  }
+
+  function paintWatching() {
+    var pairs = [["prove-watch", "prove-watch-text", "waiting for the signature"],
+                 ["wait-watch", "wait-watch-text", "watching for the badge"],
+                 ["offer-watch", "offer-watch-text", "waiting for your approval"]];
+    for (var i = 0; i < pairs.length; i++) {
+      var w = $(pairs[i][0]);
+      if (!w) continue;
+      var paused = document.hidden || !app.timer;
+      w.setAttribute("data-paused", paused ? "1" : "0");
+      setText(pairs[i][1], document.hidden
+        ? "paused — screen in the background"
+        : app.timer ? pairs[i][2] + " · every 2.5s" : "not checking");
+    }
+  }
+
+  function paintClock() {
+    var ids = ["prove-clock", "offer-clock"];
+    var t = expiresAtMs();
+    var text = null;
+    if (t !== null) {
+      var left = t - Date.now();
+      if (left <= 0) { onPayloadExpired(); return; }
+      var s = Math.floor(left / 1000);
+      var mm = Math.floor(s / 60), ss = s % 60;
+      text = mm + ":" + (ss < 10 ? "0" + ss : String(ss));
+    }
+    for (var i = 0; i < ids.length; i++) {
+      var c = $(ids[i]);
+      if (!c) continue;
+      clear(c);
+      if (text === null) continue;
+      c.appendChild(document.createTextNode("expires in "));
+      c.appendChild(node("b", null, text));
+    }
+  }
+
+  function onPayloadExpired() {
+    stopPolling();
+    if (app.face === "prove") {
+      rememberSignin(null);
+      paintProve();
+      showLocalError("prove-err", "SIGNIN_EXPIRED",
+        "This sign-in request expired. Xaman payloads are short-lived on purpose — a code left on a screen should stop working once the person who opened it has walked away.",
+        null, "Start again", startSignIn);
+      return;
+    }
+    if (app.face === "offer" && app.claim) {
+      rememberClaim({ offerId: app.claim.offerId, nftokenId: app.claim.nftokenId, reused: app.claim.reused });
+      paintOffer();
+      showLocalError("offer-err", "REQUEST_EXPIRED",
+        "That Xaman request expired before it was approved. The badge is untouched — it is still minted and still locked to your address. Ask for a fresh request and approve that one.",
+        "A new request names the same offer. Nothing is minted twice.",
+        "New Xaman request", requestAccept);
+    }
+  }
+
+
+  /* ======================================================================
+     F. STEP ONE — PROVE THE WALLET
+
+     POST /api/events/{eventId}/registrations/signin
+       -> 201 {uuid, qrPng, deeplink, websocket, expiresAt}
+     GET  /api/registrations/signin/{uuid}
+       -> 200 {resolved, signed, rejected, address?}
+     ====================================================================== */
+
+  function startSignIn() { createSignIn(true); }
+
+  /**
+   * `withReturnUrl` sends Xaman a return_url so a phone taken over by the app
+   * gets a way back here. It is a nicety, and a Xaman account that rejects the
+   * URL must not cost anyone their badge — so an unrecognised failure retries
+   * once without it.
+   */
+  function createSignIn(withReturnUrl) {
+    if (app.busy) return;
+    clearError("prove-err");
+    app.busy = true;
+    paintDock();
+
+    var body = {};
+    if (withReturnUrl && (location.protocol === "https:" || location.protocol === "http:")) {
+      body.returnUrl = { web: location.href };
+    }
+
+    call("POST", "/api/events/" + encodeURIComponent(String(app.eventId)) + "/registrations/signin", body)
+      .then(function (r) {
+        app.busy = false;
+
+        if (r.ok && r.json && r.json.uuid) {
+          rememberSignin({
+            uuid: String(r.json.uuid),
+            deeplink: safeDeeplink(r.json.deeplink) || "",
+            qrPng: safeImage(r.json.qrPng) || "",
+            expiresAt: r.json.expiresAt ? String(r.json.expiresAt) : ""
+          });
+          app.pollFails = 0;
+          paintProve();
+          restartPolling();
+          return;
+        }
+        if (isUnconfigured(r)) { showUnavailable(r); return; }
+        if (r.status === 404) { showClosed(r); return; }
+        if (r.status === 429) {
+          paintDock();
+          showError("prove-err", r, {
+            warn: true,
+            hint: "That is this server protecting Xaman's rate limit, not a problem with your wallet. Wait a moment and start again.",
+            retryLabel: "Start again", retry: startSignIn
+          });
+          return;
+        }
+        if (withReturnUrl) { createSignIn(false); return; }
+        paintDock();
+        showError("prove-err", r, {
+          hint: "Nothing was created, so nothing is half-done. Try again.",
+          retryLabel: "Try again", retry: startSignIn
+        });
+      });
+  }
+
+  function paintProve() {
+    var live = !!app.signin;
+    show("prove-live", live);
+    paintDock();
+    if (!live) return;
+    paintXamanBlock({
+      payload: app.signin,
+      imgId: "prove-qr",
+      foldId: "prove-fold",
+      summaryId: "prove-fold-summary",
+      capId: "prove-cap",
+      altId: "prove-alt-text",
+      altBoxId: "prove-alt",
+      coarseSummary: "Signing on another device? Show the code",
+      fineSummary: "Scan this with Xaman",
+      coarseCap: "Open Xaman on a second phone and scan this.",
+      fineCap: "Open Xaman on your phone and scan this. This page updates by itself.",
+      alt: "A QR code containing a Xaman sign-in request for this event.",
+      desktopLink: "Xaman on this machine? Open it",
+      restartLabel: "Start a new sign-in",
+      restart: function () {
+        stopPolling();
+        rememberSignin(null);
+        clearError("prove-err");
+        paintProve();
+        startSignIn();
+      }
+    });
+  }
+
+  /** Shared between the two Xaman moments: the fold, the code, the alternative. */
+  function paintXamanBlock(o) {
+    var img = $(o.imgId), fold = $(o.foldId);
+    var qr = safeImage(o.payload.qrPng);
+    if (qr && img && fold) {
+      if (img.getAttribute("src") !== qr) img.setAttribute("src", qr);
+      fold.hidden = false;
+      fold.open = !app.coarse;
+      setText(o.summaryId, app.coarse ? o.coarseSummary : o.fineSummary);
+      setText(o.capId, app.coarse ? o.coarseCap : o.fineCap);
+      setText(o.altId, o.alt);
+    } else if (fold) {
+      fold.hidden = true;
+    }
+
+    var altBox = $(o.altBoxId);
+    if (!altBox) return;
+    clear(altBox);
+    var href = safeDeeplink(o.payload.deeplink);
+    if (href && !app.coarse) {
+      var a = node("a", "btn btn--quiet", o.desktopLink);
+      a.href = href;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      altBox.appendChild(a);
+    }
+    var again = node("button", "btn btn--quiet", o.restartLabel);
+    again.type = "button";
+    again.addEventListener("click", o.restart);
+    altBox.appendChild(again);
+  }
+
+  /** GET the payload status. The one poll route this server exposes. */
+  function readPayload(uuid) {
+    return call("GET", "/api/registrations/signin/" + encodeURIComponent(uuid));
+  }
+
+  function pollProve() {
+    if (app.inFlight || !app.signin) return;
+    if (isExpired()) { onPayloadExpired(); return; }
+    app.inFlight = true;
+
+    readPayload(app.signin.uuid).then(function (r) {
+      app.inFlight = false;
+      if (!app.signin || app.face !== "prove") return;   /* torn down in flight */
+
+      if (r.ok) {
+        app.pollFails = 0;
+        var j = r.json || {};
+        if (j.signed && j.address) { onProven(String(j.address)); return; }
+        /* `rejected` is not "still waiting": someone declined in Xaman, or the
+           payload expired on Xaman's side. Both need a new payload. */
+        if (j.rejected) { onProveDeclined(); return; }
+        return;
+      }
+      if (r.status === 404) {
+        stopPolling();
+        rememberSignin(null);
+        paintProve();
+        showError("prove-err", r, {
+          warn: true,
+          hint: "That sign-in is not on the server any more — it restarted, or the id came from a different deployment. Nothing was lost; start a new one.",
+          retryLabel: "Start again", retry: startSignIn
+        });
+        return;
+      }
+      if (isUnconfigured(r)) { showUnavailable(r); return; }
+
+      app.pollFails++;
+      if (app.pollFails >= POLL_FAIL_LIMIT) {
+        stopPolling();
+        showError("prove-err", r, {
+          warn: true,
+          hint: "We stopped checking after " + POLL_FAIL_LIMIT + " failed attempts. Your sign-in may still be valid — approve it in Xaman, then press below.",
+          retryLabel: "Check again",
+          retry: function () { app.pollFails = 0; restartPolling(); }
+        });
+      }
+    });
+  }
+
+  function onProveDeclined() {
+    stopPolling();
+    rememberSignin(null);
+    paintProve();
+    showLocalError("prove-err", "SIGNIN_DECLINED",
+      "That sign-in was declined in Xaman. If that was not you — or was a mis-tap — start a new one; nothing was signed and nothing was recorded.",
+      null, "Try again", startSignIn);
+  }
+
+  /** The ONE place an address is set, and it comes from a SIGNED payload. */
+  function onProven(address) {
+    stopPolling();
+    rememberAddress(address);
+    rememberSignin(null);              /* the proof has done its only job */
+    clearError("prove-err");
+    goWait();
+  }
+
+
+  /* ======================================================================
+     G. STEP TWO & THREE — THE PASS, AND WAITING FOR THE DESK
+
+     GET /demo/lookup?address&eventId gives the name on the list, whether the
+     ledger has heard of this address at all, the balance, and the badge art.
+
+     ONE THING IT DOES NOT GIVE, and this page is built around the gap: its
+     `claim` and `attended` fields are computed against the DEMO's own event id
+     (`state.eventId` in src/api/routes/demo.ts), not the `eventId` in the
+     query. At a real event those two differ, so `claim.offerId` never appears
+     and cannot be the only trigger. It is still honoured when the two ids do
+     match; the reliable path is the dock action, which asks the claim route.
+     ====================================================================== */
+
+  function goWait() {
+    paintStrip();
+    paintAddressQr();
+    paintStub();
+    paintArt("art-preview", "art-preview-img");
+    showFace("wait");
+    pollLookup();
+  }
+
+  function lookupPath() {
+    return "/demo/lookup?address=" + encodeURIComponent(app.address) +
+           "&eventId=" + encodeURIComponent(String(app.eventId));
+  }
+
+  function pollLookup() {
+    if (app.inFlight || !app.address) return;
+    app.inFlight = true;
+    call("GET", lookupPath()).then(function (r) {
+      app.inFlight = false;
+      if (!app.address) return;
+
+      if (!r.ok) {
+        /* The desk helpers are not mounted, or are off. Not fatal: the pass
+           still works, it just cannot show a name, a balance or the artwork. */
+        if (r.status === 404 || isUnconfigured(r)) {
+          app.demoOff = true;
+          setText("b-demo-msg",
+            "This build does not serve GET /demo/lookup, so this page cannot show your name, your balance or your badge artwork. Everything that matters still works: show the address below, and collect the badge when the desk has issued it.");
+          show("b-demo", true);
+          paintStub();
+          /* And stop asking. The route is absent, not slow — a loop that
+             re-discovers that every 2.5s until the phone dies is not patience. */
+          stopPolling();
+          return;
+        }
+        app.pollFails++;
+        if (app.pollFails >= POLL_FAIL_LIMIT) {
+          stopPolling();
+          showError("wait-err", r, {
+            warn: true,
+            hint: "We stopped checking after " + POLL_FAIL_LIMIT + " failed attempts. Your pass is unaffected — the address below is still the one the desk needs.",
+            retryLabel: "Check again",
+            retry: function () { app.pollFails = 0; restartPolling(); }
+          });
+        }
+        return;
+      }
+
+      app.pollFails = 0;
+      clearError("wait-err");
+      applyLookup(r.json || {});
+    });
+  }
+
+  function applyLookup(st) {
+    var wasActivated = app.sawActivated;
+    app.look = st;
+    if (app.demoOff) { app.demoOff = false; show("b-demo", false); }
+
+    paintStrip();
+    paintStub();
+    paintNameplate();
+    paintArt("art-preview", "art-preview-img");
+    paintSponsorNote();
+
+    /* The desk funded the wallet. Make it land — this is a thing that happened
+       to the attendee while they stood there, not a field that changed. */
+    if (wasActivated === false && st.activated === true) showFunded(st);
+    if (st.activated !== undefined) app.sawActivated = !!st.activated;
+
+    /* Only when the lookup is answering about OUR event; see the note above. */
+    var sameEvent = String(st.eventId) === String(app.eventId);
+    if (!sameEvent) return;
+
+    if (st.attended && st.attendedTxHash) {
+      /* Someone already recorded it — the Xaman webhook, most likely. */
+      rememberTx(String(st.attendedTxHash));
+      stopPolling();
+      confirmAttendance();
+      return;
+    }
+    if (st.claim && st.claim.offerId && app.autoAsked !== String(st.claim.offerId)) {
+      app.autoAsked = String(st.claim.offerId);
+      rememberClaim({
+        offerId: String(st.claim.offerId),
+        nftokenId: st.claim.nftokenId ? String(st.claim.nftokenId) : null,
+        reused: true
+      });
+      requestAccept();
+    }
+  }
+
+  function showFunded(st) {
+    var host = $("wait-banner");
+    clear(host);
+    var box = node("div", "landed");
+    box.appendChild(node("div", "landed__t", "the desk funded you"));
+    var p = node("p");
+    p.appendChild(document.createTextNode(
+      "Your address has an account root now, holding " + fmtXrp(st.balanceXrp) +
+      " XRP, so it can receive an NFT. Keep the code up — the badge is next."));
+    box.appendChild(p);
+    host.appendChild(box);
+    setText("wait-sub", "Funded and ready. The desk issues the badge next.");
+  }
+
+  /** Says plainly why an unactivated address has to be funded before anything. */
+  var sponsorShown = null;
+  function paintSponsorNote() {
+    var st = app.look;
+    var need = !!(st && st.valid && st.needsSponsorship);
+    if (sponsorShown === need) return;
+    sponsorShown = need;
+    var host = $("wait-sponsor");
+    clear(host);
+    if (!need) return;
+    var box = node("div", "banner banner--warn");
+    var inner = node("div");
+    inner.appendChild(node("span", "banner__t", "the desk has to fund you first"));
+    var p = node("p");
+    p.appendChild(document.createTextNode(
+      "The XRP Ledger has never heard of this address, so it has no account root — and an address " +
+      "with no account root has nowhere to keep an NFT. It is not a rule anyone here made up; the " +
+      "badge literally cannot be delivered. The volunteer sends the base reserve" +
+      (st.sponsorAmountXrp ? " (" + fmtXrp(st.sponsorAmountXrp) + " XRP)" : "") +
+      " first, this page will notice, and then the badge follows."));
+    inner.appendChild(p);
+    box.appendChild(inner);
+    host.appendChild(box);
+  }
+
+
+  /* ======================================================================
+     H. STEP FOUR — THE OFFER, AND APPROVING IT IN XAMAN
+
+     POST /events/{eventId}/claims {address}
+       200 {offerId, nftokenId, accept, reusedExistingOffer:true, xaman:{...}}
+           the offer the desk already created, and a fresh Xaman request for it
+       201 {offerId, nftokenId, accept, xaman:{...}}
+           nothing was waiting, so the server minted one now
+       409 DUPLICATE_CLAIM + record   already attended
+       409 DUPLICATE_CLAIM, no record a concurrent claim holds the slot
+     ====================================================================== */
+
+  function requestAccept() {
+    if (app.busy) return;
+    app.busy = true;
+    clearError("offer-err");
+    clearError("wait-err");
+    paintDock();
+
+    var body = { address: app.address };
+    if (location.protocol === "https:" || location.protocol === "http:") {
+      body.returnUrl = { web: location.href };
+    }
+
+    call("POST", "/events/" + encodeURIComponent(String(app.eventId)) + "/claims", body)
+      .then(function (r) {
+        app.busy = false;
+
+        if (r.ok && r.json && r.json.offerId) {
+          var j = r.json;
+          var x = j.xaman && typeof j.xaman === "object" ? j.xaman : null;
+          rememberClaim({
+            offerId: String(j.offerId),
+            nftokenId: j.nftokenId ? String(j.nftokenId) : null,
+            reused: j.reusedExistingOffer === true,
+            accept: j.accept || null,
+            xaman: x ? {
+              uuid: String(x.uuid || ""),
+              deeplink: safeDeeplink(x.deeplink) || "",
+              qrPng: safeImage(x.qrPng) || "",
+              expiresAt: x.expiresAt ? String(x.expiresAt) : ""
+            } : null
+          });
+          app.pollFails = 0;
+          showFace("offer");
+          paintOffer();
+          return;
+        }
+
+        /* Already attended. The 409 carries the record, which is the answer the
+           attendee wanted arriving by a different route. */
+        if (r.status === 409 && r.json && r.json.record) {
+          var rec = r.json.record;
+          if (rec.txHash) rememberTx(String(rec.txHash));
+          showDone({ record: rec, alreadyRecorded: true });
+          return;
+        }
+        if (r.status === 409) {
+          showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
+            warn: true,
+            hint: "Another request for this address is being served right now — most likely the desk pressing issue at the same moment. Give it a few seconds.",
+            retryLabel: "Try again", retry: requestAccept
+          });
+          return;
+        }
+        if (r.status === 429) {
+          showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
+            warn: true,
+            hint: "The claim route is rate limited harder than anything else here, because it spends the issuer's XRP. Nothing was minted. Wait a moment and press again.",
+            retryLabel: "Try again", retry: requestAccept
+          });
+          return;
+        }
+        if (r.status === 404) { showClosed(r); return; }
+
+        showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
+          hint: "Nothing is half-done: the claim route takes its slot before it spends anything, and it hands the same offer back rather than minting twice.",
+          retryLabel: "Try again", retry: requestAccept
+        });
+      });
+  }
+
+  function paintOffer() {
+    var c = app.claim;
+    if (!c) return;
+
+    setText("netwarn-net", (app.health && app.health.network) || "testnet");
+    setText("netwarn-net-2", (app.health && app.health.network) || "testnet");
+
+    var rows = $("offer-rows");
+    clear(rows);
+    rows.appendChild(row("transaction", "NFTokenAcceptOffer", { prose: true }));
+    rows.appendChild(row("offer id", c.offerId));
+    if (c.nftokenId) rows.appendChild(row("nftoken id", c.nftokenId));
+    rows.appendChild(row("price", "0 XRP · destination-locked to your address", { prose: true }));
+    rows.appendChild(row("signed by", app.address, { ok: true }));
+
+    paintArt("art-offer", "art-offer-img");
+
+    var live = !!(c.xaman && c.xaman.uuid);
+    show("offer-live", live);
+    paintDock();
+    if (!live) {
+      /* Xaman could not build a request — the claim route treats that as a
+         warning, not a failure, because the badge is already minted and
+         offered. Show the exact transaction so any XRPL wallet can do it. */
+      showAcceptFallback();
+      return;
+    }
+    clearError("offer-err");
+    paintXamanBlock({
+      payload: c.xaman,
+      imgId: "offer-qr",
+      foldId: "offer-fold",
+      summaryId: "offer-fold-summary",
+      capId: "offer-cap",
+      altId: "offer-alt-text",
+      altBoxId: "offer-alt",
+      coarseSummary: "Approving on another device? Show the code",
+      fineSummary: "Scan this with Xaman",
+      coarseCap: "Open Xaman on a second phone and scan this.",
+      fineCap: "Open Xaman on your phone and scan this. This page updates by itself.",
+      alt: "A QR code containing a Xaman request to accept the badge offer.",
+      desktopLink: "Xaman on this machine? Open it",
+      restartLabel: "New Xaman request",
+      restart: function () {
+        stopPolling();
+        rememberClaim({ offerId: c.offerId, nftokenId: c.nftokenId, reused: c.reused });
+        clearError("offer-err");
+        paintOffer();
+        requestAccept();
+      }
+    });
+    restartPolling();
+  }
+
+  /** No Xaman handle came back. Show the raw transaction rather than a wall. */
+  function showAcceptFallback() {
+    var c = app.claim;
+    var host = $("offer-err");
+    clear(host);
+    var box = node("div", "err err--warn");
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", "NO_XAMAN_REQUEST"));
+    box.appendChild(node("div", "err__msg",
+      "The server created the offer but could not build a Xaman request for it, so there is no code to scan. The badge is untouched — it is minted and locked to your address."));
+    box.appendChild(node("div", "err__hint",
+      "Submit this exact transaction from any XRPL wallet on " +
+      ((app.health && app.health.network) || "testnet") +
+      ", then come back and paste the transaction hash below."));
+    var rows = node("div", "rows rows--quiet");
+    var accept = (c && c.accept) || { TransactionType: "NFTokenAcceptOffer", Account: app.address, NFTokenSellOffer: c ? c.offerId : "" };
+    rows.appendChild(row("TransactionType", accept.TransactionType));
+    rows.appendChild(row("Account", accept.Account));
+    rows.appendChild(row("NFTokenSellOffer", accept.NFTokenSellOffer));
+    box.appendChild(rows);
+    var bar = node("div", "retry");
+    var b = node("button", "btn btn--quiet", "Try Xaman again");
+    b.type = "button";
+    b.addEventListener("click", requestAccept);
+    bar.appendChild(b);
+    var b2 = node("button", "btn btn--quiet", "I already signed it");
+    b2.type = "button";
+    b2.addEventListener("click", function () { goRecord(false); });
+    bar.appendChild(b2);
+    box.appendChild(bar);
+    host.appendChild(box);
+  }
+
+  function pollOffer() {
+    if (app.inFlight || !app.claim || !app.claim.xaman) return;
+    if (isExpired()) { onPayloadExpired(); return; }
+    app.inFlight = true;
+
+    readPayload(app.claim.xaman.uuid).then(function (r) {
+      app.inFlight = false;
+      if (!app.claim || app.face !== "offer") return;
+
+      if (r.ok) {
+        app.pollFails = 0;
+        var j = r.json || {};
+        if (j.signed) {
+          /* The signing account should be ours. It is a cross-check, not a
+             gate: the ledger decides, and confirm re-derives everything. */
+          if (j.address && String(j.address) !== String(app.address)) {
+            showLocalError("offer-err", "SIGNED_BY_ANOTHER_WALLET",
+              "That request was approved by " + String(j.address) + ", not by " + app.address +
+              ". The offer is locked to your address, so the transaction would have failed.",
+              "Switch Xaman to the wallet you signed in with, then ask for a new request.",
+              "New Xaman request", requestAccept);
+            stopPolling();
+            return;
+          }
+          goRecord(true);
+          return;
+        }
+        if (j.rejected) { onAcceptDeclined(); return; }
+        return;
+      }
+      if (r.status === 404) {
+        stopPolling();
+        rememberClaim({ offerId: app.claim.offerId, nftokenId: app.claim.nftokenId, reused: app.claim.reused });
+        paintOffer();
+        showError("offer-err", r, {
+          warn: true,
+          hint: "That Xaman request is not on the server any more. The badge is untouched — ask for a fresh request.",
+          retryLabel: "New Xaman request", retry: requestAccept
+        });
+        return;
+      }
+      if (isUnconfigured(r)) { showUnavailable(r); return; }
+
+      app.pollFails++;
+      if (app.pollFails >= POLL_FAIL_LIMIT) {
+        stopPolling();
+        showError("offer-err", r, {
+          warn: true,
+          hint: "We stopped checking after " + POLL_FAIL_LIMIT + " failed attempts. If you already approved it in Xaman, press below — nothing is lost either way.",
+          retryLabel: "I approved it",
+          retry: function () { app.pollFails = 0; goRecord(true); }
+        });
+      }
+    });
+  }
+
+  function onAcceptDeclined() {
+    stopPolling();
+    rememberClaim({ offerId: app.claim.offerId, nftokenId: app.claim.nftokenId, reused: app.claim.reused });
+    paintOffer();
+    showLocalError("offer-err", "APPROVAL_DECLINED",
+      "That request was declined in Xaman. The badge is still there, still minted, still locked to your address — nothing was lost by saying no.",
+      "If Xaman showed an error rather than a choice, check it is on the right network before trying again.",
+      "New Xaman request", requestAccept);
+  }
+
+
+  /* ======================================================================
+     I. STEP FIVE — GETTING THE HASH, AND RECORDING IT
+
+     The gap this section exists to close: the payload poll tells us the
+     attendee signed, but not WHAT they signed — GET /api/registrations/signin
+     forwards `signed`, `rejected` and `address`, and drops Xaman's `txid`.
+     Confirm needs the hash, so it has to come from the chain's side:
+
+       1. GET /events/{eventId}/attendance — the index. A row lands here on its
+          own when Xaman's webhook reaches this server, and it carries the hash.
+       2. GET /demo/lookup — `attendedTxHash`, when the desk's event happens to
+          be the demo's own. Free, because we are polling it anyway.
+       3. The attendee reads it out of Xaman. Not a nice ending, but a real one:
+          without a hash there is nothing to confirm, and a page that shrugs is
+          worse than a page that asks.
+     ====================================================================== */
+
+  function goRecord(signedInXaman) {
+    stopPolling();
+    clearError("record-err");
+    clear($("record-hash"));
+    clear($("record-rows"));
+    markCall(1, signedInXaman ? "ok" : "wait");
+    markCall(2, "wait");
+    markCall(3, "wait");
+    setText("call-3-p", "/events/" + app.eventId + "/claims/" + (app.claim ? short(app.claim.offerId, 8, 6) : "{offerId}") + "/confirm");
+
+    if (app.txHash) { showFace("record"); confirmAttendance(); return; }
+
+    app.hunting = true;
+    app.huntTries = 0;
+    markCall(2, "run");
+    showFace("record");
+  }
+
+  function markCall(n, s) {
+    var el = $("call-" + n);
+    if (!el) return;
+    el.setAttribute("data-s", s);
+    var m = el.querySelector(".call__m");
+    if (m) m.textContent = s === "ok" ? "✓" : s === "err" ? "✗" : s === "run" ? "▸" : "•";
+  }
+
+  /** One pass of the hash hunt. Runs on the 2.5s tick like everything else. */
+  function huntHash() {
+    if (app.inFlight || !app.hunting) return;
+    app.huntTries++;
+    app.inFlight = true;
+
+    call("GET", "/events/" + encodeURIComponent(String(app.eventId)) + "/attendance?limit=200")
+      .then(function (r) {
+        app.inFlight = false;
+        if (!app.hunting) return;
+
+        var found = null;
+        if (r.ok && r.json && r.json.records && r.json.records.length) {
+          for (var i = 0; i < r.json.records.length; i++) {
+            var rec = r.json.records[i];
+            if (rec && rec.address === app.address && rec.txHash) { found = rec; break; }
+          }
+        }
+        if (found) {
+          app.hunting = false;
+          rememberTx(String(found.txHash));
+          markCall(2, "ok");
+          confirmAttendance();
+          return;
+        }
+        /* The second source, free of an extra request only when the desk's
+           event is the demo's own. Checked second because the index is the
+           event-correct answer and this one is not always about our event. */
+        if (app.look && app.look.attended && app.look.attendedTxHash &&
+            String(app.look.eventId) === String(app.eventId)) {
+          app.hunting = false;
+          rememberTx(String(app.look.attendedTxHash));
+          markCall(2, "ok");
+          confirmAttendance();
+          return;
+        }
+        if (app.huntTries >= HUNT_LIMIT) {
+          app.hunting = false;
+          markCall(2, "err");
+          stopPolling();
+          askForHash();
+        }
+      });
+  }
+
+  /**
+   * The honest ending to a hunt that found nothing. Xaman shows the hash on the
+   * signed-transaction screen and lets it be copied, so this is a paste, not a
+   * transcription.
+   */
+  function askForHash() {
+    var host = $("record-hash");
+    clear(host);
+
+    var box = node("div", "err err--warn");
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__code", "TX_HASH_NOT_FOUND_YET"));
+    box.appendChild(node("div", "err__msg",
+      "Xaman told us you approved it, but it did not tell this page which transaction that produced — the payload route forwards the signature and not the hash — and nothing has appeared in this event's index yet."));
+    box.appendChild(node("div", "err__hint",
+      "Your badge is fine. The accept is on the ledger; what is missing is the row that indexes it. Open the request in Xaman, copy the transaction hash from the signed screen, and paste it here."));
+    host.appendChild(box);
+
+    var field = node("div", "field");
+    var lab = node("label", "label", "the transaction hash from Xaman");
+    lab.setAttribute("for", "hash-in");
+    field.appendChild(lab);
+    var input = document.createElement("input");
+    input.id = "hash-in";
+    input.type = "text";
+    input.setAttribute("inputmode", "latin");
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("autocapitalize", "off");
+    input.setAttribute("spellcheck", "false");
+    input.setAttribute("maxlength", "70");
+    input.placeholder = "64 hexadecimal characters";
+    field.appendChild(input);
+    field.appendChild(node("p", "field__why", "Nothing is taken on trust: the confirm call re-reads the transaction off the chain and checks all five things about it before a row is written."));
+    host.appendChild(field);
+
+    var bar = node("div", "retry");
+    var go = node("button", "btn btn--quiet", "Record it");
+    go.type = "button";
+    go.addEventListener("click", function () {
+      var v = (input.value || "").trim();
+      if (!HASH_RE.test(v)) {
+        showLocalError("record-err", "CHECK_THE_HASH",
+          "\"" + v.slice(0, 80) + "\" is not a transaction hash. It is exactly 64 hexadecimal characters, with no 0x in front.",
+          "In Xaman it is on the signed transaction, under the explorer link.");
+        return;
+      }
+      clearError("record-err");
+      rememberTx(v.toUpperCase());
+      markCall(2, "ok");
+      confirmAttendance();
+    });
+    bar.appendChild(go);
+    var again = node("button", "btn btn--quiet", "Keep looking");
+    again.type = "button";
+    again.addEventListener("click", function () {
+      clear(host);
+      clearError("record-err");
+      app.hunting = true;
+      app.huntTries = 0;
+      markCall(2, "run");
+      restartPolling();
+    });
+    bar.appendChild(again);
+    host.appendChild(bar);
+  }
+
+  /* POST /events/{eventId}/claims/{offerId}/confirm {address, txHash}
+     The server re-derives the whole thing from the chain before it writes. */
+  function confirmAttendance() {
+    if (app.busy) return;
+    var offerId = app.claim ? app.claim.offerId : null;
+    if (!app.txHash) { goRecord(true); return; }
+    if (!offerId) {
+      /* The hash exists and the offer id does not — a resumed tab, most
+         likely. The path parameter is only a correlation hint; the server
+         indexes the offer the transaction actually consumed. */
+      offerId = "0000000000000000000000000000000000000000000000000000000000000000";
+    }
+
+    showFace("record");
+    markCall(1, "ok");
+    markCall(2, "ok");
+    markCall(3, "run");
+    app.busy = true;
+    paintDock();
+
+    var rows = $("record-rows");
+    clear(rows);
+    rows.appendChild(row("accept tx", app.txHash, { explore: true, ok: true }));
+
+    var path = "/events/" + encodeURIComponent(String(app.eventId)) +
+               "/claims/" + encodeURIComponent(offerId) + "/confirm";
+    setText("call-3-p", path);
+
+    call("POST", path, { address: app.address, txHash: app.txHash }).then(function (r) {
+      app.busy = false;
+      paintDock();
+
+      if (r.ok && r.json) { markCall(3, "ok"); showDone(r.json); return; }
+
+      markCall(3, "err");
+      if (r.status === 422) {
+        showError("record-err", r, {
+          hint: "The chain was asked about that transaction and it does not add up — the wrong hash, the wrong wallet, or a transaction that did not succeed. Nothing was written. If you pasted the hash by hand, check it.",
+          retryLabel: "Use a different hash",
+          retry: function () { rememberTx(null); askForHash(); }
+        });
+        return;
+      }
+      showError("record-err", r, {
+        hint: "The badge is yours on the ledger either way — the transaction above is the proof. What failed is the index row, and pressing again is safe.",
+        retryLabel: "Try again", retry: confirmAttendance
+      });
+    });
+  }
+
+
+  /* ======================================================================
+     J. STEP SIX — DONE
+     ====================================================================== */
+
+  function showDone(body) {
+    stopPolling();
+    app.done = body || {};
+    app.hunting = false;
+
+    var v = (body && body.verification) || {};
+    var rec = (body && body.record) || {};
+    var nft = v.nftokenId || rec.nftokenId || (app.claim && app.claim.nftokenId);
+    var hash = rec.txHash || app.txHash;
+    if (hash) rememberTx(String(hash));
+
+    /* `claimedAt` is the AttendanceRecord's own field (src/types.ts). Absent on
+       a repository that does not set it, in which case fmtStamp(null) stamps
+       the moment this page was told — which is the truth it actually has. */
+    setText("stamp-date", fmtStamp(rec.claimedAt || null));
+
+    var rows = $("done-rows");
+    clear(rows);
+    var reg = app.look && app.look.registration;
+    if (reg && reg.displayName) rows.appendChild(row("name", reg.displayName, { prose: true }));
+    rows.appendChild(row("event", (app.event && app.event.name ? app.event.name + " · " : "") + app.eventId, { prose: true }));
+    rows.appendChild(row("wallet", app.address, { ok: true }));
+    if (nft) rows.appendChild(row("nftoken id", nft));
+    rows.appendChild(row("attendance tx", hash, { explore: true, ok: true }));
+    if (v.status) rows.appendChild(row("verification", v.status, { ok: v.attended !== false }));
+    var ledger = v.ledgerIndex !== undefined && v.ledgerIndex !== null ? v.ledgerIndex : rec.ledgerIndex;
+    if (ledger !== undefined && ledger !== null) rows.appendChild(row("ledger", ledger));
+
+    if (body && body.alreadyRecorded) {
+      setText("done-lede",
+        "Already in the attendance index — the API said so instead of writing a second row. Confirm is idempotent on purpose, so a reload, a retry and a webhook arriving at the same moment all end here.");
+    }
+
+    setText("art-hero-cap", "your badge · " + (app.event && app.event.name ? app.event.name : "event " + app.eventId));
+    paintArt("art-hero", "art-hero-img");
+    showFace("done");
+  }
+
+
+  /* ======================================================================
+     K. THE DEAD ENDS
+     ====================================================================== */
+
+  /** The event is missing, a draft, or closed — one answer, on purpose. */
+  function showClosed(r) {
+    stopPolling();
+    clearError("closed-err");
+    if (r) showError("closed-err", r, { warn: true });
+    showFace("closed");
+  }
+
+  /** Xaman has no credentials on this server. A configuration fact, not a
+      failure of anything the attendee did, so it gets a face rather than a
+      spinner that never resolves. */
+  function showUnavailable(r) {
+    stopPolling();
+    rememberSignin(null);
+    clearError("unavail-err");
+    if (r) showError("unavail-err", r, { warn: true });
+    showFace("unavailable");
+  }
+
+
+  /* ======================================================================
+     L. THE PICKER — bare /attend, no event id
+     ====================================================================== */
+
+  function loadPicker() {
+    showFace("picker");
+    setText("ribbon-side", "attendee pass");
+    call("GET", "/api/events").then(function (r) {
+      if (!r.ok) {
+        showError("picker-err", r, {
+          hint: "Nothing to choose from until that call succeeds.",
+          retryLabel: "Try again", retry: loadPicker
+        });
+        return;
+      }
+      var list = (r.json && r.json.events) || [];
+      var box = $("picks");
+      clear(box);
+      if (!list.length) {
+        box.appendChild(node("p", "empty",
+          "No events are open right now. If you were given a link, use that — an event can be live without being listed."));
+        return;
+      }
+      for (var i = 0; i < list.length; i++) box.appendChild(pickCard(list[i]));
+    });
+  }
+
+  function pickCard(e) {
+    var a = node("a", "pick");
+    a.href = "/attend/" + encodeURIComponent(String(e.eventId));
+    var top = node("div", "pick__top");
+    top.appendChild(node("span", "pick__n", e.name || ("Event " + e.eventId)));
+    top.appendChild(node("span", "pick__go", e.status === "live" ? "happening now" : "open"));
+    a.appendChild(top);
+    var bits = [];
+    if (e.eventDate) bits.push(fmtDate(e.eventDate));
+    if (e.venue) bits.push(String(e.venue));
+    bits.push("#" + e.eventId);
+    a.appendChild(node("p", "pick__meta", bits.join("  ·  ")));
+    if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
+    return a;
+  }
+
+
+  /* ======================================================================
+     M. BOOT
+
+     The event id comes from the path — /attend/700002 — and nowhere else. A
+     query parameter would put it somewhere a link can be edited without it
+     looking edited.
+     ====================================================================== */
+
+  function eventIdFromPath() {
+    var m = /^\/attend\/([^/]+)\/?$/.exec(location.pathname);
+    if (!m) return null;
+    var raw = decodeURIComponent(m[1]);
+    return /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;   /* NaN: there was one, and it is not an event id */
+  }
+
+  function loadHealth() {
+    return call("GET", "/health").then(function (r) {
+      if (r.ok && r.json) { app.health = r.json; paintStrip(); }
+      return null;
+    });
+  }
+
+  function loadEvent() {
+    return call("GET", "/api/events/" + encodeURIComponent(String(app.eventId))).then(function (r) {
+      if (!r.ok) { showClosed(r); return false; }
+      /* The route wraps it: { event: {...} }. A bare object is accepted too, so
+         a change of shape on the server is a shrug rather than a blank page. */
+      app.event = (r.json && r.json.event) || r.json;
+      if (!app.event || typeof app.event !== "object") { showClosed(r); return false; }
+      paintHead();
+      return true;
+    });
+  }
+
+  /** Pick up wherever this phone was when the tab was reloaded. */
+  function resume() {
+    app.address = ssGet(ssKey("address"));
+    app.txHash = ssGet(ssKey("tx"));
+    app.claim = ssJson(ssKey("claim"));
+    app.signin = ssJson(ssKey("signin"));
+    paintStrip();
+
+    if (app.address) {
+      paintAddressQr();
+      paintStub();
+      paintArt("art-preview", "art-preview-img");
+
+      /* A hash already in hand: finish the job rather than showing a half
+         state. Confirm is idempotent, so this is safe on every reload. */
+      if (app.txHash) { showFace("record"); confirmAttendance(); return; }
+
+      if (app.claim && app.claim.xaman && app.claim.xaman.uuid) {
+        showFace("offer");
+        paintOffer();
+        return;
+      }
+      if (app.claim && app.claim.offerId) {
+        showFace("offer");
+        paintOffer();
+        requestAccept();
+        return;
+      }
+      goWait();
+      return;
+    }
+
+    /* A live proof and no address: they were mid-sign-in. */
+    if (app.signin && !isExpiredPayload(app.signin)) {
+      showFace("prove");
+      paintProve();
+      restartPolling();
+      return;
+    }
+    rememberSignin(null);
+
+    /* /health answers `xamanConfigured`, so a server that cannot do this says
+       so before the attendee taps a button that was never going to work. */
+    if (app.health && app.health.xamanConfigured === false) {
+      showUnavailable({
+        network: true, ok: false, status: 500, text: "",
+        json: { error: {
+          code: "CONFIG_INVALID",
+          message: "Xaman is not configured on this server (XUMM_API_KEY / XUMM_API_SECRET are unset), so a wallet cannot be proven and a badge cannot be approved."
+        } }
+      });
+      return;
+    }
+    showFace("prove");
+    paintProve();
+  }
+
+  function isExpiredPayload(p) {
+    if (!p || !p.expiresAt) return false;
+    var t = Date.parse(p.expiresAt);
+    return isFinite(t) && Date.now() >= t;
+  }
+
+  /* Clipboard access can be refused (permissions, an unfocused document, an
+     insecure origin). Falling back to a selection means the address is still
+     one long-press away rather than a dead end. */
+  function selectAddress() {
+    try {
+      var range = document.createRange();
+      range.selectNodeContents($("stub-addr-v"));
+      var sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+      return true;
+    } catch (e) { return false; }
+  }
+  function copyAddress() {
+    if (!app.address) return;
+    var cta = $("copy-cta");
+    var reset = function (text, ms) {
+      cta.textContent = text;
+      setTimeout(function () { cta.textContent = "tap to copy"; }, ms);
+    };
+    var fallback = function () {
+      reset(selectAddress() ? "selected — hold to copy" : "read it out instead", 3000);
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(app.address).then(function () { reset("copied", 1400); }, fallback);
+    } else {
+      fallback();
+    }
+  }
+
+  function onAct() {
+    if (app.face === "prove") startSignIn();
+    else if (app.face === "wait") requestAccept();
+    else if (app.face === "offer") requestAccept();
+    else if (app.face === "record") confirmAttendance();
+  }
+
+  function boot() {
+    /* Pointer, not user agent. A phone, a tablet and a laptop in tablet mode
+       all want the deeplink; a desktop with a mouse wants the QR. */
+    if (window.matchMedia) {
+      var mq = window.matchMedia("(pointer: coarse)");
+      app.coarse = mq.matches || window.matchMedia("(hover: none)").matches;
+      var onChange = function () {
+        app.coarse = window.matchMedia("(pointer: coarse)").matches || window.matchMedia("(hover: none)").matches;
+        if (app.face === "prove") paintProve();
+        else if (app.face === "offer") paintOffer();
+        else paintDock();
+      };
+      if (mq.addEventListener) mq.addEventListener("change", onChange);
+      else if (mq.addListener) mq.addListener(onChange);
+    }
+
+    $("act").addEventListener("click", onAct);
+    $("stub-addr").addEventListener("click", copyAddress);
+    $("recheck").addEventListener("click", function () {
+      clearError("unavail-err");
+      showFace("prove");
+      paintProve();
+      startSignIn();
+    });
+
+    var id = eventIdFromPath();
+    if (id === null) { loadHealth(); loadPicker(); return; }
+    if (isNaN(id)) { loadHealth(); showClosed(null); return; }
+
+    app.eventId = id;
+    setText("f-event", String(id));
+
+    loadHealth().then(loadEvent).then(function (ok) {
+      if (ok) resume();
+      return null;
+    });
+  }
+
+  /* Nothing polls in a background tab. Resuming re-checks the expiry first, so
+     a phone left in a pocket comes back to "this expired", not a live spinner. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      if (app.timer) { clearInterval(app.timer); app.timer = null; }
+      if (app.tick) { clearInterval(app.tick); app.tick = null; }
+      paintWatching();
+    } else {
+      restartPolling();
+    }
+  });
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

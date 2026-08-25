@@ -54,6 +54,14 @@
   --plate-lift:0 14px 24px -18px rgba(40,28,10,.7);
   --plate-w:clamp(112px,13vw,148px);
   --thumb:32px;
+
+  /* Xaman's QR arrives as a PNG with a white ground. Its plate is therefore
+     white in BOTH themes and deliberately not theme-aware: a scanner wants
+     dark-on-light, and inverting a QR code for dark mode is how a badge fails
+     to land at the one moment the attendee is standing there holding a phone. */
+  --qr-plate:#ffffff;
+  --qr-edge:#cdc4b2;
+  --qr-ph:#6b6153;
 }
 
 @media (prefers-color-scheme: dark){
@@ -181,6 +189,34 @@ code,pre,.mono{font-family:var(--font-mono)}
 .cell--tally .cell__v{font-family:var(--font-display); font-size:19px; line-height:1.1; letter-spacing:-.02em}
 .cell--tally b{color:var(--jade); font-weight:600}
 .cell--tally i{font-style:normal; color:var(--ink-3); font-family:var(--font-mono); font-size:11px}
+
+/* The event this desk is working. It gets the width, the accent and the only
+   control in the rail, because picking the wrong one is the failure that turns
+   every registered attendee into a walk-up — silently, and on every card.
+   The name is what the volunteer needs; the taxon is what is on chain, so both
+   are on the rail and neither is behind a hover. */
+.cell--event{flex:1 1 300px; min-width:270px; background:var(--signal-wash); box-shadow:inset 2px 0 0 var(--signal)}
+.cell--event .cell__k{color:var(--signal)}
+.evrow{display:flex; align-items:center; gap:8px; min-width:0; margin-top:1px}
+.evpick{
+  flex:1 1 auto; min-width:0; max-width:100%;
+  font-family:var(--font-display); font-size:13.5px; line-height:1.25; letter-spacing:-.014em;
+  color:var(--ink); background-color:transparent; border:0; border-bottom:1px dashed var(--rule-2);
+  border-radius:0; margin:0; padding:1px 15px 2px 0; cursor:pointer;
+  text-overflow:ellipsis; -webkit-appearance:none; appearance:none;
+  background-image:linear-gradient(45deg,transparent 50%,var(--signal) 50%),linear-gradient(135deg,var(--signal) 50%,transparent 50%);
+  background-position:calc(100% - 8px) calc(50% + 1px),calc(100% - 4px) calc(50% + 1px);
+  background-size:4px 4px,4px 4px;
+  background-repeat:no-repeat;
+}
+.evpick:hover{border-bottom-color:var(--signal)}
+.evpick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+/* The menu itself is drawn by the OS; only the colours are ours to set. */
+.evpick option{color:var(--ink); background:var(--surface)}
+.evtaxon{
+  flex:none; font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.09em;
+  color:var(--signal); border:1px solid var(--signal-2); border-radius:2px; padding:1px 5px; white-space:nowrap;
+}
 .rail__act{display:flex; align-items:center; gap:7px; padding:8px 0 8px 14px; flex:none; border-left:1px solid var(--rule)}
 .pulse{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3)}
 .dot{width:7px; height:7px; border-radius:50%; background:var(--jade); box-shadow:0 0 0 3px var(--jade-wash); flex:none}
@@ -214,6 +250,10 @@ code,pre,.mono{font-family:var(--font-mono)}
 .btn--ghost{background:transparent}
 .btn--tiny{font-size:9.5px; padding:4px 8px; letter-spacing:.1em}
 .btn--stop{border-color:var(--vermilion); color:var(--vermilion); background:var(--vermilion-wash)}
+/* One link wears the button: the Xaman deeplink, which is an <a> because it
+   really does navigate somewhere. */
+a.btn{display:inline-flex; align-items:center; justify-content:center; text-decoration:none}
+a.btn--go{color:var(--on-signal)}
 .btn[aria-busy="true"]::after{
   content:""; position:absolute; left:0; bottom:0; height:2px; width:100%;
   background:linear-gradient(90deg,transparent,currentColor,transparent);
@@ -353,6 +393,36 @@ code,pre,.mono{font-family:var(--font-mono)}
 .who .label{flex:none}
 .who__a{font-family:var(--font-mono); font-size:13px; color:var(--ink); overflow-wrap:anywhere; min-width:0}
 
+/* ---------- who is standing at the desk ------------------------------------- */
+/* A registered attendee gave a name before the event. The ledger cares about
+   the address; a volunteer checking a badge against a face does not, so the
+   name leads and the address is demoted to the line beneath it. How that
+   address was obtained is stated rather than implied — a proven wallet and a
+   typed one are not the same claim, and a soulbound badge minted to a typo is
+   unrecoverable. */
+.who--id{display:block; padding:12px 13px}
+.who--id.who--proved{border-left:3px solid var(--jade)}
+.who--id.who--typed{border-left:3px solid var(--signal)}
+.who--id.who--walk{border-left:3px dashed var(--rule-2)}
+.who__name{font-size:clamp(1.14rem,2.3vw,1.44rem); line-height:1.14; letter-spacing:-.02em; color:var(--ink); font-weight:600; overflow-wrap:anywhere}
+.who__walk{font-size:clamp(1rem,1.9vw,1.16rem); line-height:1.2; letter-spacing:-.012em; color:var(--ink-2)}
+.who__walk b{color:var(--ink); font-weight:600}
+.who__sub{display:flex; gap:6px 9px; align-items:baseline; flex-wrap:wrap; margin-top:7px; min-width:0}
+.who__note{font-size:13.5px; color:var(--ink-2); margin:9px 0 0; max-width:74ch}
+.who__note b{color:var(--ink); font-weight:600}
+.chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px}
+.chip{
+  display:inline-flex; align-items:baseline; gap:5px; max-width:100%;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.15em; text-transform:uppercase; font-weight:700;
+  padding:3px 7px; border-radius:2px; border:1px solid currentColor; white-space:nowrap;
+}
+.chip em{font-style:normal; font-weight:400; letter-spacing:.04em; text-transform:none; opacity:.9; font-size:10.5px}
+.chip--proved{color:var(--jade); background:var(--jade-wash)}
+.chip--typed{color:var(--signal); background:var(--signal-wash)}
+.chip--walk{color:var(--ink-3); border-style:dashed}
+.chip--when{color:var(--ink-3); border-color:var(--rule-2)}
+.chip--seen{color:var(--signal); background:var(--signal-wash)}
+
 .kv{display:grid; grid-template-columns:150px minmax(0,1fr); gap:3px 14px; padding:6px 0; align-items:baseline; border-bottom:1px dotted var(--rule)}
 .kv:last-of-type{border-bottom:0}
 .kv__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); padding-top:3px}
@@ -414,6 +484,63 @@ code,pre,.mono{font-family:var(--font-mono)}
 .wait__bd{padding:11px 13px; font-size:14px; color:var(--ink-2)}
 .wait__bd b{color:var(--ink)}
 @media (max-width:560px){ .wait__clock{margin-left:0} }
+
+/* ---------- the handoff ------------------------------------------------------ */
+/* The one thing on this card the ATTENDEE looks at. Everything else on the page
+   is for the volunteer; this is turned around and pointed across the desk, so
+   it is the largest object in the docket and carries no hex the eye can trip
+   over. A 64-character offer id read aloud is not a handoff. */
+.hand{margin-top:16px; border:2px solid var(--signal); border-radius:3px; background:var(--surface); overflow:hidden}
+.hand__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 13px; background:var(--signal-wash); border-bottom:1px solid var(--signal)}
+.hand__hd .label{color:var(--signal)}
+.hand__exp{margin-left:auto; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
+.hand__bd{display:flex; gap:clamp(14px,2.4vw,26px); align-items:flex-start; flex-wrap:wrap; padding:clamp(13px,1.9vw,18px)}
+.qr{flex:none; width:clamp(196px,25vw,272px); max-width:100%}
+.qr__plate{
+  position:relative; aspect-ratio:1/1; padding:10px; border-radius:3px;
+  background:var(--qr-plate); border:1px solid var(--qr-edge);
+  box-shadow:0 16px 32px -22px rgba(30,20,6,.8);
+}
+.qr__plate img{display:block; width:100%; height:100%; object-fit:contain; opacity:0; transition:opacity .3s ease}
+.qr__plate[data-qr="ok"] img{opacity:1}
+.qr__plate[data-qr="fail"] img{display:none}
+.qr__ph{
+  position:absolute; inset:10px; display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:8px; padding:12px; text-align:center;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.15em; text-transform:uppercase; color:var(--qr-ph);
+}
+.qr__ph::before{content:"\25CC"; font-size:19px; line-height:1; animation:blink 1.2s steps(2) infinite}
+.qr__plate[data-qr="ok"] .qr__ph{display:none}
+.qr__plate[data-qr="fail"] .qr__ph::before{content:"\2715"; animation:none; color:#a8331a}
+/* Brackets borrowed from the scanner reticle: the same visual verb, aimed the
+   other way across the desk. */
+.qr__b{position:absolute; width:18px; height:18px; border:2.5px solid var(--signal); pointer-events:none}
+.qr__b:nth-of-type(1){top:-7px; left:-7px; border-right:0; border-bottom:0; border-radius:3px 0 0 0}
+.qr__b:nth-of-type(2){top:-7px; right:-7px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
+.qr__b:nth-of-type(3){bottom:-7px; left:-7px; border-right:0; border-top:0; border-radius:0 0 0 3px}
+.qr__b:nth-of-type(4){bottom:-7px; right:-7px; border-left:0; border-top:0; border-radius:0 0 3px 0}
+.qr__cap{margin:12px 0 0; text-align:center; font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
+.hand__say{flex:1 1 250px; min-width:min(100%,250px)}
+.hand__lead{font-size:clamp(1rem,1.9vw,1.16rem); line-height:1.4; letter-spacing:-.012em; color:var(--ink-2); margin:0}
+.hand__lead b{color:var(--ink); font-weight:600}
+.hand__link{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:13px}
+.hand__url{
+  display:block; margin-top:8px; font-family:var(--font-mono); font-size:11px; color:var(--ink-3);
+  overflow-wrap:anywhere; line-height:1.45;
+}
+.hand__url b{color:var(--ink-2); font-weight:400}
+/* The most likely thing to go wrong at a real desk gets the loudest box on the
+   card that is not an error — because by the time it IS an error, the attendee
+   has already signed something that went nowhere. */
+.netwarn{
+  margin-top:14px; padding:10px 12px; border:1px solid var(--vermilion); border-left-width:3px;
+  background:var(--vermilion-wash); border-radius:0 2px 2px 0; font-size:13.5px; color:var(--ink-2);
+}
+.netwarn__t{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; color:var(--vermilion)}
+.netwarn p{margin:5px 0 0}
+.netwarn b{color:var(--ink); font-weight:600}
+.netwarn code{font-size:12.5px; color:var(--ink); white-space:nowrap}
+@media (max-width:560px){ .netwarn code{white-space:normal} }
 
 /* ---------- badge artwork --------------------------------------------------- */
 /* GET /demo/art renders the same SVG that gets pinned for this attendee: a dark
@@ -590,10 +717,18 @@ td .val{font-size:11.5px}
       <span class="rail__title">Volunteer console &middot; issue badges</span>
     </div>
     <div class="cells" role="group" aria-label="Console state">
+      <!-- First, and the only control up here: it decides what every call on
+           the page below is asking about. -->
+      <div class="cell cell--event" id="cell-event">
+        <span class="cell__k"><label for="ev-pick">event &middot; taxon</label></span>
+        <span class="evrow">
+          <select class="evpick" id="ev-pick"><option value="">loading&hellip;</option></select>
+          <span class="evtaxon" id="ev-taxon" title="NFTokenTaxon &mdash; the event id exactly as it is written on chain">&mdash;</span>
+        </span>
+      </div>
       <div class="cell"><span class="cell__k">network</span><span class="cell__v" id="hdr-net">&mdash;</span></div>
       <div class="cell cell--wide"><span class="cell__k">node</span><span class="cell__v" id="hdr-node">&mdash;</span></div>
       <div class="cell"><span class="cell__k">issuer</span><span class="cell__v" id="hdr-issuer">&mdash;</span></div>
-      <div class="cell"><span class="cell__k">event / taxon</span><span class="cell__v" id="hdr-event">&mdash;</span></div>
       <div class="cell"><span class="cell__k">issuer balance</span><span class="cell__v" id="hdr-bal">&mdash;</span></div>
       <div class="cell cell--tally"><span class="cell__k">issued this session</span><span class="cell__v" id="hdr-tally">0</span></div>
     </div>
@@ -730,6 +865,7 @@ td .val{font-size:11.5px}
         <span class="card__n">4</span>
         <span class="src src--chain">the chain</span>
         <span class="label" id="chain-t">On-chain roster</span>
+        <span class="label" id="chain-ev" style="margin-left:auto">&mdash;</span>
       </div>
       <div class="card__body">
         <p class="prose" style="font-size:14px; margin-bottom:11px">
@@ -791,8 +927,13 @@ td .val{font-size:11.5px}
   var sweepTimer = 0;          // background sweep so the roster keeps watching
   var lastClaim = null;        // last POST /claims outcome, so a repaint survives
   var busyAction = false;
+  var events = [];             // GET /api/events — the open and live ones
+  var eventsProblem = "";      // why the list is short, if it is
+  var eventsLoading = true;    // before the first answer, "no event" would be a lie
+  var picked = null;           // the taxon this desk chose; null means "the demo's"
   var SESS_KEY = "poap-desk:session";
   var THEME_KEY = "poap-desk:theme";
+  var EVENT_KEY = "poap-desk:event";
   var ADDR_RE = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/;
   var ADDR_FIND = /r[1-9A-HJ-NP-Za-km-z]{24,34}/;
   var MAX_SUBMIT = 512;        // past this we do not bother the server
@@ -986,12 +1127,12 @@ td .val{font-size:11.5px}
     setText("hdr-net", state && state.network ? state.network : "—");
     setText("hdr-node", state && state.endpoint ? state.endpoint : "—");
     setText("hdr-issuer", state && state.issuer ? short(state.issuer.address, 9, 6) : "—");
-    setText("hdr-event", state && state.eventId != null ? String(state.eventId) : "—");
     setText("hdr-bal", state && state.issuer && state.issuer.balanceXrp != null
       ? state.issuer.balanceXrp + " XRP" : "—");
     $("hdr-node").title = (state && state.endpoint) || "";
     $("hdr-issuer").title = (state && state.issuer && state.issuer.address) || "";
-    setText("chain-path", state && state.eventId != null ? String(state.eventId) : "{eventId}");
+    setText("chain-path", eventId() != null ? String(eventId()) : "{eventId}");
+    paintEventPicker();
     paintTally();
   }
 
@@ -1007,8 +1148,224 @@ td .val{font-size:11.5px}
     setText("sess-count", offered + " offered · " + confirmed + " confirmed");
   }
 
-  function eventId() { return state && state.eventId != null ? state.eventId : null; }
+  /* =====================================================================
+     WHICH EVENT THIS DESK IS WORKING
+     ---------------------------------------------------------------------
+     Everything below this line — lookup, claim, roster, artwork, the
+     attendance poll — is scoped by one number. Get it wrong and the console
+     does not break; it quietly reports every registered attendee as a
+     walk-up, which is worse. So the choice is explicit, it is on the rail,
+     it survives a reload, and both halves of it are visible: the NAME is
+     what the volunteer recognises, the TAXON is what is on chain.
+     ===================================================================== */
+
+  /** The event the desk chose, or the demo's own when it never chose one. */
+  function eventId() {
+    if (picked != null) return picked;
+    return (state && state.eventId != null) ? state.eventId : null;
+  }
   function eventPath() { return encodeURIComponent(String(eventId())); }
+
+  function isTaxon(n) {
+    return typeof n === "number" && isFinite(n) && Math.floor(n) === n && n >= 0 && n <= 2147483647;
+  }
+
+  function eventRecord(id) {
+    if (id == null) id = eventId();
+    for (var i = 0; i < events.length; i++) if (events[i].eventId === id) return events[i];
+    return null;
+  }
+
+  /** A name for any event id, listed or not — never an empty string. */
+  function eventName(id) {
+    if (id == null) id = eventId();
+    if (id == null) return "no event";
+    var e = eventRecord(id);
+    if (e) return e.name;
+    if (state && state.eventId === id) return "Demo event";
+    return "Event " + id;
+  }
+
+  function readPicked() {
+    try {
+      var raw = localStorage.getItem(EVENT_KEY);
+      if (raw == null || raw === "") return null;
+      var n = Number(raw);
+      return isTaxon(n) ? n : null;
+    } catch (e) { return null; }
+  }
+  function writePicked(id) {
+    try {
+      if (id == null) localStorage.removeItem(EVENT_KEY);
+      else localStorage.setItem(EVENT_KEY, String(id));
+    } catch (e) { /* private mode; the choice still holds for this tab */ }
+  }
+
+  /**
+   * GET /api/events — the open and the live ones, which is exactly the set a
+   * desk can be working. A failure here is not fatal: the picker falls back to
+   * whatever the demo state named, and the banner says why the list is short.
+   */
+  function loadEvents() {
+    return call("GET", "/api/events?limit=100").then(function (r) {
+      var list = (r.json && Array.isArray(r.json.events)) ? r.json.events : [];
+      var clean = [];
+      for (var i = 0; i < list.length; i++) {
+        var e = list[i];
+        if (!e || typeof e !== "object") continue;
+        var id = Number(e.eventId);
+        if (!isTaxon(id)) continue;
+        clean.push({
+          eventId: id,
+          name: (typeof e.name === "string" && e.name) ? e.name : ("Event " + id),
+          status: typeof e.status === "string" ? e.status : "",
+          eventDate: typeof e.eventDate === "string" ? e.eventDate : "",
+          venue: typeof e.venue === "string" ? e.venue : ""
+        });
+      }
+      events = clean;
+      eventsLoading = false;
+      eventsProblem = r.ok
+        ? (clean.length ? "" : "GET /api/events returned no open or live events.")
+        : ("GET /api/events failed with " + (r.network ? r.status : "no reply") + ".");
+      // Nothing chosen yet: prefer an event that is actually happening. Falling
+      // back to the demo's own taxon here would be the silent-walk-up trap.
+      var was = eventId();
+      if (picked == null && clean.length) {
+        var best = null;
+        for (var k = 0; k < clean.length; k++) {
+          if (clean[k].status === "live") { best = clean[k]; break; }
+          if (!best) best = clean[k];
+        }
+        if (best) { picked = best.eventId; writePicked(picked); }
+      }
+      paintEventPicker();
+      if (artPainted !== eventId()) paintSession();
+      setText("chain-path", eventId() != null ? String(eventId()) : "{eventId}");
+      /* A volunteer can scan the first attendee before this list lands. If that
+         lookup went to a different event than the one now selected, its verdict
+         is about the wrong event — read it again rather than leave it standing. */
+      if (was !== eventId() && current && verdict !== "empty" && verdict !== "waiting") {
+        lookup(current);
+      }
+      return events;
+    });
+  }
+
+  function paintEventPicker() {
+    var sel = $("ev-pick");
+    var cell = $("cell-event");
+    if (!sel) return;
+    var id = eventId();
+    var seen = {};
+    var opts = [];
+
+    for (var i = 0; i < events.length; i++) {
+      var e = events[i];
+      if (seen[e.eventId]) continue;
+      seen[e.eventId] = 1;
+      opts.push({ id: e.eventId, label: e.name, group: e.status === "live" ? "live now" : (e.status || "listed") });
+    }
+    // The demo's own event stays reachable — it is where the /demo/attendee
+    // role-play lives — but it never wins by default.
+    if (state && state.eventId != null && !seen[state.eventId]) {
+      seen[state.eventId] = 1;
+      opts.push({ id: state.eventId, label: "Demo event · " + state.eventId, group: "the demo" });
+    }
+    // A remembered event that has since closed is kept, not silently swapped
+    // for another one. The desk decides that, not a page load.
+    if (id != null && !seen[id]) {
+      seen[id] = 1;
+      opts.unshift({ id: id, label: "Event " + id, group: "not listed" });
+    }
+    if (!opts.length) opts.push({ id: null, label: eventsLoading ? "loading…" : "no event", group: "" });
+
+    /* Status lives on an <optgroup>, not in the option text: the menu needs it,
+       and the closed control has room for the NAME and nothing else. The list
+       comes back sorted by date, so gather each status into one run first —
+       a stable sort, because date order inside a group is worth keeping. */
+    var RANK = { "not listed": 0, "live now": 1, "open": 2, "the demo": 9 };
+    for (var s = 0; s < opts.length; s++) opts[s].seq = s;
+    opts.sort(function (a, b) {
+      var ra = RANK[a.group] === undefined ? 5 : RANK[a.group];
+      var rb = RANK[b.group] === undefined ? 5 : RANK[b.group];
+      return ra - rb || a.seq - b.seq;
+    });
+
+    clear(sel);
+    var group = null;
+    var groupName = null;
+    for (var k = 0; k < opts.length; k++) {
+      var o = document.createElement("option");
+      o.value = opts[k].id == null ? "" : String(opts[k].id);
+      o.textContent = opts[k].label;
+      if (opts[k].id === id) o.selected = true;
+      if (opts[k].group) {
+        if (opts[k].group !== groupName) {
+          groupName = opts[k].group;
+          group = document.createElement("optgroup");
+          group.label = groupName;
+          sel.appendChild(group);
+        }
+        group.appendChild(o);
+      } else {
+        groupName = null;
+        sel.appendChild(o);
+      }
+    }
+    sel.disabled = (opts.length === 1 && opts[0].id == null);
+
+    setText("ev-taxon", id == null ? "—" : String(id));
+    // Say the scoping out loud everywhere it applies, not only in the rail.
+    setText("docket-src", "GET /demo/lookup?eventId=" + (id == null ? "…" : id));
+    setText("chain-ev", eventName(id) + " · " + (id == null ? "—" : id));
+
+    var rec = eventRecord(id);
+    var bits = [eventName(id)];
+    if (rec && rec.status) bits.push("status " + rec.status);
+    if (rec && rec.eventDate) bits.push(rec.eventDate);
+    if (rec && rec.venue) bits.push(rec.venue);
+    bits.push("taxon " + (id == null ? "—" : id) + " — every lookup, claim and roster call on this page uses it");
+    if (eventsProblem) bits.push(eventsProblem);
+    if (cell) cell.title = bits.join("\n");
+  }
+
+  /**
+   * Switching events changes what every card on the page MEANS, so nothing
+   * from the old one is allowed to linger looking current: the watcher stops,
+   * the claim handles go, the chain read is cleared, and whoever is on the
+   * docket is looked up again against the new taxon.
+   */
+  function chooseEvent(id) {
+    if (!isTaxon(id)) return;
+    var changed = (id !== eventId());
+    // Always pin the choice, even when it matches what was already in effect:
+    // "the demo event, deliberately" and "the demo event, by default" are the
+    // same taxon but not the same decision, and only one of them should survive
+    // the console learning about a different one.
+    picked = id;
+    writePicked(id);
+    if (!changed) { paintEventPicker(); return; }
+    stopWatch();
+    lastClaim = null;
+    paintEventPicker();
+    setText("chain-path", String(id));
+    paintSession();
+    var out = $("chain-out");
+    if (out) clear(out);
+    var cb = $("btn-chain");
+    if (cb) { cb.disabled = false; cb.removeAttribute("aria-busy"); cb.textContent = "Read the chain"; }
+    if (current) { verdict = "looking"; paintDocket(); lookup(current); }
+    else paintDocket();
+  }
+
+  /** Every read of an attendee is scoped to an event. There is no unscoped one. */
+  function lookupPath(address, id) {
+    if (id === undefined) id = eventId();
+    var p = "/demo/lookup?address=" + encodeURIComponent(address);
+    if (id != null) p += "&eventId=" + encodeURIComponent(String(id));
+    return p;
+  }
 
   /* =====================================================================
      GET /demo/state
@@ -1287,7 +1644,7 @@ td .val{font-size:11.5px}
   }
 
   function lookup(address) {
-    return call("GET", "/demo/lookup?address=" + encodeURIComponent(address)).then(function (r) {
+    return call("GET", lookupPath(address)).then(function (r) {
       lookRaw = r;
       if (!r.ok) {
         look = null;
@@ -1336,8 +1693,10 @@ td .val{font-size:11.5px}
      actually known. `empty` and `invalid` have nothing to render. */
   var ART_STATES = { ready: 1, sponsor: 1, waiting: 1, claimed: 1, attended: 1 };
 
-  /** This page loads nothing from another origin. A previewUrl is documented
-      as a path on this server; anything else is ignored rather than fetched. */
+  /** Badge art is never fetched from another origin. A previewUrl is documented
+      as a path on this server; anything else is ignored rather than fetched.
+      (The Xaman QR is the one image on this page that is cross-origin, because
+      it is generated by Xaman and only Xaman can sign the payload behind it.) */
   function localPath(u) {
     return (typeof u === "string" && u.charAt(0) === "/" && u.charAt(1) !== "/") ? u : "";
   }
@@ -1348,8 +1707,8 @@ td .val{font-size:11.5px}
   }
 
   /** The contract, built by hand — used for roster rows, which have no lookup. */
-  function artUrl(address) {
-    var id = eventId();
+  function artUrl(address, id) {
+    if (id === undefined) id = eventId();
     if (id == null || !address) return "";
     return "/demo/art?address=" + encodeURIComponent(address) +
            "&eventId=" + encodeURIComponent(String(id));
@@ -1443,9 +1802,9 @@ td .val{font-size:11.5px}
   }
 
   /** A roster row's square. Lazy: a long session must not fire fifty requests. */
-  function artThumb(address) {
+  function artThumb(address, id) {
     if (!artOn() || !address) return null;
-    var src = artUrl(address);
+    var src = artUrl(address, id);
     if (!src) return null;
     var box = node("span", "thumb");
     box.title = "Badge artwork for " + address;
@@ -1496,13 +1855,120 @@ td .val{font-size:11.5px}
     return wrap;
   }
 
+  /* =====================================================================
+     WHO IS STANDING AT THE DESK
+     ---------------------------------------------------------------------
+     `registration` is present when this address registered for the SELECTED
+     event. Null is a walk-up — a normal thing at a door, not an error, and
+     said plainly rather than dressed up as a warning.
+     ===================================================================== */
+
+  /** `registration` only means anything about the person currently on the card. */
+  function registrationOf(address) {
+    if (!look || !address || look.address !== address) return null;
+    var r = look.registration;
+    return (r && typeof r === "object") ? r : null;
+  }
+  /** Did the server actually answer the question? An older build omits the key,
+      and "we did not ask" must not be rendered as "they did not register". */
+  function registrationKnown(address) {
+    return !!(look && address && look.address === address && look.valid !== false &&
+      Object.prototype.hasOwnProperty.call(look, "registration"));
+  }
+
+  /** A timestamp a person can read, with the exact ISO string on hover. */
+  function when(iso) {
+    if (typeof iso !== "string" || !iso) return "";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return iso;
+    var time = d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    var today = new Date();
+    var sameDay = function (a, b) {
+      return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    };
+    if (sameDay(d, today)) return "today " + time;
+    var y = new Date(today.getTime() - 86400000);
+    if (sameDay(d, y)) return "yesterday " + time;
+    return d.toLocaleDateString(undefined, { month: "short", day: "numeric" }) + " " + time;
+  }
+
+  function chip(cls, word, detail, title) {
+    var c = node("span", "chip chip--" + cls, word);
+    if (detail) c.appendChild(node("em", null, "· " + detail));
+    if (title) c.title = title;
+    return c;
+  }
+
+  function addrLine(address, label) {
+    var sub = node("div", "who__sub");
+    sub.appendChild(node("span", "label", label || "address"));
+    sub.appendChild(node("code", "who__a", address));
+    sub.appendChild(copyBtn(address));
+    return sub;
+  }
+
   function whoRow(address, label) {
-    var w = node("div", "who");
-    w.appendChild(node("span", "label", label || "address"));
-    var a = node("span", "who__a", address);
-    w.appendChild(a);
-    w.appendChild(copyBtn(address));
-    return w;
+    var reg = registrationOf(address);
+
+    // Nothing known about registration for this address — the plain row.
+    if (!reg && !registrationKnown(address)) {
+      var w = node("div", "who");
+      w.appendChild(node("span", "label", label || "address"));
+      w.appendChild(node("span", "who__a", address));
+      w.appendChild(copyBtn(address));
+      return w;
+    }
+
+    // ---- a walk-up ---------------------------------------------------------
+    if (!reg) {
+      var u = node("div", "who who--id who--walk");
+      u.appendChild(node("div", "who__walk", "Walk-up — not registered"));
+      u.appendChild(addrLine(address, label));
+      var un = node("p", "who__note");
+      un.appendChild(document.createTextNode("Nobody registered this address for "));
+      un.appendChild(node("b", null, eventName()));
+      un.appendChild(document.createTextNode(
+        ". That is allowed — the badge goes to the wallet, not to a list. There is just no name to check them against."));
+      u.appendChild(un);
+      return u;
+    }
+
+    // ---- a registered attendee --------------------------------------------
+    var proved = reg.addressProof === "xaman_signin";
+    var box = node("div", "who who--id " + (proved ? "who--proved" : "who--typed"));
+    box.appendChild(node("div", "who__name", reg.displayName || "Registered attendee"));
+    box.appendChild(addrLine(address, label));
+
+    var chips = node("div", "chips");
+    chips.appendChild(proved
+      ? chip("proved", "wallet proved", "xaman sign-in",
+          "This address came out of a Xaman sign-in: the attendee signed a challenge with the key, so the wallet is theirs.")
+      : chip("typed", "self-declared", "typed, not proven",
+          "This address was typed into the registration form. Nothing has proved the attendee holds its key."));
+    if (reg.registeredAt) {
+      chips.appendChild(chip("when", "registered", when(reg.registeredAt), reg.registeredAt));
+    }
+    if (reg.checkedInAt) {
+      chips.appendChild(chip("seen", "checked in", when(reg.checkedInAt),
+        "Already through a desk at " + reg.checkedInAt));
+    }
+    box.appendChild(chips);
+
+    if (!proved) {
+      var n = node("p", "who__note");
+      n.innerHTML = "<b>They typed this address themselves.</b> Nobody has proved they hold the key to it. " +
+        "A badge is soulbound — one minted to a mistyped address can never be moved and never be recovered — " +
+        "so read it back to them before issuing.";
+      box.appendChild(n);
+    }
+    if (reg.checkedInAt) {
+      var c = node("p", "who__note");
+      c.appendChild(node("b", null, "This person has already been through a desk."));
+      c.appendChild(document.createTextNode(
+        " Checked in " + when(reg.checkedInAt) + ". The card below still says whether a badge exists — check-in and a badge are separate records."));
+      box.appendChild(c);
+    }
+    return box;
   }
 
   function actBtn(id, text, cls, handler) {
@@ -1533,6 +1999,8 @@ td .val{font-size:11.5px}
       var ul = node("div", "grp");
       var hd = node("div", "grp__hd"); hd.appendChild(node("span", "label", "what you will see")); ul.appendChild(hd);
       var bd = node("div", "grp__bd");
+      bd.appendChild(kv("working event", eventName() + "  ·  taxon " + (eventId() == null ? "—" : eventId()),
+        { tone: eventId() == null ? "bad" : "" }));
       bd.appendChild(kv("ready", "clear to issue — one button, mints and offers the badge"));
       bd.appendChild(kv("needs funding", "unactivated wallet — it cannot hold an NFT until it is funded"));
       bd.appendChild(kv("already claimed", "the duplicate guard already holds this address — nothing to do"));
@@ -1803,6 +2271,150 @@ td .val{font-size:11.5px}
     return errBox(r, "Nothing partial survives a failed claim — the slot is released, so pressing again is safe.");
   }
 
+  /* =====================================================================
+     THE HANDOFF — the one thing on this page pointed the other way
+     ---------------------------------------------------------------------
+     POST /claims returns a Xaman sign request beside the raw accept payload.
+     A 64-character offer id cannot be read across a desk, so the QR IS the
+     card and the JSON is a footnote behind a disclosure.
+     ===================================================================== */
+
+  /** Two server-supplied strings reach an href or a src here. Parse them rather
+      than trust them — a javascript: URL is the whole reason this exists, even
+      when the only writer is our own server. */
+  function safeUrl(value) {
+    if (typeof value !== "string" || value === "") return null;
+    var u;
+    try { u = new URL(value, window.location.href); } catch (e) { return null; }
+    return (u.protocol === "http:" || u.protocol === "https:") ? u.href : null;
+  }
+  /** The QR: an https URL, or the inline PNG the interface also documents. */
+  function safeImage(value) {
+    if (typeof value === "string" && /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]+$/i.test(value)) {
+      return value;
+    }
+    return safeUrl(value);
+  }
+  /** The deeplink: https, or the app's own scheme — what "open the app I
+      already have" looks like on a phone. */
+  function safeDeeplink(value) {
+    if (typeof value === "string" && /^(xumm|xaman):[^\s"'<>]+$/i.test(value)) return value;
+    return safeUrl(value);
+  }
+
+  function xamanOf(o) {
+    var x = o && o.xaman;
+    if (!x || typeof x !== "object") return null;
+    var png = safeImage(x.qrPng);
+    var link = safeDeeplink(x.deeplink);
+    if (!png && !link) return null;
+    return {
+      png: png,
+      link: link,
+      uuid: typeof x.uuid === "string" ? x.uuid : "",
+      expiresAt: typeof x.expiresAt === "string" ? x.expiresAt : ""
+    };
+  }
+
+  /** An unknown network counts as testnet: that is the state where the warning
+      is needed, so silence is the wrong default. */
+  function onMainnet() { return !!(state && state.network === "mainnet"); }
+
+  function testnetWarning() {
+    var w = node("div", "netwarn");
+    w.appendChild(node("div", "netwarn__t", "before they approve"));
+    var p = node("p");
+    p.innerHTML =
+      "<b>Xaman opens on mainnet by default.</b> This badge is on <b>testnet</b>, so the attendee has to point " +
+      "Xaman at a testnet node first — <code>Settings → Advanced → Node</code> — or they will sign against a " +
+      "chain where this offer does not exist, and the accept fails after they have already approved it.";
+    w.appendChild(p);
+    return w;
+  }
+
+  function qrPlate(h) {
+    var fig = node("div", "qr");
+    var plate = node("div", "qr__plate");
+    plate.setAttribute("data-qr", h.png ? "load" : "fail");
+    if (h.png) {
+      var img = document.createElement("img");
+      img.setAttribute("decoding", "async");
+      // The one cross-origin image on this page. It carries no referrer.
+      img.setAttribute("referrerpolicy", "no-referrer");
+      img.alt = "QR code containing a Xaman sign request for this badge";
+      img.addEventListener("load", function () { plate.setAttribute("data-qr", "ok"); });
+      img.addEventListener("error", function () { plate.setAttribute("data-qr", "fail"); });
+      img.src = h.png;
+      plate.appendChild(img);
+      if (img.complete && img.naturalWidth) plate.setAttribute("data-qr", "ok");
+    }
+    plate.appendChild(node("div", "qr__ph", h.png ? "loading the code" : "no qr image"));
+    for (var i = 0; i < 4; i++) {
+      var b = node("span", "qr__b");
+      b.setAttribute("aria-hidden", "true");
+      plate.appendChild(b);
+    }
+    fig.appendChild(plate);
+    fig.appendChild(node("p", "qr__cap", "xaman sign request" + (h.uuid ? " · " + short(h.uuid, 8, 4) : "")));
+    return fig;
+  }
+
+  function handoffBlock(h) {
+    var box = node("div", "hand");
+    var hd = node("div", "hand__hd");
+    hd.appendChild(node("span", "label", "turn the screen around"));
+    if (h.expiresAt) {
+      var exp = node("span", "hand__exp", "code expires " + when(h.expiresAt));
+      exp.title = "Xaman payloads are short-lived on purpose: " + h.expiresAt;
+      hd.appendChild(exp);
+    }
+    box.appendChild(hd);
+
+    var bd = node("div", "hand__bd");
+    bd.appendChild(qrPlate(h));
+
+    var say = node("div", "hand__say");
+    var lead = node("p", "hand__lead");
+    lead.innerHTML = "<b>The attendee scans this with Xaman and approves it on their own phone.</b>";
+    say.appendChild(lead);
+
+    if (h.link) {
+      var row = node("div", "hand__link");
+      var a = node("a", "btn btn--go", "Open in Xaman");
+      a.href = h.link;
+      a.target = "_blank";
+      a.rel = "noopener noreferrer";
+      a.title = h.link;
+      row.appendChild(a);
+      row.appendChild(copyBtn(h.link));
+      say.appendChild(row);
+      var u = node("p", "hand__url");
+      u.appendChild(node("b", null, "or send them the link — "));
+      u.appendChild(document.createTextNode(h.link));
+      say.appendChild(u);
+    }
+
+    if (!onMainnet()) say.appendChild(testnetWarning());
+    bd.appendChild(say);
+    box.appendChild(bd);
+    return box;
+  }
+
+  /** The offer exists; the code does not. Say which, and say that it is fixable
+      without minting anything. */
+  function noHandoffBlock() {
+    var b = node("div", "errbox errbox--warn");
+    b.appendChild(node("div", "errbox__code", "NO_XAMAN_CODE"));
+    b.appendChild(node("div", "errbox__msg",
+      "There is nothing to show the attendee yet — this offer came back without a Xaman sign request. " +
+      "The badge is minted and the offer is open, so nothing is lost and nothing needs re-issuing."));
+    b.appendChild(node("div", "errbox__hint",
+      "Either this server has no Xaman credentials (XUMM_API_KEY / XUMM_API_SECRET) or Xaman did not answer. " +
+      "Ask for a code below — it hands back the same offer and mints nothing. Failing that, the attendee can " +
+      "accept the raw payload at the foot of this card in any XRPL wallet."));
+    return b;
+  }
+
   /* ---- waiting for the attendee's phone ------------------------------- */
   function paintWaiting(body, acts, opts) {
     opts = opts || {};
@@ -1820,6 +2432,11 @@ td .val{font-size:11.5px}
         : "Minted and offered. <b>Now it is the attendee’s turn</b> — they accept in their own wallet, on their own phone. The issuer never sees their key.")));
     body.appendChild(whoRow(addr));
 
+    /* The handoff comes before the progress bar on purpose: until the attendee
+       has scanned something there is nothing to wait for. */
+    var hand = xamanOf(opts);
+    body.appendChild(hand ? handoffBlock(hand) : noHandoffBlock());
+
     var wait = node("div", "wait");
     var wh = node("div", "wait__hd");
     wh.appendChild(node("h3", "wait__t", "Waiting for the attendee to confirm on their phone"));
@@ -1829,7 +2446,9 @@ td .val{font-size:11.5px}
     wait.appendChild(wh);
     var bar = node("div", "wait__bar"); bar.appendChild(node("i")); wait.appendChild(bar);
     var wb = node("div", "wait__bd");
-    wb.innerHTML = "Polling <code>GET /demo/lookup</code> every three seconds until <b>attended</b> flips to true. " +
+    wb.innerHTML = "Polling <code>GET /demo/lookup</code> against <b>" + esc(eventName()) +
+      "</b> <code>&middot; taxon " + esc(String(eventId() == null ? "—" : eventId())) +
+      "</code> every three seconds until <b>attended</b> flips to true. " +
       "Leave this card up and start the next person when you like — the session roster keeps watching.";
     wait.appendChild(wb);
     body.appendChild(wait);
@@ -1860,7 +2479,16 @@ td .val{font-size:11.5px}
 
     if (opts.raw) body.appendChild(rawPanel("Raw · POST /events/" + (eventId() != null ? eventId() : "{eventId}") + "/claims", opts.raw));
 
-    acts.appendChild(actBtn("act-primary", "Next attendee", "btn--go", reset));
+    if (hand) {
+      acts.appendChild(actBtn("act-primary", "Next attendee", "btn--go", reset));
+    } else {
+      /* Without a code there is nothing to hand over, so fetching one is the
+         next action — and it reuses the open offer rather than minting. */
+      var get = actBtn("act-primary", "Get a Xaman code · mints nothing", "btn--go", function () { issue(true); });
+      get.disabled = busyAction || eventId() == null;
+      acts.appendChild(get);
+      acts.appendChild(actBtn("act-next", "Next attendee", "btn--ghost", reset));
+    }
     acts.appendChild(node("span", "spacer"));
     acts.appendChild(actBtn("act-check", "Check now", "btn--tiny", function () { pollOnce(); }));
     acts.appendChild(actBtn("act-stopwatch", "Stop watching", "btn--tiny btn--ghost", function () {
@@ -1970,6 +2598,9 @@ td .val{font-size:11.5px}
       recordSession(addr, j.nftokenId, j.offerId, reused);
       lastClaim = {
         address: addr, nftokenId: j.nftokenId, offerId: j.offerId, reused: reused, raw: r,
+        /* The Xaman sign request, kept so a repaint (Refresh, a re-read, a
+           theme flip) never throws away the code the attendee is mid-scan of. */
+        xaman: (j.xaman && typeof j.xaman === "object") ? j.xaman : null,
         /* `pinnedOnDemand` is only sent when the per-attendee resolver produced
            the URI, so a boolean of EITHER value means this attendee's art is on
            IPFS; `true` additionally means it was uploaded during this claim,
@@ -1995,7 +2626,9 @@ td .val{font-size:11.5px}
 
   function startWatch(address) {
     stopWatch();
-    watch = { address: address, startedAt: Date.now(), timer: 0, tick: 0, polls: 0 };
+    // Pin the event at the moment watching starts: the answer to "have they
+    // signed" is only meaningful against the taxon the offer was made under.
+    watch = { address: address, eventId: eventId(), startedAt: Date.now(), timer: 0, tick: 0, polls: 0 };
     watch.tick = setInterval(function () {
       var el = $("wait-clock");
       if (!el || !watch) return;
@@ -2011,9 +2644,10 @@ td .val{font-size:11.5px}
   function pollOnce() {
     if (!watch) return;
     var address = watch.address;
+    var id = watch.eventId;
     watch.polls++;
     if (watch.polls > 400) { stopWatch(); return; }   // ~20 minutes of desk time
-    checkAttended(address);
+    checkAttended(address, id);
   }
 
   /**
@@ -2021,14 +2655,18 @@ td .val{font-size:11.5px}
    * sweep. Confirming a row the volunteer has already moved past is the whole
    * point of the sweep, so this never assumes `address === current`.
    */
-  function checkAttended(address) {
-    return call("GET", "/demo/lookup?address=" + encodeURIComponent(address)).then(function (r) {
+  function checkAttended(address, id) {
+    /* Roster rows carry the event they were issued under, so a desk that has
+       since switched events keeps confirming the earlier ones correctly. */
+    if (id === undefined) id = eventId();
+    return call("GET", lookupPath(address, id)).then(function (r) {
       if (!r.ok) return r;
       var j = r.json || {};
       if (j.attended === true) {
-        markConfirmed(address, j.attendedTxHash, j.claim && j.claim.nftokenId);
+        markConfirmed(address, j.attendedTxHash, j.claim && j.claim.nftokenId, id);
         if (watch && watch.address === address) stopWatch();
-        if (current === address) { lookRaw = r; paintConfirmed(j); }
+        // Only repaint the card if it is still showing this person AND this event.
+        if (current === address && id === eventId()) { lookRaw = r; paintConfirmed(j); }
       }
       return r;
     });
@@ -2039,20 +2677,24 @@ td .val{font-size:11.5px}
    * is still `offered` is re-read on a slow timer, so "Next attendee" never
    * abandons someone mid-signature.
    */
-  function pendingAddresses() {
+  function pendingRows() {
     var out = [];
     for (var i = 0; i < session.length && out.length < 12; i++) {
-      if (session[i].status !== "confirmed") out.push(session[i].address);
+      if (session[i].status !== "confirmed") out.push(session[i]);
     }
     return out;
   }
 
+  function rowEvent(row) {
+    return isTaxon(row && row.eventId) ? row.eventId : eventId();
+  }
+
   function sweepPending() {
     if (document.hidden) return;
-    var pending = pendingAddresses();
+    var pending = pendingRows();
     for (var i = 0; i < pending.length; i++) {
-      if (watch && watch.address === pending[i]) continue;   // the fast watcher has it
-      checkAttended(pending[i]);
+      if (watch && watch.address === pending[i].address) continue;   // the fast watcher has it
+      checkAttended(pending[i].address, rowEvent(pending[i]));
     }
   }
 
@@ -2071,15 +2713,22 @@ td .val{font-size:11.5px}
     try { sessionStorage.setItem(SESS_KEY, JSON.stringify(session)); } catch (e) { /* private mode */ }
   }
 
-  function findRow(address) {
-    for (var i = 0; i < session.length; i++) if (session[i].address === address) return session[i];
+  /* Keyed on (address, event), not address: one person can hold a badge from
+     last night's event and be standing here for tonight's, and those are two
+     rows with two different verdicts. Rows written before the desk knew about
+     events have no `eventId` and fall back to the current one. */
+  function findRow(address, id) {
+    if (id === undefined) id = eventId();
+    for (var i = 0; i < session.length; i++) {
+      if (session[i].address === address && rowEvent(session[i]) === id) return session[i];
+    }
     return null;
   }
 
   function recordSession(address, nftokenId, offerId, reused) {
     var row = findRow(address);
     if (!row) {
-      row = { address: address, nftokenId: nftokenId || "", offerId: offerId || "", status: "offered", txHash: "", at: Date.now(), fresh: true };
+      row = { address: address, eventId: eventId(), nftokenId: nftokenId || "", offerId: offerId || "", status: "offered", txHash: "", at: Date.now(), fresh: true };
       session.push(row);
     } else {
       if (nftokenId) row.nftokenId = nftokenId;
@@ -2092,10 +2741,11 @@ td .val{font-size:11.5px}
     paintTally();
   }
 
-  function markConfirmed(address, txHash, nftokenId) {
-    var row = findRow(address);
+  function markConfirmed(address, txHash, nftokenId, id) {
+    if (id === undefined) id = eventId();
+    var row = findRow(address, id);
     if (!row) {
-      row = { address: address, nftokenId: nftokenId || "", offerId: "", status: "confirmed", txHash: txHash || "", at: Date.now() };
+      row = { address: address, eventId: id, nftokenId: nftokenId || "", offerId: "", status: "confirmed", txHash: txHash || "", at: Date.now() };
       session.push(row);
     } else {
       row.status = "confirmed";
@@ -2123,9 +2773,12 @@ td .val{font-size:11.5px}
       if (s.fresh) { tr.className = "is-new"; s.fresh = false; }
       tr.appendChild(node("td", null, String(i + 1)));
 
+      var rowEv = rowEvent(s);
+      tr.title = "Event " + eventName(rowEv) + " · taxon " + (rowEv == null ? "—" : rowEv);
+
       if (withArt) {
         var tdArt = node("td", "col-art");
-        var thumb = artThumb(s.address);
+        var thumb = artThumb(s.address, rowEv);
         if (thumb) tdArt.appendChild(thumb);
         tr.appendChild(tdArt);
       }
@@ -2135,6 +2788,13 @@ td .val{font-size:11.5px}
       a.title = s.address;
       tdA.appendChild(a);
       tdA.appendChild(copyBtn(s.address));
+      /* A row from an event this desk is no longer on must say so, or the
+         roster silently claims credit under the wrong taxon. */
+      if (rowEv !== eventId()) {
+        var tag = node("span", "pill pill--offered", String(rowEv == null ? "?" : rowEv));
+        tag.title = "Issued under " + eventName(rowEv) + " — not the event now selected";
+        tdA.appendChild(tag);
+      }
       tr.appendChild(tdA);
 
       var tdN = node("td");
@@ -2166,7 +2826,7 @@ td .val{font-size:11.5px}
   }
 
   function recheckPending() {
-    var pending = pendingAddresses();
+    var pending = pendingRows();
     var btn = $("btn-recheck");
     if (!pending.length) {
       btn.textContent = "nothing pending";
@@ -2180,7 +2840,9 @@ td .val{font-size:11.5px}
       left--;
       if (left === 0) { btn.disabled = false; btn.removeAttribute("aria-busy"); }
     };
-    for (var k = 0; k < pending.length; k++) checkAttended(pending[k]).then(done, done);
+    for (var k = 0; k < pending.length; k++) {
+      checkAttended(pending[k].address, rowEvent(pending[k])).then(done, done);
+    }
   }
 
   /* =====================================================================
@@ -2294,11 +2956,19 @@ td .val{font-size:11.5px}
     else startCamera();
   });
   $("btn-next").addEventListener("click", reset);
-  $("btn-state").addEventListener("click", function () { loadState(); });
-  $("bn-state-retry").addEventListener("click", function () { loadState(); });
+  $("btn-state").addEventListener("click", function () { loadState(); loadEvents(); });
+  $("bn-state-retry").addEventListener("click", function () { loadState(); loadEvents(); });
   $("bn-offline-retry").addEventListener("click", function () {
     loadState();
+    loadEvents();
     if (current) lookup(current);
+  });
+  $("ev-pick").addEventListener("change", function () {
+    var v = $("ev-pick").value;
+    if (v === "") return;
+    var n = Number(v);
+    if (!isTaxon(n)) return;
+    chooseEvent(n);
   });
   $("btn-chain").addEventListener("click", readChain);
   $("btn-recheck").addEventListener("click", recheckPending);
@@ -2361,6 +3031,11 @@ td .val{font-size:11.5px}
       if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
     } catch (e) { /* private mode */ }
 
+    // The remembered event must be in place before the first lookup can fire,
+    // so it is read from storage rather than waited on from the network.
+    picked = readPicked();
+    paintEventPicker();
+
     measureRail();
     loadSession();
     paintDocket();
@@ -2385,6 +3060,7 @@ td .val{font-size:11.5px}
       measureRail();
       if ($("bay").getAttribute("data-scan") === "off") $("addr").focus();
     });
+    loadEvents().then(measureRail);
   })();
 })();
 </script>

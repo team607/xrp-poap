@@ -464,6 +464,7 @@ async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolve
   // resolver that now holds it.
   return new PinningBadgeUriResolver({
     pinner: new PinataPinner({ jwt, gateway: config.pinata.gateway }),
+    imageUriMode: config.badgeImageUriMode,
     // Same source as the demo's preview label. If these two ever diverge the
     // preview a page draws stops matching the bytes on IPFS.
     ...(config.eventName ? { eventName: config.eventName } : {}),
@@ -598,7 +599,17 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   const { apiKey, apiSecret } = config.xumm;
   const xamanConfigured = Boolean(apiKey && apiSecret);
   const xaman: XamanService =
-    apiKey && apiSecret ? new XummXamanService({ apiKey, apiSecret }) : new NullXamanService();
+    apiKey && apiSecret
+      ? // Pin the payload to our network. Without it Xaman signs against
+        // whatever the attendee's app is set to, and a testnet offer fails
+        // with "unable to find the offer object".
+        new XummXamanService({
+          apiKey,
+          apiSecret,
+          network: config.network,
+          ...(config.sourceTag === undefined ? {} : { sourceTag: config.sourceTag }),
+        })
+      : new NullXamanService();
 
   // Same keys, different payload. The claim flow can survive without Xaman —
   // the accept payload can be signed in any wallet — but registration cannot:

@@ -30,6 +30,8 @@ import {
 } from "../types.js";
 import { assertValidAddress, assertValidTaxon } from "../xrpl/encoding.js";
 import { renderBadgeArt } from "./badge-art.js";
+import { warmGateways } from "./pinata.js";
+import { svgToPng } from "./rasterise.js";
 import { publishBadge } from "./publish.js";
 
 // ---------------------------------------------------------------------------
@@ -277,6 +279,13 @@ export interface PinningBadgeUriResolverOptions {
    * false: its CIDs are fake and caching them would poison the real run.
    */
   persist?: boolean;
+  /**
+   * What the metadata's `image` points at. Defaults to "https" — the one that
+   * actually renders, because a freshly pinned CID is unfindable on public
+   * gateways for hours and the choice is permanent per badge. See
+   * AppConfig.badgeImageUriMode.
+   */
+  imageUriMode?: "ipfs" | "https";
   /** Called once per address that was actually pinned. Never on a cache hit. */
   onPin?: (address: string, uri: BadgeUri) => void;
   onWarn?: ManifestWarn;
@@ -380,11 +389,18 @@ export class PinningBadgeUriResolver implements BadgeUriResolver {
       { trait_type: TRAIT_ART_DENSITY, value: art.traits.density },
     ];
 
-    const published = await publishBadge(this.#pinner, {
+    // PNG, not the SVG we just generated. Xaman renders an SVG badge as a
+      // blank tile, and NFTokenMint's URI cannot be edited afterwards, so a
+      // format a wallet will not draw is a permanent defect. The SVG stays the
+      // source of truth and is what /demo/art serves to our own pages.
+      const png = svgToPng(art.svg);
+
+      const published = await publishBadge(this.#pinner, {
+        imageUriMode: this.#options.imageUriMode ?? "https",
       image: {
-        data: Buffer.from(art.svg, "utf8"),
-        filename: `badge-${eventId}-${address}.svg`,
-        contentType: "image/svg+xml",
+        data: png,
+        filename: `badge-${eventId}-${address}.png`,
+        contentType: "image/png",
       },
       metadata: {
         name: `${label} · ${short}`,
@@ -400,6 +416,22 @@ export class PinningBadgeUriResolver implements BadgeUriResolver {
         extraAttributes,
       },
     });
+
+    // Start propagation now rather than when a wallet first asks for it. A
+    // freshly pinned CID 504s on public gateways for hours, and a wallet
+    // resolves ipfs:// through its own gateway, not ours.
+    //
+    // BOTH CIDs, and the image especially. Warming only the metadata leaves a
+    // wallet able to read the JSON and then fail on the picture it points at —
+    // measured exactly that way: metadata 200 from ipfs.io in 0.13s while the
+    // image still 504'd. The image is also the larger object, so it is the one
+    // that needs the head start.
+    //
+    // Fire and forget: warming is best effort and must never fail a claim.
+    for (const uriToWarm of [published.imageUri, published.metadataUri]) {
+      const cid = uriToWarm.replace(/^ipfs:\/\//, "").split("/")[0];
+      if (cid) void warmGateways(cid).catch(() => undefined);
+    }
 
     const uri: BadgeUri = {
       metadataUri: published.metadataUri,

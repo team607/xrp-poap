@@ -296,3 +296,67 @@ export async function checkGatewayResolves(
     return { ok: false, error: describeCause(cause) };
   }
 }
+
+/**
+ * Public gateways that must be able to serve a CID before a wallet can render
+ * it. Requesting a CID from one of these is what makes it discoverable: the
+ * gateway performs a DHT lookup, finds Pinata's node, and caches the result.
+ */
+const WARM_GATEWAYS = [
+  "https://ipfs.io/ipfs/",
+  "https://dweb.link/ipfs/",
+] as const;
+
+export interface WarmResult {
+  cid: string;
+  /** Gateways that served the content within the timeout. */
+  reachable: string[];
+  /** Gateways that did not answer in time. Normal for a fresh pin. */
+  pending: string[];
+}
+
+/**
+ * Nudge public gateways into discovering a freshly pinned CID.
+ *
+ * MEASURED, AND THE REASON THIS EXISTS: a CID pinned to Pinata is served by
+ * Pinata's own gateway within seconds, but public gateways 504 on it for
+ * HOURS — a CID pinned hours earlier answered from ipfs.io in 0.9s while one
+ * pinned minutes earlier timed out at 28s. Wallets resolve `ipfs://` through
+ * their own gateway, not ours, so a badge minted against a fresh CID renders
+ * as a blank tile until propagation catches up. Since NFTokenMint's URI is
+ * immutable, that window is the difference between a badge that works and one
+ * that is permanently broken on arrival.
+ *
+ * A request is enough to start the lookup even when it times out, so this is
+ * fire-and-forget and never throws: warming is best effort, and a pin that has
+ * not propagated yet is not a failure to pin.
+ *
+ * The real remedy is lead time — pin the roster before the event with
+ * `npm run prepin`, not at the desk.
+ */
+export async function warmGateways(
+  cid: string,
+  opts: { fetchImpl?: typeof fetch; timeoutMs?: number } = {},
+): Promise<WarmResult> {
+  const doFetch = opts.fetchImpl ?? fetch;
+  const timeoutMs = opts.timeoutMs ?? 8_000;
+  const reachable: string[] = [];
+  const pending: string[] = [];
+
+  await Promise.all(
+    WARM_GATEWAYS.map(async (base) => {
+      const host = base.split("/")[2] ?? base;
+      try {
+        const res = await doFetch(`${base}${cid}`, {
+          method: "GET",
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+        (res.ok ? reachable : pending).push(host);
+      } catch {
+        pending.push(host);
+      }
+    }),
+  );
+
+  return { cid, reachable, pending };
+}

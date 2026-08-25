@@ -8,7 +8,12 @@
 import { isValidClassicAddress } from "xrpl";
 import { z } from "zod";
 import { ValidationError } from "../errors.js";
-import { MAX_TAXON, type AcceptOfferPayload, type EventId } from "../types.js";
+import {
+  MAX_TAXON,
+  type AcceptOfferPayload,
+  type EventId,
+  type NetworkName,
+} from "../types.js";
 
 /**
  * Minutes the attendee has to approve the request in Xaman. Long enough to dig
@@ -28,6 +33,8 @@ export interface ClaimSignRequestParams {
   offerId: string;
   attendeeAddress: string;
   eventId: EventId;
+  /** Attribution tag stamped on the transaction the attendee signs. */
+  sourceTag?: number;
   /** Shown to the attendee in the Xaman instruction line. */
   badgeName?: string;
   returnUrl?: { app?: string; web?: string };
@@ -41,6 +48,16 @@ export interface XamanClaimSignRequest {
     submit: true;
     expire: number;
     return_url?: { app?: string; web?: string };
+    /**
+     * Pins the payload to a network — "MAINNET" | "TESTNET" | "DEVNET".
+     *
+     * WITHOUT THIS A TESTNET PAYLOAD IS SIGNED AGAINST MAINNET. Xaman uses
+     * whatever network the signer's app is set to, which is mainnet for
+     * almost everyone, so an NFTokenAcceptOffer for a testnet offer fails
+     * with "unable to find the offer object" — a message that reads like a
+     * broken offer rather than a missing field on the payload.
+     */
+    force_network?: string;
   };
   custom_meta: {
     identifier: string;
@@ -68,20 +85,29 @@ function assertEventId(eventId: EventId): void {
 }
 
 /**
- * The attendee-side transaction from brief 5.3. Exactly three fields.
+ * The attendee-side transaction. Three fields, plus SourceTag when configured.
  *
- * We never add fields the attendee did not agree to. No Fee, no Memos, no
- * NFTokenBrokerFee, no Destination override — anything extra here is something
- * a person is signing without having been shown it. The shape is pinned by
- * AcceptOfferPayload in src/types.ts, which is the same contract
- * buildAcceptOfferPayload() in src/xrpl/offers.ts returns, so the two builders
- * cannot drift apart.
+ * No Fee, no Memos, no NFTokenBrokerFee, no Destination override — anything
+ * beyond this is something a person signs without having been shown it.
+ *
+ * SourceTag is the single exception and the bar it clears is worth stating,
+ * because it is the bar anything else would have to clear too: it moves no
+ * funds, names no counterparty, changes no behaviour, and Xaman renders the
+ * whole transaction to the attendee before they approve it. It is a label
+ * saying which app produced the transaction. Nothing that fails those tests
+ * belongs here.
+ *
+ * The shape is pinned by AcceptOfferPayload in src/types.ts, which is the same
+ * contract buildAcceptOfferPayload() in src/xrpl/offers.ts returns, so the two
+ * builders cannot drift apart.
  */
 export function buildAcceptOfferTxjson(params: {
   offerId: string;
   attendeeAddress: string;
+  /** Attribution tag. Omitted entirely when unset — never sent as 0. */
+  sourceTag?: number;
 }): AcceptOfferPayload {
-  const { offerId, attendeeAddress } = params;
+  const { offerId, attendeeAddress, sourceTag } = params;
 
   if (!isValidClassicAddress(attendeeAddress)) {
     throw new ValidationError("INVALID_ADDRESS", `Not a valid XRPL classic address: ${attendeeAddress}`, {
@@ -96,6 +122,7 @@ export function buildAcceptOfferTxjson(params: {
     TransactionType: "NFTokenAcceptOffer",
     Account: attendeeAddress,
     NFTokenSellOffer: offerId,
+    ...(sourceTag === undefined ? {} : { SourceTag: sourceTag }),
   };
 }
 
@@ -107,10 +134,14 @@ export function buildAcceptOfferTxjson(params: {
  * caller, so it is a hint and never evidence. See src/api/routes/xaman-webhook.ts.
  */
 export function buildClaimSignRequest(params: ClaimSignRequestParams): XamanClaimSignRequest {
-  const { offerId, attendeeAddress, eventId, badgeName, returnUrl } = params;
+  const { offerId, attendeeAddress, eventId, badgeName, returnUrl, sourceTag } = params;
   assertEventId(eventId);
 
-  const txjson = buildAcceptOfferTxjson({ offerId, attendeeAddress });
+  const txjson = buildAcceptOfferTxjson({
+    offerId,
+    attendeeAddress,
+    ...(sourceTag === undefined ? {} : { sourceTag }),
+  });
 
   const request: XamanClaimSignRequest = {
     txjson,
@@ -278,4 +309,16 @@ export function parseXamanClaimMeta(body: unknown): XamanClaimHints {
   }
 
   return hints;
+}
+
+/** Xaman's `force_network` string for one of our networks. */
+export function xamanForceNetwork(network: NetworkName): string {
+  switch (network) {
+    case "mainnet":
+      return "MAINNET";
+    case "devnet":
+      return "DEVNET";
+    default:
+      return "TESTNET";
+  }
 }

@@ -21,6 +21,22 @@ export type PublishBadgeImage =
 
 export interface PublishBadgeInput {
   image: PublishBadgeImage;
+  /**
+   * What the metadata's `image` field points at.
+   *
+   * "ipfs" is the purist answer — content-addressed, no host to trust. It is
+   * also the one that fails on arrival: a freshly pinned CID is unfindable on
+   * public gateways for hours, and a wallet resolves ipfs:// through its own
+   * gateway, not ours. Measured: a 676-byte metadata JSON propagated to
+   * ipfs.io in seconds while its 313 KB PNG still 504'd long after.
+   *
+   * "https" points at the pinning service's gateway, which serves the bytes
+   * immediately. The trade is real and permanent — the metadata CID is
+   * embedded in an immutable NFTokenMint URI, so this choice cannot be changed
+   * for a badge once minted. Pick "ipfs" when you can pre-pin well ahead of
+   * the event; pick "https" when a badge must render the moment it lands.
+   */
+  imageUriMode?: "ipfs" | "https";
   /** Everything buildBadgeMetadata needs except the image URI, which we derive. */
   metadata: Omit<BuildBadgeMetadataInput, "imageUri">;
 }
@@ -75,7 +91,7 @@ export async function publishBadge(
     }
   } else {
     const imagePin = await pinner.pinFile(input.image);
-    imageUri = imagePin.uri;
+    imageUri = input.imageUriMode === "https" ? imagePin.gatewayUrl : imagePin.uri;
   }
 
   // 2. Build, 3. validate. Never pin a document we would reject on the way back.

@@ -538,7 +538,11 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
         // client retried. Hand back the offer that already exists. Minting a
         // second badge here is precisely the bug.
         if (held?.status === "pending" && held.offerId) {
-          const accept = buildAcceptOfferTxjson({ offerId: held.offerId, attendeeAddress: address });
+          const accept = buildAcceptOfferTxjson({
+            offerId: held.offerId,
+            attendeeAddress: address,
+            ...(deps.config.sourceTag === undefined ? {} : { sourceTag: deps.config.sourceTag }),
+          });
           const xaman = await xamanHandles(deps, request.log, {
             offerId: held.offerId,
             address,
@@ -673,7 +677,11 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
       // 5. What the attendee signs. Exactly three fields, nothing they did not
       //    agree to. Outside the try: the spend is done and the slot must
       //    survive whatever happens from here.
-      const accept = buildAcceptOfferTxjson({ offerId, attendeeAddress: address });
+      const accept = buildAcceptOfferTxjson({
+        offerId,
+        attendeeAddress: address,
+        ...(deps.config.sourceTag === undefined ? {} : { sourceTag: deps.config.sourceTag }),
+      });
 
       const xaman = await xamanHandles(deps, request.log, {
         offerId,

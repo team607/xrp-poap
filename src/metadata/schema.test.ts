@@ -94,33 +94,36 @@ describe("buildBadgeMetadata", () => {
 });
 
 describe("assertValidBadgeMetadata", () => {
-  it("rejects a non-ipfs image uri", () => {
-    const metadata = buildBadgeMetadata({ ...base, imageUri: "https://cdn.example.com/badge.png" });
-    expect(() => assertValidBadgeMetadata(metadata)).toThrow(MetadataError);
-    expect(isValidBadgeMetadata(metadata)).toBe(false);
+  it("accepts an https image uri, because a fresh ipfs CID does not render", () => {
+    // Deliberate change. A freshly pinned CID is unfindable on public
+    // gateways for hours, and a wallet resolves ipfs:// through its own
+    // gateway. NFTokenMint's URI is immutable, so a badge minted against
+    // content nobody can fetch stays broken. publishBadge's `imageUriMode`
+    // chooses; the schema allows both.
+    const ok = buildBadgeMetadata({ ...base, imageUri: "https://cdn.example.com/badge.png" });
+    expect(() => assertValidBadgeMetadata(ok)).not.toThrow();
+    expect(isValidBadgeMetadata(ok)).toBe(true);
+  });
 
-    try {
-      assertValidBadgeMetadata(metadata);
-      expect.unreachable("should have thrown");
-    } catch (err) {
-      const error = err as XrplLayerError;
-      expect(error).toBeInstanceOf(XrplLayerError);
-      expect(error.code).toBe("METADATA_INVALID");
-      const issues = error.details?.["issues"] as { path: string; message: string }[];
-      expect(issues).toHaveLength(1);
-      expect(issues[0]?.path).toBe("image");
-      expect(issues[0]?.message).toMatch(/ipfs/i);
-      // Details must survive a round trip: they get logged by the caller.
-      expect(JSON.parse(JSON.stringify(error.details))).toEqual({ issues });
+  it("still rejects any scheme that is neither ipfs:// nor https://", () => {
+    // http:// is a downgrade for badge art; data:/javascript: are not images.
+    for (const bad of [
+      "http://cdn.example.com/badge.png",
+      "data:image/png;base64,AAAA",
+      "javascript:alert(1)",
+      "badge.png",
+      "",
+    ]) {
+      expect(isValidBadgeMetadata(buildBadgeMetadata({ ...base, imageUri: bad })), bad).toBe(false);
     }
   });
 
-  it("rejects an http image uri that merely contains ipfs", () => {
+  it("accepts a pinning-gateway https url — that is the reliable path", () => {
     const metadata = buildBadgeMetadata({
       ...base,
       imageUri: "https://gateway.pinata.cloud/ipfs/bafyfake",
     });
-    expect(() => assertValidBadgeMetadata(metadata)).toThrow(/ipfs/i);
+    expect(() => assertValidBadgeMetadata(metadata)).not.toThrow();
   });
 
   it("reports every issue at once", () => {

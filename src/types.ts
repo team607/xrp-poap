@@ -111,6 +111,17 @@ export interface AcceptOfferPayload {
   TransactionType: "NFTokenAcceptOffer";
   Account: string;
   NFTokenSellOffer: string;
+  /**
+   * Attribution only. Present when SOURCE_TAG is configured.
+   *
+   * This is the one field we add beyond what the attendee is strictly
+   * agreeing to, and it earns its place: it moves no funds, names no new
+   * counterparty and changes no behaviour — it marks the transaction as
+   * originating from this app. Xaman shows the attendee the whole
+   * transaction before they sign, so nothing here is hidden from them.
+   * Nothing else may be added on that reasoning.
+   */
+  SourceTag?: number;
 }
 
 export interface BurnResult {
