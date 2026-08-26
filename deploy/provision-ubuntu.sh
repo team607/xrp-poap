@@ -43,7 +43,16 @@ set -euo pipefail
 #   DOMAIN=badges.example.com APP_USER=poap bash provision-ubuntu.sh
 # ---------------------------------------------------------------------------
 
+# The CANONICAL hostname. Every badge ever minted points at this one, in a
+# field that cannot be edited, so it is the domain you must still be paying for
+# in ten years' time.
 DOMAIN="${DOMAIN:-}"
+# Extra hostnames that should also serve the site, space or comma separated:
+#   DOMAIN=poap.live ALT_DOMAINS=poap.feooh.ca bash provision-ubuntu.sh
+# They serve the same app and share the certificate. They are NOT badge origins:
+# a badge fetched through one of these still carries the canonical URL, because
+# there can only be one and it is already on the ledger.
+ALT_DOMAINS="${ALT_DOMAINS:-}"
 REPO="${REPO:-git@github.com:team607/xrp-poap.git}"
 BRANCH="${BRANCH:-main}"
 APP_USER="${APP_USER:-poap}"
@@ -68,9 +77,16 @@ die()  { warn "$*"; exit 1; }
 [ "$(id -u)" -eq 0 ] || die "Run this as root: sudo bash provision-ubuntu.sh"
 [ -n "$DOMAIN" ] || die "Set DOMAIN. e.g.  DOMAIN=badges.example.com bash provision-ubuntu.sh"
 
-case "$DOMAIN" in
-  *[!a-zA-Z0-9.-]*|-*|*.|.*) die "DOMAIN '$DOMAIN' does not look like a hostname." ;;
-esac
+ALL_DOMAINS="$DOMAIN ${ALT_DOMAINS//,/ }"
+for d in $ALL_DOMAINS; do
+  case "$d" in
+    *[!a-zA-Z0-9.-]*|-*|*.|.*) die "'$d' does not look like a hostname." ;;
+  esac
+done
+
+# -d for each name, so one certificate covers the lot.
+CERT_ARGS=""
+for d in $ALL_DOMAINS; do CERT_ARGS="$CERT_ARGS -d $d"; done
 
 if [ -r /etc/os-release ]; then
   . /etc/os-release
@@ -78,6 +94,7 @@ if [ -r /etc/os-release ]; then
 fi
 
 say "Provisioning $DOMAIN"
+[ -n "$ALT_DOMAINS" ] && info "also serving  ${ALT_DOMAINS//,/ }"
 info "app user   $APP_USER"
 info "app dir    $APP_DIR"
 info "database   $DB_NAME"
@@ -401,7 +418,7 @@ cat > "/etc/nginx/sites-available/$SERVICE" <<EOF
 server {
     listen 80;
     listen [::]:80;
-    server_name $DOMAIN;
+    server_name $ALL_DOMAINS;
 
     # Badge art is rasterised per request and deterministic forever, so let
     # nginx keep it. Everything else is per-attendee and must not be cached.
@@ -456,7 +473,7 @@ cat <<EOF
 
  1. Point DNS at this box, then get a certificate:
 
-      certbot --nginx -d $DOMAIN
+      certbot --nginx$CERT_ARGS
 
     Do this BEFORE minting anything. Every badge points at https://$DOMAIN
     forever, so that name has to work forever.
