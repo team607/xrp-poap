@@ -381,10 +381,6 @@ html.dev .wrap{padding-top:12px}
 /* ---- the form ------------------------------------------------------------- */
 .field{margin-top:18px}
 .field > .label{display:flex; align-items:baseline; gap:8px; margin-bottom:7px}
-.field .opt{
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; color:var(--signal);
-  border:1px solid var(--signal-2); border-radius:2px; padding:1px 5px; font-weight:700;
-}
 /* 16px is not a taste decision: anything smaller and iOS Safari zooms the page
    on focus, which on this form means the dock button scrolls out of reach. */
 .field input{
@@ -399,11 +395,6 @@ html.dev .wrap{padding-top:12px}
 .field__why b{color:var(--ink-2); font-weight:600}
 .field__count{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.12em; color:var(--ink-3); margin-left:auto}
 .field__count.warn{color:var(--signal)}
-.nudge{
-  margin-top:11px; font-size:14px; color:var(--ink-2);
-  border-left:2px solid var(--signal); background:var(--signal-wash); padding:10px 12px; border-radius:0 2px 2px 0;
-}
-.nudge b{color:var(--ink); font-weight:600}
 
 /* ---- notes, rows, links, errors — the ticket's vocabulary ----------------- */
 .note{
@@ -855,26 +846,26 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
         <div class="field">
           <label class="label" for="dn"><span>the name on the list</span><span class="field__count" id="dn-count"></span></label>
           <input id="dn" name="name" type="text" maxlength="120" autocomplete="name"
-                 spellcheck="false" placeholder="Ada Lovelace">
+                 spellcheck="false" placeholder="Ada Lovelace" required aria-required="true">
           <p class="field__why">
             So whoever is on the door can find you by name, rather than reading a long wallet
-            address off a screen. <b>Not required</b> — it just makes arriving quicker.
+            address off a screen.
           </p>
         </div>
 
         <div class="field">
-          <label class="label" for="em"><span>email</span><span class="opt">optional</span></label>
+          <label class="label" for="em"><span>email</span></label>
           <input id="em" name="email" type="email" maxlength="254" autocomplete="email"
-                 inputmode="email" spellcheck="false" autocapitalize="off" placeholder="you@example.com">
+                 inputmode="email" spellcheck="false" autocapitalize="off"
+                 placeholder="you@example.com" required aria-required="true">
           <p class="field__why">
-            <b>Genuinely optional — leave it blank and nothing about your badge changes.</b> Its only
-            use is one note from the organiser after the event, with a link to your badge. It is
-            never shown publicly and never printed on the badge itself.
+            So the organiser can reach you about the event, and tell you when your badge is
+            waiting. It is never shown publicly, never printed on the badge, and never passed
+            to anyone else.
           </p>
         </div>
       </form>
 
-      <div id="details-nudge"></div>
       <div id="details-err"></div>
     </div>
 
@@ -1038,7 +1029,6 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
     polling: false,      /* one request in flight at a time */
     pollFails: 0,
     busy: false,
-    nudged: false,       /* the empty-name nudge has been shown once */
     coarse: false        /* pointer:coarse — decides deeplink-first vs QR-first */
   };
 
@@ -1065,7 +1055,6 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
     rememberRegistration(null);
     app.registration = null;
     app.pollFails = 0;
-    app.nudged = false;
   }
 
   /* ---- tiny DOM helpers, same shapes as the attendee pass ---- */
@@ -1798,6 +1787,13 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
     if (!app.coarse) { var dn = $("dn"); if (dn) dn.focus(); }
   }
 
+  /** Put the cursor where the problem is. A message alone makes them hunt. */
+  function focusField(id) {
+    var el = $(id);
+    if (!el) return;
+    try { el.focus(); el.select(); } catch (e) { /* not focusable */ }
+  }
+
   function paintNameCount() {
     var dn = $("dn"), c = $("dn-count");
     if (!dn || !c) return;
@@ -1813,28 +1809,33 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
     var name = ($("dn").value || "").trim().slice(0, MAX_NAME);
     var email = ($("em").value || "").trim();
 
-    /* "Required-ish": the server does not need a name, so this page does not
-       pretend it does. It asks once, then gets out of the way. */
-    if (!name && !app.nudged) {
-      app.nudged = true;
-      var host = $("details-nudge");
-      clear(host);
-      var n = node("p", "nudge");
-      n.appendChild(node("b", null, "No name?"));
-      n.appendChild(document.createTextNode(" Then finding you on the door means reading a long wallet address off a screen. Add one, or press again to carry on without it."));
-      host.appendChild(n);
-      paintDock();
+    /* Both fields are required now. Checked here to save a round trip and to
+       put the cursor in the offending field; the server's schema is still the
+       one that decides, and nothing is refused here that it would accept. */
+    if (!name) {
+      showLocalError("details-err", "CHECK_THE_NAME",
+        "We need a name for the list",
+        "Whoever is on the door looks you up by name \u2014 without one, finding you means reading a long wallet address off a screen.",
+        "Whatever you are called on the day is fine. It does not have to match anything.");
+      focusField("dn");
       return;
     }
-    clear($("details-nudge"));
 
-    /* Checked here only to save a round trip; the server's schema is the one
-       that decides. Nothing is blocked that the server would have accepted. */
-    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (!email) {
+      showLocalError("details-err", "CHECK_THE_EMAIL",
+        "We need an email address",
+        "It is how the organiser reaches you about the event, and how you are told your badge is waiting.",
+        "It is never shown publicly and never printed on the badge.");
+      focusField("em");
+      return;
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       showLocalError("details-err", "CHECK_THE_EMAIL",
         "That email does not look finished",
-        "“" + email + "” is not quite an address — it needs something either side of the @, and a dot in the part after it.",
-        "Fix it, or clear the field — it is optional, and leaving it empty changes nothing about your badge.");
+        "\u201c" + email + "\u201d is not quite an address \u2014 it needs something either side of the @, and a dot in the part after it.",
+        "Fix the typo and press again.");
+      focusField("em");
       return;
     }
 

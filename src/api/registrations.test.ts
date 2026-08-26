@@ -822,6 +822,20 @@ describe("GET /api/registrations/signin/:uuid", () => {
 // Finishing the proof — the address rule
 // ---------------------------------------------------------------------------
 
+/**
+ * A complete registration body.
+ *
+ * displayName and email are required, and almost none of these tests are about
+ * that — they are about replay, proof, and what the store ends up holding. The
+ * override wins, so a test that IS about a bad field still says so inline.
+ */
+const regBody = (over: Record<string, unknown> = {}) => ({
+  signinUuid: UUID_A,
+  displayName: "Ada",
+  email: "ada@example.com",
+  ...over,
+});
+
 describe("POST /api/events/:eventId/registrations", () => {
   let h: Harness;
 
@@ -834,7 +848,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A, displayName: "Ada", email: "ada@example.com" },
+      payload: regBody({ signinUuid: UUID_A, displayName: "Ada", email: "ada@example.com" }),
     });
 
     expect(res.statusCode).toBe(201);
@@ -855,7 +869,7 @@ describe("POST /api/events/:eventId/registrations", () => {
       url: `/api/events/${OPEN_EVENT}/registrations`,
       // OTHER is a perfectly valid classic address. It is simply not the one
       // that approved the payload, so it must not appear anywhere.
-      payload: { signinUuid: UUID_A, address: OTHER, displayName: "Mallory" },
+      payload: regBody({ signinUuid: UUID_A, address: OTHER, displayName: "Mallory" }),
     });
 
     expect(res.statusCode).toBe(201);
@@ -870,7 +884,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_B, address: OTHER },
+      payload: regBody({ signinUuid: UUID_B, address: OTHER }),
     });
 
     expect(res.statusCode).toBe(400);
@@ -883,7 +897,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_B },
+      payload: regBody({ signinUuid: UUID_B }),
     });
 
     expect(res.statusCode).toBe(400);
@@ -901,7 +915,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_B },
+      payload: regBody({ signinUuid: UUID_B }),
     });
 
     expect(res.statusCode).toBe(400);
@@ -913,35 +927,37 @@ describe("POST /api/events/:eventId/registrations", () => {
     const first = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A, displayName: "Ada" },
+      payload: regBody({ signinUuid: UUID_A, displayName: "Ada" }),
     });
     // A signed payload stays signed, so Xaman would happily answer again.
     const replay = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A, displayName: "Mallory", email: "mallory@example.com" },
+      payload: regBody({ signinUuid: UUID_A, displayName: "Mallory", email: "mallory@example.com" }),
     });
 
     expect(first.statusCode).toBe(201);
     expect(replay.statusCode).toBe(409);
     expect(replay.json().error.message).toMatch(/already been used/i);
     expect(h.registrations.rows).toHaveLength(1);
-    // The replay did not overwrite the name or attach an email either.
-    expect(h.registrations.rows[0]).toMatchObject({ displayName: "Ada" });
-    expect(h.registrations.rows[0]?.email ?? null).toBeNull();
+    // The replay did not overwrite either field with Mallory's.
+    expect(h.registrations.rows[0]).toMatchObject({
+      displayName: "Ada",
+      email: "ada@example.com",
+    });
   });
 
   it("refuses a replay across events too", async () => {
     await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
 
     const elsewhere = await h.app.inject({
       method: "POST",
       url: `/api/events/${LIVE_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
 
     expect(elsewhere.statusCode).toBe(409);
@@ -961,7 +977,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
 
     expect(res.statusCode).toBe(409);
@@ -972,7 +988,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A, displayName: "Ada", email: "ada@example.com" },
+      payload: regBody({ signinUuid: UUID_A, displayName: "Ada", email: "ada@example.com" }),
     });
 
     // Same person, same wallet, a NEW sign-in: they lost the confirmation link
@@ -981,7 +997,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const again = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_B },
+      payload: regBody({ signinUuid: UUID_B }),
     });
 
     expect(again.statusCode).toBe(409);
@@ -998,12 +1014,12 @@ describe("POST /api/events/:eventId/registrations", () => {
     const failed = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
     const retry = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
 
     expect(failed.statusCode).toBe(502);
@@ -1015,7 +1031,7 @@ describe("POST /api/events/:eventId/registrations", () => {
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${DRAFT_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
 
     expect(res.statusCode).toBe(404);
@@ -1028,17 +1044,17 @@ describe("POST /api/events/:eventId/registrations", () => {
     const badEmail = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A, email: "not-an-email" },
+      payload: regBody({ signinUuid: UUID_A, email: "not-an-email" }),
     });
     const longName = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A, displayName: "A".repeat(121) },
+      payload: regBody({ signinUuid: UUID_A, displayName: "A".repeat(121) }),
     });
     const badUuid = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: "nope" },
+      payload: regBody({ signinUuid: "nope" }),
     });
 
     expect(badEmail.statusCode).toBe(400);
@@ -1047,15 +1063,35 @@ describe("POST /api/events/:eventId/registrations", () => {
     expect(h.registrations.rows).toHaveLength(0);
   });
 
-  it("registers with neither a name nor an email", async () => {
+  it("refuses a registration with no name and no email", async () => {
+    // Neither is needed to mint anything. Both are needed to RUN the event: a
+    // door cannot be worked off a list of wallet addresses, and an organiser
+    // who cannot reach an attendee cannot tell them their badge is waiting.
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
       payload: { signinUuid: UUID_A },
     });
 
-    expect(res.statusCode).toBe(201);
-    expect(res.json().registration.displayName).toBeNull();
+    expect(res.statusCode).toBe(400);
+    expect(h.registrations.rows).toHaveLength(0);
+  });
+
+  it("refuses each one missing on its own", async () => {
+    for (const partial of [
+      { signinUuid: UUID_A, displayName: "Ada" },
+      { signinUuid: UUID_A, email: "ada@example.com" },
+      { signinUuid: UUID_A, displayName: "   ", email: "ada@example.com" },
+    ]) {
+      const res = await h.app.inject({
+        method: "POST",
+        url: `/api/events/${OPEN_EVENT}/registrations`,
+        payload: partial,
+      });
+      expect(res.statusCode, JSON.stringify(partial)).toBe(400);
+    }
+    // Nothing half-written: a refused body never reaches the store.
+    expect(h.registrations.rows).toHaveLength(0);
   });
 });
 
@@ -1145,7 +1181,7 @@ describe("with NullSignInService", () => {
     const res = await app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
-      payload: { signinUuid: UUID_A },
+      payload: regBody({ signinUuid: UUID_A }),
     });
 
     expect(res.json().error.code).toBe("CONFIG_INVALID");

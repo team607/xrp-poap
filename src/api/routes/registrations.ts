@@ -85,9 +85,17 @@ const signInUuidParamsSchema = z.object({ uuid: z.uuid() });
 const registerBodySchema = z.object({
   /** The payload THIS server created. Its resolution is the only source of the address. */
   signinUuid: z.uuid(),
-  displayName: z.string().trim().min(1).max(MAX_DISPLAY_NAME).optional(),
-  /** Optional on purpose: a badge needs a wallet, not an inbox. */
-  email: z.email().max(254).optional(),
+  /**
+   * Both required.
+   *
+   * Neither is needed to MINT anything — the wallet is the whole of what a
+   * badge depends on, and nothing in the claim or verify path reads either of
+   * these. They are required because the EVENT needs them: a door cannot be
+   * run off a list of wallet addresses, and an organiser who cannot reach an
+   * attendee cannot tell them their badge is waiting.
+   */
+  displayName: z.string().trim().min(1).max(MAX_DISPLAY_NAME),
+  email: z.email().max(254),
 });
 
 const registrationIdParamsSchema = z.object({ id: z.string().min(1).max(64) });
