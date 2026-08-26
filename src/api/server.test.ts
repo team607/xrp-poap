@@ -304,6 +304,7 @@ function makeChainMocks() {
       fee: "12",
     })),
     accountExists: vi.fn<ChainOps["accountExists"]>(async () => true),
+    getAccountBalanceXrp: async () => "100",
     sponsorWallet: vi.fn<ChainOps["sponsorWallet"]>(async (_gateway, input) => ({
       sponsored: true,
       alreadyActivated: false,

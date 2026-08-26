@@ -50,6 +50,8 @@ export interface ChainOps {
   mint(gateway: XrplGateway, input: MintBadgeInput): Promise<MintResult>;
   createClaimOffer(gateway: XrplGateway, input: CreateClaimOfferInput): Promise<ClaimOffer>;
   accountExists(gateway: XrplGateway, address: string): Promise<boolean>;
+  /** Spendable balance as a decimal XRP string. The desk shows this. */
+  getAccountBalanceXrp(gateway: XrplGateway, address: string): Promise<string>;
   sponsorWallet(
     gateway: XrplGateway,
     input: { address: string; eventId: EventId; config: SponsorConfig; ledger?: SponsorLedger },
@@ -83,6 +85,7 @@ export async function loadChainOps(): Promise<ChainOps> {
     mint: mintMod.mint,
     createClaimOffer: offersMod.createClaimOffer,
     accountExists: sponsorMod.accountExists,
+    getAccountBalanceXrp: sponsorMod.getAccountBalanceXrp,
     sponsorWallet: sponsorMod.sponsorWallet,
     verifyClaim: verifyMod.verifyClaim,
     getRoster: rosterMod.getRoster,

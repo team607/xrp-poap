@@ -58,13 +58,9 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Wallet, isValidClassicAddress } from "xrpl";
 import { z } from "zod";
-import { SponsorshipDeniedError, XrplLayerError } from "../../errors.js";
+import { SponsorshipDeniedError } from "../../errors.js";
 import { renderBadgeArt } from "../../metadata/badge-art.js";
-import {
-  artLabel,
-  badgeManifestPath,
-  loadBadgeManifest,
-} from "../../metadata/badge-uri-resolver.js";
+import { artLabel } from "../../metadata/badge-uri-resolver.js";
 import type { AttendanceRecord, ClaimRecord, EventId } from "../../types.js";
 import { assertValidAddress, assertValidTaxon } from "../../xrpl/encoding.js";
 import {
@@ -83,6 +79,23 @@ import {
   sendError,
   statusForXrplError,
 } from "../http-errors.js";
+
+/**
+ * THE DESK'S OWN READERS, borrowed rather than copied.
+ *
+ * `routes/desk.ts` is the production event desk — `/admin/api/desk/*`, which
+ * works on mainnet. Everything below that reads a store, a registration, a
+ * balance or a badge manifest lives there now and is called from here, so the
+ * demo cannot answer "can this attendee receive a badge" differently from the
+ * route that ships. The demo adds exactly one thing on top: its own signing
+ * receipt, which production does not have because Xaman does that job.
+ */
+import {
+  liveAccount,
+  readAddressFacts,
+  readBadgeArtLinks,
+  readRegistration,
+} from "./desk.js";
 
 /**
  * The walkthrough page, repo-relative. Kept exported and kept named: it is what
@@ -183,62 +196,6 @@ function readHtml(path: string): string | undefined {
 }
 
 /**
- * Who is this, if we know them?
- *
- * A registered attendee gave us a name before the event and proved the wallet
- * with a Xaman sign-in. At the desk that is the difference between "issue a
- * badge to r9xK…" and "issue a badge to Inderdeep Khanna" — the volunteer can
- * actually check they are handing the right badge to the right person.
- *
- * Optional in every sense: registrations may not be configured, the attendee
- * may be a walk-up, and neither case is an error.
- */
-async function readRegistration(
-  deps: ApiDeps,
-  eventId: EventId,
-  address: string,
-): Promise<{
-  displayName: string | null;
-  addressProof: string;
-  registeredAt: string | null;
-  checkedInAt: string | null;
-} | null> {
-  if (!deps.registrations) return null;
-  try {
-    const r = await deps.registrations.findByAddress(eventId, address);
-    if (!r) return null;
-    return {
-      displayName: r.displayName ?? null,
-      addressProof: r.addressProof,
-      registeredAt: r.registeredAt ? new Date(r.registeredAt).toISOString() : null,
-      checkedInAt: r.checkedInAt ? new Date(r.checkedInAt).toISOString() : null,
-    };
-  } catch {
-    // A desk must keep working when the registrations table does not.
-    return null;
-  }
-}
-
-/** Live balance, and whether the address exists on the ledger at all. */
-async function liveAccount(
-  deps: ApiDeps,
-  demo: DemoOptions,
-  address: string,
-): Promise<{ balanceXrp: string; activated: boolean }> {
-  try {
-    return { balanceXrp: await demo.ops.getAccountBalanceXrp(deps.gateway, address), activated: true };
-  } catch (err) {
-    // Unactivated is a state, not a failure: it is exactly what the sponsorship
-    // path in the UI is there to show. Anything else is a real ledger problem
-    // and belongs in the error handler.
-    if (err instanceof XrplLayerError && err.code === "ACCOUNT_NOT_FOUND") {
-      return { balanceXrp: "0", activated: false };
-    }
-    throw err;
-  }
-}
-
-/**
  * Refresh the demo's badge state from the stores the REAL routes wrote.
  *
  * This is the seam that keeps the demo honest. `POST /events/:eventId/claims`
@@ -265,12 +222,20 @@ async function syncFromStores(deps: ApiDeps, state: DemoState): Promise<Attendan
 }
 
 /**
- * Everything both new sides need to know about one address on the current
- * event, read from the two stores the real routes wrote plus our own signing
- * receipt. ONE reader, so the attendee's phone and the volunteer's screen can
- * never render two different versions of the same moment.
+ * Everything both demo sides need to know about one address on one event: the
+ * shared `readAddressFacts` from routes/desk.ts, PLUS our own signing receipt.
+ *
+ * That receipt is the only thing the demo knows that production does not, and
+ * it is why this wrapper exists rather than the desk's reader being used
+ * directly. Nothing in `deps.claims` or `deps.attendance` records that the
+ * attendee signed until the real `/confirm` route verifies it against the
+ * chain, and between those two moments the attendee's phone still has to be
+ * told "done". In production Xaman signs and the phone knows already.
+ *
+ * ONE reader, so the attendee's phone and the volunteer's screen can never
+ * render two different versions of the same moment.
  */
-interface AddressFacts {
+interface DemoAddressFacts {
   eventId: EventId;
   claim: ClaimRecord | null;
   attendance: AttendanceRecord | null;
@@ -289,7 +254,7 @@ interface AddressFacts {
   pending: { offerId: string; nftokenId: string | null } | null;
 }
 
-async function readAddressFacts(
+async function readDemoFacts(
   deps: ApiDeps,
   state: DemoState,
   address: string,
@@ -299,14 +264,12 @@ async function readAddressFacts(
    * A desk working a real event asks about THAT event: claims and attendance
    * are per-taxon, so answering from the demo's counter-generated id reports a
    * real attendee's pending offer as absent and the badge trigger never fires.
+   * The production desk has no such default — see routes/desk.ts.
    */
   forEventId?: EventId,
-): Promise<AddressFacts> {
+): Promise<DemoAddressFacts> {
   const eventId = forEventId ?? state.eventId;
-  const [claim, attendance] = await Promise.all([
-    deps.claims.find(eventId, address),
-    deps.attendance.findByEventAndAddress(eventId, address),
-  ]);
+  const { claim, attendance } = await readAddressFacts(deps, eventId, address);
 
   const receipt = state.walletAccept(address, eventId);
   const accepted = attendance !== null || receipt !== undefined;
@@ -363,17 +326,13 @@ async function readAddressFacts(
  */
 const BADGE_ART_CACHE_CONTROL = "public, max-age=31536000, immutable";
 
-/** What both pages need to show a badge and to check the pin behind it. */
-export interface DemoBadgeArtLinks {
-  /** Renders now, from the address alone. No wallet, no claim, no badge. */
-  previewUrl: string;
-  /** ipfs:// artwork. Absent until this attendee has been pinned for this event. */
-  imageUri?: string;
-  /** ipfs:// metadata JSON — what NFTokenMint carries. Absent likewise. */
-  metadataUri?: string;
-  /** `imageUri` through the configured gateway. Absent whenever `imageUri` is. */
-  gatewayUrl?: string;
-}
+/**
+ * What both pages need to show a badge and to check the pin behind it.
+ *
+ * The shape moved to routes/desk.ts with the reader that builds it; the name
+ * stays here so nothing that imported it has to care.
+ */
+export type { BadgeArtLinks as DemoBadgeArtLinks } from "./desk.js";
 
 /**
  * The caption the pinner would have used, or nothing at all.
@@ -397,84 +356,6 @@ function demoArtCaption(demo: DemoOptions): string | undefined {
 /** The one place the preview URL is spelled, so no page has to guess it. */
 function badgeArtPreviewUrl(address: string, eventId: EventId): string {
   return `/demo/art?address=${encodeURIComponent(address)}&eventId=${eventId}`;
-}
-
-/**
- * `ipfs://CID/path` -> `<gateway>/ipfs/CID/path`.
- *
- * Anything that is not an `ipfs://` URI yields undefined rather than a guess: a
- * link that 404s is worse than no link, because the page would be inviting
- * somebody to verify a pin and handing them a dead end.
- */
-function ipfsGatewayUrl(uri: string | undefined, gateway: string): string | undefined {
-  if (uri === undefined || !uri.startsWith("ipfs://")) return undefined;
-  const path = uri.slice("ipfs://".length);
-  if (path === "") return undefined;
-  return `${gateway.replace(/\/+$/, "")}/ipfs/${path}`;
-}
-
-/**
- * Where the badge manifest for one event lives.
- *
- * Asks the resolver first when it can answer: PinningBadgeUriResolver may be
- * pinned to an explicit path, and reading the default file instead would report
- * "not pinned" for an attendee who is. Falls back to `badgeManifestPath`, which
- * is what the pre-pin script writes.
- */
-function manifestPathFor(deps: ApiDeps, eventId: EventId): string {
-  const resolver = deps.badgeUris as { manifestPathFor?: unknown } | undefined;
-  if (typeof resolver?.manifestPathFor === "function") {
-    try {
-      const path = (resolver.manifestPathFor as (id: EventId) => unknown)(eventId);
-      if (typeof path === "string" && path !== "") return path;
-    } catch {
-      // A resolver that cannot say where its cache is does not get to fail a
-      // poll. The default location is a fine answer.
-    }
-  }
-  return badgeManifestPath(eventId);
-}
-
-/**
- * The art block that hangs off /status and /lookup. NEVER THROWS.
- *
- * `previewUrl` is computed from the address and is therefore always there. The
- * two ipfs:// URIs are read out of the pre-pin manifest, and missing, corrupt
- * and unreadable all mean the same thing to a page — this attendee has not been
- * pinned — which at a demo desk is the ordinary case, not an error. A poll that
- * 500'd because a cache file was half-written would be absurd.
- */
-async function readBadgeArtLinks(
-  deps: ApiDeps,
-  eventId: EventId,
-  address: string,
-): Promise<DemoBadgeArtLinks> {
-  const previewUrl = badgeArtPreviewUrl(address, eventId);
-
-  try {
-    const manifest = await loadBadgeManifest(manifestPathFor(deps, eventId), {
-      eventId,
-      // loadBadgeManifest already survives everything; silencing its default
-      // console.warn only keeps it out of stdout, where pino's stream lives.
-      onWarn: () => undefined,
-    });
-
-    const entry = manifest.entries[address];
-    if (entry === undefined) return { previewUrl };
-
-    const gatewayUrl = ipfsGatewayUrl(entry.imageUri, deps.config.pinata.gateway);
-    return {
-      previewUrl,
-      ...(entry.imageUri ? { imageUri: entry.imageUri } : {}),
-      ...(entry.metadataUri ? { metadataUri: entry.metadataUri } : {}),
-      ...(gatewayUrl ? { gatewayUrl } : {}),
-    };
-  } catch {
-    // loadBadgeManifest is documented never to throw. This is the belt to that
-    // brace: the preview does not depend on the manifest, so nothing here is
-    // worth an error response.
-    return { previewUrl };
-  }
 }
 
 /**
@@ -548,6 +429,17 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
 
   const state = demo.state ?? new DemoState();
   const publicDir = demo.htmlDir ?? DEFAULT_PUBLIC_DIR;
+
+  /**
+   * The demo's own balance reader, handed to the shared `liveAccount`.
+   *
+   * The harness injects `DemoChainOps` rather than using `ChainOps`, so the
+   * demo's ledger reads stay visible in one place and a test can drive them
+   * with a `vi.fn()`. The production desk passes the real `getAccountBalanceXrp`
+   * to the same function — same ACCOUNT_NOT_FOUND rule, different source.
+   */
+  const readBalanceXrp = (address: string): Promise<string> =>
+    demo.ops.getAccountBalanceXrp(deps.gateway, address);
 
   const pagePaths: PagePaths = {
     index: join(publicDir, DEMO_PAGE_FILES.index),
@@ -676,13 +568,13 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
       const view = state.view();
 
       const issuerAddress = deps.gateway.issuerAddress;
-      const issuer = await liveAccount(deps, demo, issuerAddress);
+      const issuer = await liveAccount(issuerAddress, readBalanceXrp);
 
       const attendeeAddress = view.attendee?.address;
       const attendee =
         attendeeAddress === undefined
           ? null
-          : { address: attendeeAddress, ...(await liveAccount(deps, demo, attendeeAddress)) };
+          : { address: attendeeAddress, ...(await liveAccount(attendeeAddress, readBalanceXrp)) };
 
       // `recorded` is the index; `txHash` is the attendee's NFTokenAcceptOffer.
       // The hash is worth exposing before the row exists — it is what the page
@@ -945,11 +837,11 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
       async (request, reply) => {
         const { address } = request.params;
         const [{ balanceXrp, activated }, facts, art] = await Promise.all([
-          liveAccount(deps, demo, address),
-          readAddressFacts(deps, state, address),
+          liveAccount(address, readBalanceXrp),
+          readDemoFacts(deps, state, address),
           // Never gates the poll: a manifest that is missing or unreadable
           // costs the two ipfs:// fields and nothing else.
-          readBadgeArtLinks(deps, state.eventId, address),
+          readBadgeArtLinks(deps, state.eventId, address, badgeArtPreviewUrl(address, state.eventId)),
         ]);
 
         return reply.code(200).send({
@@ -1006,7 +898,7 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
           );
         }
 
-        const facts = await readAddressFacts(deps, state, address);
+        const facts = await readDemoFacts(deps, state, address);
 
         if (facts.attendance !== null) {
           return conflict(
@@ -1102,9 +994,9 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
         }
 
         const [{ balanceXrp, activated }, facts, art, registration] = await Promise.all([
-          liveAccount(deps, demo, scanned),
-          readAddressFacts(deps, state, scanned, lookupEventId),
-          readBadgeArtLinks(deps, lookupEventId, scanned),
+          liveAccount(scanned, readBalanceXrp),
+          readDemoFacts(deps, state, scanned, lookupEventId),
+          readBadgeArtLinks(deps, lookupEventId, scanned, badgeArtPreviewUrl(scanned, lookupEventId)),
           readRegistration(deps, lookupEventId, scanned),
         ]);
 

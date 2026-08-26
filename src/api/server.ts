@@ -19,6 +19,7 @@ import { registerAdminAuthRoutes } from "./routes/admin-auth.js";
 import { registerAttendanceRoute } from "./routes/attendance.js";
 import { registerClaimRoutes } from "./routes/claims.js";
 import { registerDemoRoutes } from "./routes/demo.js";
+import { registerDeskRoutes } from "./routes/desk.js";
 import { registerBadgeRoutes } from "./routes/badge.js";
 import { registerPageRoutes } from "./routes/pages.js";
 import { registerEventRoutes } from "./routes/events.js";
@@ -76,6 +77,20 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
    * request discovering it later. See src/api/auth.ts.
    */
   const adminAuth = registerAdminAuth(app, deps);
+
+  /**
+   * THE EVENT DESK. Two routes under `/admin/api/desk`, so the prefix hook
+   * installed immediately above is what guards them — one of them spends the
+   * issuer's XRP and the other returns an attendee's name.
+   *
+   * Registered here rather than inside the rate-limited scope for the reason
+   * /health and /demo are: a desk polls the attendee it just scanned, and a
+   * poll loop eating the global 120/min bucket would 429 the actual claim
+   * halfway through issuing a badge. What protects the money on these routes is
+   * the login, the duplicate check and the daily sponsorship cap, none of which
+   * is a request counter.
+   */
+  registerDeskRoutes(app, deps);
 
   /**
    * GET /health — 200, always, with no ledger call. A health check that needs a

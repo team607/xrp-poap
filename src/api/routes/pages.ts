@@ -62,6 +62,11 @@ export function registerPageRoutes(
 ): void {
   const dir = options.htmlDir ?? PAGES_DIR;
 
+  // The front door. Someone who types the bare host gets a hallway that points
+  // at the right page, NOT the JSON 404 the root used to answer — which reads
+  // as a broken deployment even when everything under it is fine.
+  servePage(app, "/", "index.html", dir);
+
   // Admin. A single page that decides between the login form and the dashboard
   // by asking GET /admin/api/me — the server is the authority on whether a
   // session is live, never a flag the page keeps for itself.
@@ -75,6 +80,10 @@ export function registerPageRoutes(
   // Public registration. The eventId is read from the path by the page itself.
   servePage(app, "/register", "register.html", dir);
   servePage(app, "/register/:eventId", "register.html", dir);
+
+  // The volunteer desk, at a client-facing URL rather than under /demo.
+  // The page itself requires a signed-in operator; see admin auth.
+  servePage(app, "/volunteer", "volunteer.html", dir);
 
   // The attendee's own pass, on their own phone, holding their own key.
   //

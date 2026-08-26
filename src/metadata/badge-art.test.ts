@@ -224,8 +224,11 @@ describe("renderBadgeArt", () => {
 
     it("carries the event id where a human can read it", () => {
       const art = renderBadgeArt({ address: ADDRESS, eventId: EVENT });
-      expect(art.svg).toContain(`TAXON ${EVENT}`);
-      expect(art.svg).toContain("SOULBOUND");
+      // The badge is client-facing artwork, so it carries the event number
+      // without the ledger's vocabulary — no "taxon", no "soulbound".
+      expect(art.svg).toContain(`EVENT ${EVENT}`);
+      expect(art.svg).not.toContain("TAXON");
+      expect(art.svg).not.toContain("SOULBOUND");
       expect(art.svg).toContain('viewBox="0 0 512 512"');
     });
 

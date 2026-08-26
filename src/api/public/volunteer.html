@@ -1,19 +1,22 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-auth="out">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
-<title>Volunteer desk — issue XRPL attendance badges</title>
+<title>Volunteer desk</title>
 <style>
 /* ==========================================================================
-   VOLUNTEER DESK — a working console, not an explainer.
-   Same instrument as /demo: bone paper and deep ink, editorial serif for
-   prose, monospace for anything the ledger said, amber signal, jade for
-   verified, vermilion for destructive.
-   Different job: a laptop on a table, one attendee after another. Denser,
-   two-column, one verdict you can read from across the desk.
+   VOLUNTEER DESK — the screen on the laptop at the door.
+
+   Bone paper and deep ink, editorial serif for prose, monospace kept for the
+   few things that really are machine-written (an address, a reference), amber
+   for the thing to do next, jade for done, vermilion for stop.
+
+   This is a tool for event staff. Everything an engineer would want to see —
+   the request log, raw responses, ids, codes — is present but carries the
+   `dev-only` class and stays invisible until the diagnostics toggle is on.
    No webfonts, no images, no CDN, no build step.
    ========================================================================== */
 
@@ -43,6 +46,7 @@
   --j-key:#8d5310; --j-str:#186a4c; --j-num:#1c5c86; --j-bool:#a8331a; --j-null:#6b6153;
 
   --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 18px 34px -26px rgba(50,36,18,.55);
+  --lift:0 1px 0 rgba(255,255,255,.85) inset, 0 30px 56px -34px rgba(50,36,18,.6);
   --grid:rgba(93,74,44,.09);
   --grain-opacity:.055;
   --railh:64px;
@@ -52,8 +56,8 @@
   --mat:#0b0e10;
   --mat-edge:#2b2721;
   --plate-lift:0 14px 24px -18px rgba(40,28,10,.7);
-  --plate-w:clamp(112px,13vw,148px);
-  --thumb:32px;
+  --plate-w:clamp(112px,13vw,152px);
+  --thumb:30px;
 
   /* Xaman's QR arrives as a PNG with a white ground. Its plate is therefore
      white in BOTH themes and deliberately not theme-aware: a scanner wants
@@ -88,6 +92,7 @@
     --j-key:#e0a24a; --j-str:#5cbc93; --j-num:#79b6d8; --j-bool:#e8724f; --j-null:#8d8778;
 
     --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
+    --lift:0 1px 0 rgba(255,255,255,.05) inset, 0 34px 60px -34px rgba(0,0,0,.95);
     --grid:rgba(224,214,190,.055);
     --grain-opacity:.04;
 
@@ -118,6 +123,7 @@
   --j-key:#e0a24a; --j-str:#5cbc93; --j-num:#79b6d8; --j-bool:#e8724f; --j-null:#8d8778;
 
   --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 22px 40px -30px rgba(0,0,0,.9);
+  --lift:0 1px 0 rgba(255,255,255,.05) inset, 0 34px 60px -34px rgba(0,0,0,.95);
   --grid:rgba(224,214,190,.055);
   --grain-opacity:.04;
 
@@ -128,6 +134,17 @@
 *,*::before,*::after{box-sizing:border-box}
 /* Toggled elements set display:flex/grid, which outranks the UA [hidden] rule. */
 [hidden]{display:none !important}
+
+/* ---------- the diagnostics curtain ----------------------------------------
+   Nothing is deleted. Every request log, raw response, error code, endpoint
+   path and internal id carries `dev-only` and simply is not painted until the
+   desk asks for it. The toggle lives in the footer and on the D key. */
+:root:not([data-dev="1"]) .dev-only{display:none !important}
+
+/* Signed in / signed out. Set on <html> so the rail settles before paint. */
+:root[data-auth="out"] .auth-in{display:none !important}
+:root[data-auth="in"] .auth-out{display:none !important}
+
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;
@@ -150,14 +167,14 @@ body::before{
   position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
 }
-.wrap{position:relative; z-index:1; max-width:1360px; margin:0 auto; padding:0 clamp(12px,2.4vw,28px)}
+.wrap{position:relative; z-index:1; max-width:1300px; margin:0 auto; padding:0 clamp(14px,2.6vw,32px)}
 
-h1,h2,h3,h4{margin:0; font-weight:600; letter-spacing:-.012em; line-height:1.15}
+h1,h2,h3,h4{margin:0; font-weight:600; letter-spacing:-.014em; line-height:1.15}
 p{margin:0 0 .7em}
 p:last-child{margin-bottom:0}
 a{color:var(--signal)}
 code,pre,.mono{font-family:var(--font-mono)}
-.label{font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.label{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
 .prose{color:var(--ink-2)}
 .prose strong{color:var(--ink); font-weight:600}
 .sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
@@ -170,37 +187,32 @@ code,pre,.mono{font-family:var(--font-mono)}
   backdrop-filter:saturate(150%) blur(10px);
   border-bottom:1px solid var(--rule-2);
 }
-.rail__in{display:flex; align-items:stretch; gap:0; min-height:52px}
-.rail__brand{display:flex; align-items:center; gap:9px; padding:8px 18px 8px 0; flex:none; border-right:1px solid var(--rule)}
+.rail__in{display:flex; align-items:stretch; gap:0; min-height:54px}
+.rail__brand{display:flex; align-items:center; gap:10px; padding:9px 20px 9px 0; flex:none}
 .mark{
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.18em; font-weight:700;
-  color:var(--on-signal); background:var(--signal); padding:4px 7px; border-radius:2px; white-space:nowrap;
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.2em; font-weight:700;
+  color:var(--on-signal); background:var(--signal); padding:4px 8px; border-radius:2px; white-space:nowrap;
 }
-.rail__title{font-size:14px; letter-spacing:-.01em; color:var(--ink-2); white-space:nowrap}
-.cells{display:flex; flex:1; min-width:0; overflow-x:auto; scrollbar-width:none}
+.rail__title{font-size:15px; letter-spacing:-.014em; color:var(--ink); white-space:nowrap}
+.cells{display:flex; flex:1; min-width:0; overflow-x:auto; scrollbar-width:none; align-items:stretch}
 .cells::-webkit-scrollbar{display:none}
-/* Short values must never be clipped to make room for the long node URL, so
-   only the node cell is allowed to give ground. */
-.cell{padding:8px 16px; border-right:1px solid var(--rule); min-width:0; flex:0 0 auto; display:flex; flex-direction:column; justify-content:center}
+.cell{padding:8px 16px; min-width:0; flex:0 0 auto; display:flex; flex-direction:column; justify-content:center; border-left:1px solid var(--rule)}
 .cell--wide{flex:1 1 210px}
-.cell:first-child{padding-left:16px}
-.cell__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.17em; text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
+.cell__k{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.19em; text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
 .cell__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; margin-top:2px}
-.cell--tally .cell__v{font-family:var(--font-display); font-size:19px; line-height:1.1; letter-spacing:-.02em}
+.cell--tally .cell__v{font-family:var(--font-display); font-size:20px; line-height:1.1; letter-spacing:-.024em}
 .cell--tally b{color:var(--jade); font-weight:600}
-.cell--tally i{font-style:normal; color:var(--ink-3); font-family:var(--font-mono); font-size:11px}
+.cell--tally i{font-style:normal; color:var(--ink-3); font-family:var(--font-mono); font-size:10.5px}
 
 /* The event this desk is working. It gets the width, the accent and the only
    control in the rail, because picking the wrong one is the failure that turns
-   every registered attendee into a walk-up — silently, and on every card.
-   The name is what the volunteer needs; the taxon is what is on chain, so both
-   are on the rail and neither is behind a hover. */
-.cell--event{flex:1 1 300px; min-width:270px; background:var(--signal-wash); box-shadow:inset 2px 0 0 var(--signal)}
+   every registered attendee into a walk-up — silently, and on every card. */
+.cell--event{flex:1 1 320px; min-width:250px; background:var(--signal-wash); box-shadow:inset 2px 0 0 var(--signal); border-left-color:transparent}
 .cell--event .cell__k{color:var(--signal)}
 .evrow{display:flex; align-items:center; gap:8px; min-width:0; margin-top:1px}
 .evpick{
   flex:1 1 auto; min-width:0; max-width:100%;
-  font-family:var(--font-display); font-size:13.5px; line-height:1.25; letter-spacing:-.014em;
+  font-family:var(--font-display); font-size:15px; line-height:1.25; letter-spacing:-.016em;
   color:var(--ink); background-color:transparent; border:0; border-bottom:1px dashed var(--rule-2);
   border-radius:0; margin:0; padding:1px 15px 2px 0; cursor:pointer;
   text-overflow:ellipsis; -webkit-appearance:none; appearance:none;
@@ -214,23 +226,39 @@ code,pre,.mono{font-family:var(--font-mono)}
 /* The menu itself is drawn by the OS; only the colours are ours to set. */
 .evpick option{color:var(--ink); background:var(--surface)}
 .evtaxon{
-  flex:none; font-family:var(--font-mono); font-size:11px; font-weight:700; letter-spacing:.09em;
-  color:var(--signal); border:1px solid var(--signal-2); border-radius:2px; padding:1px 5px; white-space:nowrap;
+  flex:none; font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:.06em;
+  color:var(--ink-3); white-space:nowrap; cursor:help;
 }
-.rail__act{display:flex; align-items:center; gap:7px; padding:8px 0 8px 14px; flex:none; border-left:1px solid var(--rule)}
-.pulse{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3)}
+.rail__act{display:flex; align-items:center; gap:8px; padding:8px 0 8px 16px; flex:none; border-left:1px solid var(--rule)}
+/* Signed out the rail holds one button, so the divider has nothing to divide. */
+:root[data-auth="out"] .rail__act{border-left:0; padding-left:0; margin-left:auto}
+.pulse{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
 .dot{width:7px; height:7px; border-radius:50%; background:var(--jade); box-shadow:0 0 0 3px var(--jade-wash); flex:none}
 .pulse[data-up="0"] .dot{background:var(--vermilion); box-shadow:0 0 0 3px var(--vermilion-wash); animation:blink 1s steps(2) infinite}
 @keyframes blink{50%{opacity:.25}}
+.who-in{
+  display:inline-flex; align-items:center; gap:7px; max-width:210px;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.05em; color:var(--ink-3);
+  padding-right:2px;
+}
+.who-in span{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 
-@media (max-width:900px){
+@media (max-width:980px){
   .rail__in{flex-wrap:wrap}
-  .rail__brand{border-right:0; padding-right:12px; flex:1 1 auto}
-  .rail__act{border-left:0; padding-left:0}
+  .rail__brand{padding-right:12px; flex:1 1 auto}
+  /* The rail is a single row on a laptop and a wrapping cluster on anything
+     narrower. It must never be the reason the page scrolls sideways. */
+  .rail__act{border-left:0; padding-left:0; flex-wrap:wrap; justify-content:flex-end; min-width:0}
   .cells{order:3; width:100%; flex:1 0 100%; border-top:1px solid var(--rule)}
   .cell{flex:0 0 auto}
+  .cell:first-child{border-left:0}
 }
-@media (max-width:520px){ .rail__title{display:none} }
+@media (max-width:560px){
+  .rail__title{display:none}
+  .who-in{max-width:120px}
+  .rail__brand{flex:0 0 auto}
+  .rail__act{flex:1 1 auto}
+}
 
 /* ---------- buttons -------------------------------------------------------- */
 .btn{
@@ -246,9 +274,9 @@ code,pre,.mono{font-family:var(--font-mono)}
 .btn:disabled{opacity:.42; cursor:not-allowed}
 .btn--go{background:var(--signal); color:var(--on-signal); border-color:transparent; box-shadow:0 8px 18px -14px rgba(0,0,0,.9)}
 .btn--go:hover:not(:disabled){background:var(--signal); color:var(--on-signal); border-color:transparent; filter:brightness(1.08)}
-.btn--big{font-size:13px; padding:14px 22px; letter-spacing:.14em}
+.btn--big{font-size:13px; padding:14px 24px; letter-spacing:.14em}
 .btn--ghost{background:transparent}
-.btn--tiny{font-size:9.5px; padding:4px 8px; letter-spacing:.1em}
+.btn--tiny{font-size:9.5px; padding:4px 9px; letter-spacing:.1em}
 .btn--stop{border-color:var(--vermilion); color:var(--vermilion); background:var(--vermilion-wash)}
 /* One link wears the button: the Xaman deeplink, which is an <a> because it
    really does navigate somewhere. */
@@ -263,29 +291,114 @@ a.btn--go{color:var(--on-signal)}
 
 /* ---------- banners -------------------------------------------------------- */
 .banners{margin-top:12px; display:grid; gap:8px}
+.banners:empty{margin-top:0}
 .banner{
   display:flex; gap:12px; align-items:flex-start;
   border:1px solid var(--vermilion); background:var(--vermilion-wash);
-  border-left-width:3px; padding:11px 13px; border-radius:2px;
+  border-left-width:3px; padding:11px 14px; border-radius:2px;
 }
 .banner--warn{border-color:var(--signal); background:var(--signal-wash)}
-.banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
+.banner__t{font-family:var(--font-mono); font-size:10px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
 .banner p{font-size:14px; color:var(--ink-2); margin:.25em 0 0; max-width:88ch}
 .banner__act{margin-left:auto; flex:none; align-self:center}
 @media (max-width:700px){ .banner__act{margin-left:0; width:100%} .banner{flex-wrap:wrap} }
 
+/* ---------- sign-in gate --------------------------------------------------- */
+.gate{display:grid; place-items:center; min-height:calc(100vh - var(--railh) - 60px); padding:clamp(18px,5vw,64px) 0}
+.gate__card{width:min(430px,100%)}
+.gate__mark{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.22em; text-transform:uppercase;
+  color:var(--ink-3); display:flex; gap:10px; align-items:center; margin-bottom:16px;
+}
+.gate__mark::after{content:""; flex:1; height:1px; background:var(--rule-2)}
+.gate h1{font-size:clamp(1.5rem,3.4vw,1.95rem); letter-spacing:-.026em}
+.gate__sub{font-size:14.5px; color:var(--ink-2); margin-top:8px; max-width:52ch}
+.gate .card{box-shadow:var(--lift)}
+.gate__foot{font-size:13px; color:var(--ink-3); margin-top:14px; max-width:52ch}
+/* ---------- the event chooser ----------------------------------------------
+   Its own component rather than the rail's <select>. A dropdown is a control
+   for CHANGING a setting that already has a value; this is the step where the
+   desk acquires one, and it has to be impossible to walk past. Each event is a
+   full-width target with the date and room on it, because "Feooh 2026" and
+   "Feooh 2026" are told apart by the day and the room and nothing else. */
+.evlist{display:grid; gap:9px}
+.ev{
+  display:block; width:100%; text-align:left; cursor:pointer; min-width:0;
+  font:inherit; color:inherit;
+  background:var(--surface); border:1px solid var(--rule); border-radius:3px;
+  padding:13px 15px; position:relative; overflow:hidden;
+  transition:border-color .16s ease, box-shadow .16s ease, transform .12s ease;
+}
+.ev::before{content:""; position:absolute; inset:0 auto 0 0; width:2px; background:var(--rule-2)}
+.ev[data-live="1"]::before{background:var(--signal)}
+.ev:hover,.ev:focus-visible{border-color:var(--rule-2); box-shadow:var(--lift); transform:translateY(-1px)}
+.ev:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.ev:active{transform:translateY(0)}
+.ev__top{display:flex; align-items:baseline; gap:10px; justify-content:space-between}
+.ev__n{font-size:15.5px; letter-spacing:-.014em; color:var(--ink); font-weight:600; min-width:0; overflow-wrap:anywhere}
+.ev__s{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase;
+  color:var(--ink-3); white-space:nowrap; font-weight:700;
+}
+.ev[data-live="1"] .ev__s{color:var(--signal)}
+.ev__m{
+  margin:5px 0 0; font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+.ev__last{
+  display:inline-block; margin-top:7px;
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ink-2); background:var(--signal-wash); border:1px solid var(--signal-2);
+  border-radius:2px; padding:2px 7px;
+}
+.evnone{
+  border:1px dashed var(--rule-2); border-radius:3px; padding:16px;
+  color:var(--ink-2); font-size:14.5px;
+}
+
+.boot{color:var(--ink-3); font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase}
+.boot::after{content:" \25CC"; animation:blink 1.1s steps(2) infinite}
+
+/* ---------- forms ---------------------------------------------------------- */
+.form{display:grid; gap:15px}
+.field{display:grid; gap:6px; min-width:0}
+.field>label{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.17em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.in{
+  font-family:var(--font-mono); font-size:14px; line-height:1.45;
+  padding:11px 13px; border:1px solid var(--rule-2); border-radius:2px;
+  background:var(--sunk); color:var(--ink); width:100%; min-width:0;
+  transition:border-color .15s ease;
+}
+.in:focus{outline:2px solid var(--signal); outline-offset:1px}
+.in::placeholder{color:var(--ink-3); opacity:.7}
+.field[data-bad="1"] .in{border-color:var(--vermilion); background:var(--vermilion-wash)}
+
+/* ---------- flash receipt -------------------------------------------------- */
+.flash{
+  display:flex; gap:11px; align-items:flex-start; flex-wrap:wrap;
+  border:1px solid var(--jade); border-left-width:3px; background:var(--jade-wash);
+  padding:10px 13px; border-radius:0 2px 2px 0;
+}
+.flash--bad{border-color:var(--vermilion); background:var(--vermilion-wash)}
+.flash--warn{border-color:var(--signal); background:var(--signal-wash)}
+.flash__c{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; color:var(--jade); flex:none; padding-top:3px}
+.flash--bad .flash__c{color:var(--vermilion)}
+.flash--warn .flash__c{color:var(--signal)}
+.flash__m{font-size:14.5px; color:var(--ink); min-width:0; overflow-wrap:anywhere; flex:1}
+.flash__m em{color:var(--ink-2); font-style:normal; display:block; font-size:13px; margin-top:4px}
+
 /* ---------- deck ----------------------------------------------------------- */
-.deck{display:grid; grid-template-columns:minmax(320px,384px) minmax(0,1fr); gap:clamp(14px,1.8vw,22px); margin-top:14px; align-items:start}
+.deck{display:grid; grid-template-columns:minmax(300px,352px) minmax(0,1fr); gap:clamp(16px,2vw,26px); margin-top:clamp(14px,2vw,20px); align-items:start}
 @media (max-width:1040px){ .deck{grid-template-columns:minmax(0,1fr)} }
 
 .card{border:1px solid var(--rule); border-radius:3px; background:var(--surface); box-shadow:var(--shadow); min-width:0}
-.card__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 13px; border-bottom:1px solid var(--rule); background:var(--surface-2); border-radius:3px 3px 0 0}
+.card__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:11px 15px; border-bottom:1px solid var(--rule); border-radius:3px 3px 0 0}
 .card__hd .label{color:var(--ink-2)}
-.card__n{font-family:var(--font-mono); font-size:10px; font-weight:700; color:var(--on-signal); background:var(--ink-3); width:17px; height:17px; display:grid; place-items:center; border-radius:2px; flex:none}
-.card__body{padding:13px}
-.card__ft{padding:9px 13px; border-top:1px solid var(--rule); background:var(--surface-2); border-radius:0 0 3px 3px}
+.card__t{font-size:15.5px; letter-spacing:-.016em; color:var(--ink)}
+.card__body{padding:15px}
+.card__ft{padding:10px 15px; border-top:1px solid var(--rule); background:var(--surface-2); border-radius:0 0 3px 3px}
 
-.bay{position:sticky; top:calc(var(--railh) + 10px)}
+.bay{position:sticky; top:calc(var(--railh) + 12px)}
 @media (max-width:1040px){ .bay{position:static} }
 
 /* ---------- scanner viewport ----------------------------------------------- */
@@ -310,13 +423,13 @@ a.btn--go{color:var(--on-signal)}
 }
 @keyframes sweepdown{0%{top:0; opacity:0}12%{opacity:1}88%{opacity:1}100%{top:100%; opacity:0}}
 .view__msg{
-  position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; gap:7px;
+  position:absolute; inset:0; display:flex; flex-direction:column; justify-content:center; gap:8px;
   padding:clamp(14px,4vw,24px); text-align:left;
   background:linear-gradient(180deg,var(--sunk),var(--surface-2));
 }
 .bay[data-state="live"] .view__msg{display:none}
 .view__glyph{font-family:var(--font-mono); font-size:22px; color:var(--signal); line-height:1}
-.view__t{font-size:17px; letter-spacing:-.015em}
+.view__t{font-size:17px; letter-spacing:-.018em}
 .view__b{font-size:13.5px; color:var(--ink-2); max-width:44ch}
 .bay[data-state="denied"] .view__glyph,
 .bay[data-state="error"] .view__glyph{color:var(--vermilion)}
@@ -326,16 +439,16 @@ a.btn--go{color:var(--on-signal)}
 @keyframes hit{0%{opacity:.5}100%{opacity:0}}
 .bay.is-hit .view{border-color:var(--jade)}
 
-.baybar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:11px}
+.baybar{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:12px}
 .baybar .spacer{flex:1}
 .livetag{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--jade); display:inline-flex; align-items:center; gap:6px}
 .livetag .dot{width:6px; height:6px; animation:blink 1.6s steps(2) infinite}
 
 /* ---------- manual entry --------------------------------------------------- */
-.manual{margin-top:14px; padding-top:13px; border-top:1px dashed var(--rule)}
-.manual__hd{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:8px}
+.manual{margin-top:15px; padding-top:14px; border-top:1px dashed var(--rule)}
+.manual__hd{display:flex; align-items:baseline; gap:8px; flex-wrap:wrap; margin-bottom:9px}
 .manual__hd .label{color:var(--signal)}
-.manual__note{font-size:12.5px; color:var(--ink-3); margin-left:auto}
+.manual__note{font-size:12px; color:var(--ink-3); margin-left:auto; font-family:var(--font-mono); letter-spacing:.04em}
 .entry{display:flex; gap:8px; align-items:stretch}
 .entry input{
   flex:1; min-width:0; font-family:var(--font-mono); font-size:13px;
@@ -344,7 +457,7 @@ a.btn--go{color:var(--on-signal)}
 }
 .entry input:focus{outline:2px solid var(--signal); outline-offset:1px}
 .entry input::placeholder{color:var(--ink-3); opacity:.75}
-.hint{font-size:12.5px; color:var(--ink-3); margin-top:8px}
+.hint{font-size:12.5px; color:var(--ink-3); margin-top:9px}
 .hint kbd{font-family:var(--font-mono); font-size:10.5px; border:1px solid var(--rule-2); border-bottom-width:2px; border-radius:3px; padding:0 4px; color:var(--ink-2); background:var(--surface)}
 /* When there is no scanner, typing IS the flow — make it read that way. */
 .bay[data-scan="off"] .manual{border-top-color:var(--signal); border-top-style:solid; margin-top:16px; padding-top:15px}
@@ -354,27 +467,37 @@ a.btn--go{color:var(--on-signal)}
 /* Stacked, a 4:3 viewport at full width is half a screen of empty paper and
    pushes the decision card below the fold. Cap it. */
 @media (max-width:1040px){
-  .view{aspect-ratio:auto; height:min(40vh,300px)}
+  .view{aspect-ratio:auto; height:min(32vh,240px)}
   .bay[data-scan="off"] .view{height:auto}
 }
 
-/* ---------- docket (the decision surface) ---------------------------------- */
-.docket{min-height:340px; display:flex; flex-direction:column}
-.docket__body{padding:clamp(14px,2vw,20px); flex:1; min-width:0}
-.stampwrap{display:flex; gap:clamp(14px,2.4vw,26px); align-items:flex-start; flex-wrap:wrap}
+/* ---------- docket (the decision surface) ----------------------------------
+   The page. Bigger, quieter, one thing to read and one thing to press. */
+.docket{min-height:420px; display:flex; flex-direction:column; position:relative; overflow:hidden; box-shadow:var(--lift)}
+.docket::before{
+  content:""; position:absolute; left:0; right:0; top:0; height:3px; z-index:2;
+  background:var(--rule-2); transition:background .25s ease;
+}
+.docket[data-verdict="ready"]::before,
+.docket[data-verdict="attended"]::before{background:var(--jade)}
+.docket[data-verdict="sponsor"]::before,
+.docket[data-verdict="waiting"]::before{background:var(--signal)}
+.docket[data-verdict="error"]::before{background:var(--vermilion)}
+.docket__body{padding:clamp(16px,2.4vw,26px); flex:1; min-width:0}
+.stampwrap{display:flex; gap:clamp(14px,2.4vw,28px); align-items:flex-start; flex-wrap:wrap}
 .stamp{
   position:relative; color:var(--ink-3);
   border:2px solid currentColor; border-radius:3px;
-  padding:11px 18px 12px; transform:rotate(-1.1deg);
-  display:inline-flex; align-items:center; gap:14px; flex:none; max-width:100%;
+  padding:12px 20px 13px; transform:rotate(-1.1deg);
+  display:inline-flex; align-items:center; gap:15px; flex:none; max-width:100%;
   background:transparent;
 }
 .stamp::after{content:""; position:absolute; inset:3px; border:1px solid currentColor; border-radius:2px; opacity:.55; pointer-events:none}
 .stamp__g{font-family:var(--font-mono); font-size:clamp(24px,4vw,34px); line-height:1; opacity:.85; flex:none}
-.stamp__w{font-size:clamp(1.35rem,3.3vw,2.3rem); line-height:1.05; letter-spacing:.015em; text-transform:uppercase; font-weight:600; white-space:nowrap}
-@media (max-width:560px){ .stamp{padding:10px 13px} .stamp__w{white-space:normal} }
+.stamp__w{font-size:clamp(1.4rem,3.4vw,2.35rem); line-height:1.05; letter-spacing:.012em; text-transform:uppercase; font-weight:600; white-space:nowrap}
+@media (max-width:560px){ .stamp{padding:10px 14px} .stamp__w{white-space:normal} }
 .stamp__c{display:block; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.18em; text-transform:uppercase; margin-top:7px; opacity:.8; white-space:nowrap}
-.stampwrap__say{flex:1; min-width:min(100%,240px); font-size:15px; color:var(--ink-2); padding-top:4px; max-width:62ch}
+.stampwrap__say{flex:1; min-width:min(100%,250px); font-size:15.5px; line-height:1.5; color:var(--ink-2); padding-top:5px; max-width:62ch}
 .stampwrap__say b{color:var(--ink); font-weight:600}
 
 .docket[data-verdict="ready"] .stamp{color:var(--jade)}
@@ -389,28 +512,27 @@ a.btn--go{color:var(--on-signal)}
 .docket[data-verdict="looking"] .stamp{border-style:dashed; opacity:.75}
 .docket[data-verdict="looking"] .stamp__g{animation:blink 1s steps(2) infinite}
 
-.who{margin-top:16px; padding:10px 12px; background:var(--sunk); border:1px solid var(--rule); border-radius:2px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
+.who{margin-top:18px; padding:11px 13px; background:var(--sunk); border:1px solid var(--rule); border-radius:2px; display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
 .who .label{flex:none}
 .who__a{font-family:var(--font-mono); font-size:13px; color:var(--ink); overflow-wrap:anywhere; min-width:0}
 
 /* ---------- who is standing at the desk ------------------------------------- */
-/* A registered attendee gave a name before the event. The ledger cares about
-   the address; a volunteer checking a badge against a face does not, so the
-   name leads and the address is demoted to the line beneath it. How that
-   address was obtained is stated rather than implied — a proven wallet and a
-   typed one are not the same claim, and a soulbound badge minted to a typo is
-   unrecoverable. */
-.who--id{display:block; padding:12px 13px}
+/* A registered attendee gave a name before the event. The name leads; the
+   address is demoted to the line beneath it, because a volunteer checks a
+   badge against a face. How that address was obtained is stated rather than
+   implied — a proven wallet and a typed one are not the same claim, and a
+   soulbound badge minted to a typo is unrecoverable. */
+.who--id{display:block; padding:13px 15px}
 .who--id.who--proved{border-left:3px solid var(--jade)}
 .who--id.who--typed{border-left:3px solid var(--signal)}
 .who--id.who--walk{border-left:3px dashed var(--rule-2)}
-.who__name{font-size:clamp(1.14rem,2.3vw,1.44rem); line-height:1.14; letter-spacing:-.02em; color:var(--ink); font-weight:600; overflow-wrap:anywhere}
-.who__walk{font-size:clamp(1rem,1.9vw,1.16rem); line-height:1.2; letter-spacing:-.012em; color:var(--ink-2)}
+.who__name{font-size:clamp(1.2rem,2.4vw,1.5rem); line-height:1.14; letter-spacing:-.024em; color:var(--ink); font-weight:600; overflow-wrap:anywhere}
+.who__walk{font-size:clamp(1.02rem,1.9vw,1.18rem); line-height:1.2; letter-spacing:-.014em; color:var(--ink-2)}
 .who__walk b{color:var(--ink); font-weight:600}
-.who__sub{display:flex; gap:6px 9px; align-items:baseline; flex-wrap:wrap; margin-top:7px; min-width:0}
-.who__note{font-size:13.5px; color:var(--ink-2); margin:9px 0 0; max-width:74ch}
+.who__sub{display:flex; gap:6px 9px; align-items:baseline; flex-wrap:wrap; margin-top:8px; min-width:0}
+.who__note{font-size:13.5px; color:var(--ink-2); margin:10px 0 0; max-width:74ch}
 .who__note b{color:var(--ink); font-weight:600}
-.chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:10px}
+.chips{display:flex; gap:6px; flex-wrap:wrap; margin-top:11px}
 .chip{
   display:inline-flex; align-items:baseline; gap:5px; max-width:100%;
   font-family:var(--font-mono); font-size:9px; letter-spacing:.15em; text-transform:uppercase; font-weight:700;
@@ -423,19 +545,35 @@ a.btn--go{color:var(--on-signal)}
 .chip--when{color:var(--ink-3); border-color:var(--rule-2)}
 .chip--seen{color:var(--signal); background:var(--signal-wash)}
 
+/* ---------- plain-language readout ------------------------------------------
+   Replaces the field dump. Three or four sentences a volunteer can act on. */
+.facts{list-style:none; margin:18px 0 0; padding:0}
+.fact{display:flex; gap:11px; align-items:baseline; padding:9px 0; border-bottom:1px dotted var(--rule); font-size:14.5px; color:var(--ink-2)}
+.fact:last-child{border-bottom:0}
+.fact__m{flex:none; width:15px; text-align:center; font-family:var(--font-mono); font-size:12px; color:var(--ink-3); line-height:1.4}
+.fact--ok .fact__m{color:var(--jade)}
+.fact--warn .fact__m{color:var(--signal)}
+.fact--bad .fact__m{color:var(--vermilion)}
+.fact b{color:var(--ink); font-weight:600}
+.fact em{font-style:normal; color:var(--ink-3); font-family:var(--font-mono); font-size:12px; letter-spacing:.03em}
+
+/* ---------- reference (demoted, below the decision) ------------------------- */
+.ref{margin-top:20px; padding-top:13px; border-top:1px dashed var(--rule)}
+.ref__hd{display:flex; gap:10px; align-items:baseline; flex-wrap:wrap; margin-bottom:4px}
 .kv{display:grid; grid-template-columns:150px minmax(0,1fr); gap:3px 14px; padding:6px 0; align-items:baseline; border-bottom:1px dotted var(--rule)}
 .kv:last-of-type{border-bottom:0}
 .kv__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3); padding-top:3px}
 .kv__v{min-width:0; display:flex; flex-wrap:wrap; align-items:baseline; gap:5px 9px}
 .val{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow-wrap:anywhere}
+.ref .val{color:var(--ink-2); font-size:12px}
 .tone-ok .val{color:var(--jade)}
 .tone-warn .val{color:var(--signal)}
 .tone-bad .val{color:var(--vermilion)}
 @media (max-width:560px){ .kv{grid-template-columns:minmax(0,1fr); gap:2px} .kv__k{padding-top:0} }
 
-.grp{margin-top:16px; border:1px solid var(--rule); border-radius:2px; overflow:hidden}
-.grp__hd{padding:7px 12px; background:var(--surface-2); border-bottom:1px solid var(--rule); display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
-.grp__bd{padding:4px 12px 10px}
+.grp{margin-top:18px; border:1px solid var(--rule); border-radius:2px; overflow:hidden}
+.grp__hd{padding:8px 13px; background:var(--surface-2); border-bottom:1px solid var(--rule); display:flex; gap:10px; align-items:baseline; flex-wrap:wrap}
+.grp__bd{padding:5px 13px 11px}
 .grp--money{border-color:var(--signal)}
 .grp--money .grp__hd{background:var(--signal-wash); border-bottom-color:var(--signal)}
 .grp--money .grp__hd .label{color:var(--signal)}
@@ -453,48 +591,48 @@ a.btn--go{color:var(--on-signal)}
 }
 .copy:hover{color:var(--ink); border-color:var(--ink-3)}
 
-.say{font-size:14.5px; color:var(--ink-2); margin-top:14px; padding-top:12px; border-top:1px dashed var(--rule)}
+.say{font-size:14.5px; color:var(--ink-2); margin-top:15px; padding-top:13px; border-top:1px dashed var(--rule)}
 .say b{color:var(--ink); font-weight:600}
 .lock{
-  margin-top:13px; padding:10px 12px; border-left:3px solid var(--jade); background:var(--jade-wash);
+  margin-top:14px; padding:11px 13px; border-left:3px solid var(--jade); background:var(--jade-wash);
   border-radius:0 2px 2px 0; font-size:14px; color:var(--ink-2);
 }
 .lock b{color:var(--ink)}
 .lock code{font-size:12px; overflow-wrap:anywhere}
 
-.errbox{border-left:3px solid var(--vermilion); background:var(--vermilion-wash); padding:11px 13px; border-radius:0 2px 2px 0; margin-top:14px}
+.errbox{border-left:3px solid var(--vermilion); background:var(--vermilion-wash); padding:12px 14px; border-radius:0 2px 2px 0; margin-top:15px}
 .errbox--warn{border-left-color:var(--signal); background:var(--signal-wash)}
-.errbox__code{font-family:var(--font-mono); font-size:12px; font-weight:700; letter-spacing:.09em; color:var(--vermilion)}
+.errbox__code{font-family:var(--font-mono); font-size:11.5px; font-weight:700; letter-spacing:.09em; color:var(--vermilion)}
 .errbox--warn .errbox__code{color:var(--signal)}
-.errbox__msg{font-size:14.5px; color:var(--ink); margin-top:5px; overflow-wrap:anywhere}
-.errbox__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px; font-style:italic}
+.errbox__msg{font-size:15px; color:var(--ink); margin-top:2px; overflow-wrap:anywhere}
+.errbox__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px}
 
-.acts{display:flex; gap:9px; align-items:center; flex-wrap:wrap; padding:12px 13px; border-top:1px solid var(--rule); background:var(--surface-2); border-radius:0 0 3px 3px}
+.acts{display:flex; gap:10px; align-items:center; flex-wrap:wrap; padding:14px 16px; border-top:1px solid var(--rule); background:var(--surface-2); border-radius:0 0 3px 3px}
 .acts .spacer{flex:1}
+.acts .btn--go{font-size:12.5px; padding:12px 22px}
+.acts .btn--go.btn--tiny{font-size:9.5px; padding:4px 9px}
 @media (max-width:560px){ .acts .btn{flex:1 1 auto} .acts .spacer{display:none} }
 
 /* ---------- waiting for the phone ------------------------------------------ */
-.wait{margin-top:16px; border:1px solid var(--signal); border-radius:3px; overflow:hidden; background:var(--signal-wash)}
-.wait__hd{display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:11px 13px; border-bottom:1px dashed var(--signal)}
-.wait__t{font-size:16px; letter-spacing:-.01em}
+.wait{margin-top:18px; border:1px solid var(--signal); border-radius:3px; overflow:hidden; background:var(--signal-wash)}
+.wait__hd{display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:12px 14px; border-bottom:1px dashed var(--signal)}
+.wait__t{font-size:16px; letter-spacing:-.014em}
 .wait__clock{font-family:var(--font-mono); font-size:12px; color:var(--ink-2); margin-left:auto}
 .wait__bar{height:3px; background:var(--rule); overflow:hidden}
 .wait__bar i{display:block; height:100%; width:38%; background:var(--signal); animation:slide 1.5s ease-in-out infinite}
 @keyframes slide{0%{transform:translateX(-105%)}100%{transform:translateX(300%)}}
-.wait__bd{padding:11px 13px; font-size:14px; color:var(--ink-2)}
+.wait__bd{padding:11px 14px; font-size:14px; color:var(--ink-2)}
 .wait__bd b{color:var(--ink)}
 @media (max-width:560px){ .wait__clock{margin-left:0} }
 
 /* ---------- the handoff ------------------------------------------------------ */
 /* The one thing on this card the ATTENDEE looks at. Everything else on the page
-   is for the volunteer; this is turned around and pointed across the desk, so
-   it is the largest object in the docket and carries no hex the eye can trip
-   over. A 64-character offer id read aloud is not a handoff. */
-.hand{margin-top:16px; border:2px solid var(--signal); border-radius:3px; background:var(--surface); overflow:hidden}
-.hand__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 13px; background:var(--signal-wash); border-bottom:1px solid var(--signal)}
+   is for the volunteer; this is turned around and pointed across the desk. */
+.hand{margin-top:18px; border:2px solid var(--signal); border-radius:3px; background:var(--surface); overflow:hidden}
+.hand__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:10px 14px; background:var(--signal-wash); border-bottom:1px solid var(--signal)}
 .hand__hd .label{color:var(--signal)}
 .hand__exp{margin-left:auto; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); white-space:nowrap}
-.hand__bd{display:flex; gap:clamp(14px,2.4vw,26px); align-items:flex-start; flex-wrap:wrap; padding:clamp(13px,1.9vw,18px)}
+.hand__bd{display:flex; gap:clamp(14px,2.4vw,28px); align-items:flex-start; flex-wrap:wrap; padding:clamp(14px,2vw,20px)}
 .qr{flex:none; width:clamp(196px,25vw,272px); max-width:100%}
 .qr__plate{
   position:relative; aspect-ratio:1/1; padding:10px; border-radius:3px;
@@ -519,13 +657,13 @@ a.btn--go{color:var(--on-signal)}
 .qr__b:nth-of-type(2){top:-7px; right:-7px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
 .qr__b:nth-of-type(3){bottom:-7px; left:-7px; border-right:0; border-top:0; border-radius:0 0 0 3px}
 .qr__b:nth-of-type(4){bottom:-7px; right:-7px; border-left:0; border-top:0; border-radius:0 0 3px 0}
-.qr__cap{margin:12px 0 0; text-align:center; font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
+.qr__cap{margin:13px 0 0; text-align:center; font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3)}
 .hand__say{flex:1 1 250px; min-width:min(100%,250px)}
-.hand__lead{font-size:clamp(1rem,1.9vw,1.16rem); line-height:1.4; letter-spacing:-.012em; color:var(--ink-2); margin:0}
+.hand__lead{font-size:clamp(1.04rem,1.9vw,1.2rem); line-height:1.42; letter-spacing:-.014em; color:var(--ink-2); margin:0}
 .hand__lead b{color:var(--ink); font-weight:600}
-.hand__link{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:13px}
+.hand__link{display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-top:14px}
 .hand__url{
-  display:block; margin-top:8px; font-family:var(--font-mono); font-size:11px; color:var(--ink-3);
+  display:block; margin-top:9px; font-family:var(--font-mono); font-size:10.5px; color:var(--ink-3);
   overflow-wrap:anywhere; line-height:1.45;
 }
 .hand__url b{color:var(--ink-2); font-weight:400}
@@ -533,23 +671,21 @@ a.btn--go{color:var(--on-signal)}
    card that is not an error — because by the time it IS an error, the attendee
    has already signed something that went nowhere. */
 .netwarn{
-  margin-top:14px; padding:10px 12px; border:1px solid var(--vermilion); border-left-width:3px;
+  margin-top:15px; padding:11px 13px; border:1px solid var(--vermilion); border-left-width:3px;
   background:var(--vermilion-wash); border-radius:0 2px 2px 0; font-size:13.5px; color:var(--ink-2);
 }
 .netwarn__t{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; color:var(--vermilion)}
-.netwarn p{margin:5px 0 0}
+.netwarn p{margin:6px 0 0}
 .netwarn b{color:var(--ink); font-weight:600}
 .netwarn code{font-size:12.5px; color:var(--ink); white-space:nowrap}
 @media (max-width:560px){ .netwarn code{white-space:normal} }
 
 /* ---------- badge artwork --------------------------------------------------- */
-/* GET /demo/art renders the same SVG that gets pinned for this attendee: a dark
-   field with luminous strokes. Dropped raw onto bone paper it reads as a hole
-   punched through the sheet, so it is mounted — near-black well, hairline
-   keyline, a paper mat, and corner ticks borrowed from the scanner reticle.
-   It answers one operational question at a glance ("is this a DIFFERENT badge
-   from the last one?"), so it must be legible without ever outweighing the
-   stamp beside it. */
+/* The badge this person is getting, mounted beside the verdict. A dark field
+   with luminous strokes; dropped raw onto bone paper it reads as a hole punched
+   through the sheet, so it is mounted — near-black well, hairline keyline, a
+   paper mat, and corner ticks borrowed from the scanner reticle. It answers one
+   operational question at a glance: is this a DIFFERENT badge from the last? */
 .plate{margin:0; flex:none; width:var(--plate-w); max-width:42%; display:flex; flex-direction:column; gap:9px}
 .plate__frame{
   position:relative; aspect-ratio:1/1; overflow:hidden; border-radius:2px;
@@ -568,7 +704,7 @@ a.btn--go{color:var(--on-signal)}
   font-family:var(--font-mono); font-size:8.5px; letter-spacing:.16em; text-transform:uppercase; color:#7d7669;
 }
 .plate__ph::before{content:"\25CC"; font-size:16px; line-height:1; color:var(--signal-2); animation:blink 1.2s steps(2) infinite}
-.plate__ph::after{content:"rendering"}
+.plate__ph::after{content:"drawing"}
 .plate__frame[data-art="ok"] .plate__ph{display:none}
 .plate__frame[data-art="fail"] .plate__ph::before{content:"[ ]"; color:#7d7669; animation:none}
 .plate__frame[data-art="fail"] .plate__ph::after{content:"no artwork"}
@@ -579,22 +715,22 @@ a.btn--go{color:var(--on-signal)}
 .plate__marks i:nth-child(3){bottom:0; left:0; border-bottom-width:1px; border-left-width:1px}
 .plate__marks i:nth-child(4){bottom:0; right:0; border-bottom-width:1px; border-right-width:1px}
 .plate__cap{
-  display:flex; align-items:center; gap:4px 8px; flex-wrap:wrap;
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; text-transform:uppercase;
+  display:flex; align-items:center; gap:4px 9px; flex-wrap:wrap;
+  font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em; text-transform:uppercase;
 }
-.plate__pin{display:inline-flex; align-items:center; gap:5px; font-weight:700; cursor:help}
+.plate__pin{display:inline-flex; align-items:center; gap:5px; font-weight:600; cursor:help}
 .plate__dot{width:6px; height:6px; border-radius:50%; flex:none; font-style:normal}
 .plate__pin[data-pin="ipfs"]{color:var(--jade)}
 .plate__pin[data-pin="ipfs"] .plate__dot{background:var(--jade); box-shadow:0 0 0 2px var(--jade-wash)}
 .plate__pin[data-pin="local"]{color:var(--ink-3)}
 .plate__pin[data-pin="local"] .plate__dot{border:1px dashed currentColor}
-.plate__link{font-size:9px; letter-spacing:.1em; text-transform:uppercase}
+.plate__link{font-size:8.5px; letter-spacing:.1em; text-transform:uppercase}
 /* With a plate on the row, let the prose rejoin the line a little sooner. */
-.stampwrap--art .stampwrap__say{min-width:min(100%,200px)}
+.stampwrap--art .stampwrap__say{min-width:min(100%,210px)}
 
-/* Why this claim was slow. One line, only when the server says so. */
+/* Why this one took a moment. One line, only when the server says so. */
 .pinnote{
-  margin-top:13px; padding:9px 12px; border-left:3px solid var(--signal); background:var(--signal-wash);
+  margin-top:14px; padding:9px 12px; border-left:3px solid var(--signal); background:var(--signal-wash);
   border-radius:0 2px 2px 0; font-size:13.5px; color:var(--ink-2);
   display:flex; gap:4px 10px; align-items:baseline; flex-wrap:wrap;
 }
@@ -602,18 +738,16 @@ a.btn--go{color:var(--on-signal)}
 .pinnote b{color:var(--ink); font-weight:600}
 
 /* Roster thumbnails. Down the column, twenty visibly different squares is the
-   fastest confirmation that per-attendee art is real. Small enough that a row
-   grows by a few pixels rather than doubling. */
+   fastest confirmation that per-attendee art is real. */
 .thumb{
   position:relative; display:block; width:var(--thumb); height:var(--thumb);
   border-radius:2px; overflow:hidden; background:var(--mat);
   border:1px solid var(--mat-edge); box-shadow:0 0 0 1px var(--rule);
 }
-/* The art's strokes are 1–2.5px against a 512px canvas, so at 32px they
+/* The art's strokes are 1–2.5px against a 512px canvas, so at 30px they
    anti-alias almost to nothing and the column reads as a row of black squares.
    A modest lift restores the one thing a thumbnail is for — telling these
-   apart. The plate on the card is deliberately left unfiltered: that is the
-   faithful view, this is the contact sheet. */
+   apart. The plate on the card is deliberately left unfiltered. */
 .thumb img{
   width:100%; height:100%; display:block; object-fit:contain;
   filter:saturate(1.25) brightness(1.28);
@@ -628,17 +762,24 @@ a.btn--go{color:var(--on-signal)}
 .thumb[data-art="ok"]::after{display:none}
 .thumb[data-art="load"]::after{animation:blink 1.3s steps(2) infinite}
 
-/* ---------- work bench (rosters) ------------------------------------------- */
-.bench{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:clamp(14px,1.8vw,22px); margin-top:clamp(18px,2.6vw,26px)}
+/* ---------- work bench (rosters) — deliberately secondary ------------------- */
+.benchhd{display:flex; align-items:baseline; gap:12px; flex-wrap:wrap; margin:clamp(26px,4vw,42px) 0 12px; padding-bottom:9px; border-bottom:1px solid var(--rule-2)}
+.benchhd h2{font-size:1.06rem; letter-spacing:-.018em; color:var(--ink-2)}
+.benchhd .label{margin-left:auto}
+.bench{display:grid; grid-template-columns:minmax(0,1.35fr) minmax(0,1fr); gap:clamp(14px,1.8vw,22px)}
 @media (max-width:1040px){ .bench{grid-template-columns:minmax(0,1fr)} }
+.bench .card{box-shadow:none; background:transparent}
+.bench .card__hd{background:transparent; padding:10px 13px}
+.bench .card__body{padding:13px}
+.bench .card__ft{background:transparent}
 
 .tablebox{overflow-x:auto}
-table{border-collapse:collapse; width:100%; min-width:556px}
+table{border-collapse:collapse; width:100%; min-width:520px}
 th.col-art,td.col-art{width:1%; white-space:nowrap; padding-right:4px}
-/* A 32px square next to an 11.5px line looks dropped unless the row centres. */
+/* A 30px square next to an 11.5px line looks dropped unless the row centres. */
 #sess-rows td{vertical-align:middle}
 th{
-  text-align:left; font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase;
+  text-align:left; font-family:var(--font-mono); font-size:8.5px; letter-spacing:.17em; text-transform:uppercase;
   color:var(--ink-3); font-weight:600; padding:7px 10px; border-bottom:1px solid var(--rule-2); white-space:nowrap;
 }
 td{padding:8px 10px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11.5px; color:var(--ink-2); vertical-align:top}
@@ -650,22 +791,23 @@ td .val{font-size:11.5px}
 .pill--offered{color:var(--signal); background:var(--signal-wash); border:1px solid var(--signal-2)}
 .pill--confirmed{color:var(--jade); background:var(--jade-wash); border:1px solid var(--jade)}
 .pill--failed{color:var(--vermilion); background:var(--vermilion-wash); border:1px solid var(--vermilion)}
-.empty{font-size:14px; color:var(--ink-3); font-style:italic; padding:14px 13px}
+.empty{font-size:14px; color:var(--ink-3); font-style:italic; padding:14px 13px; margin:0}
 
 .counts{display:grid; grid-template-columns:repeat(auto-fit,minmax(78px,1fr)); gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:2px; overflow:hidden}
 .count{background:var(--surface); padding:10px; text-align:center}
 .count__n{font-family:var(--font-display); font-size:1.6rem; line-height:1; color:var(--ink)}
 .count__k{font-family:var(--font-mono); font-size:8.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3); margin-top:5px}
 .rows{margin-top:12px; border-top:1px solid var(--rule); max-height:290px; overflow-y:auto}
-.row{padding:7px 0; border-bottom:1px dotted var(--rule); font-size:11.5px; font-family:var(--font-mono); color:var(--ink-2); overflow-wrap:anywhere}
+.row{padding:8px 0; border-bottom:1px dotted var(--rule); font-size:12.5px; font-family:var(--font-display); color:var(--ink-2); overflow-wrap:anywhere}
 .row b{color:var(--ink); font-weight:600}
+.row code{font-family:var(--font-mono); font-size:11px}
 .row .flag{color:var(--vermilion)}
-.src{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; padding:2px 7px; border-radius:2px}
+.src{display:inline-flex; align-items:center; gap:6px; font-family:var(--font-mono); font-size:8.5px; letter-spacing:.16em; text-transform:uppercase; font-weight:700; padding:2px 7px; border-radius:2px}
 .src--chain{color:var(--signal); background:var(--signal-wash)}
 .src--desk{color:var(--jade); background:var(--jade-wash)}
 
-/* ---------- raw + wire ----------------------------------------------------- */
-.raw{margin-top:13px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk); min-width:0}
+/* ---------- diagnostics: raw bodies + request log --------------------------- */
+.raw{margin-top:14px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk); min-width:0}
 .raw>summary{
   cursor:pointer; list-style:none; padding:7px 11px;
   font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
@@ -683,8 +825,9 @@ td .val{font-size:11.5px}
 .j-bool{color:var(--j-bool)} .j-null{color:var(--j-null)}
 
 .wirewrap{margin-top:clamp(18px,2.6vw,26px)}
-.wire__box{border:1px solid var(--rule); border-top:0; border-radius:0 0 2px 2px; background:var(--sunk); max-height:240px; overflow-y:auto}
-.wire__row{display:grid; grid-template-columns:62px 44px minmax(0,1fr) 54px 56px; gap:10px; align-items:baseline; padding:5px 12px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11px}
+.wire__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:9px 13px; border:1px solid var(--rule); border-bottom:0; border-radius:2px 2px 0 0; background:var(--surface-2)}
+.wire__box{border:1px solid var(--rule); border-radius:0 0 2px 2px; background:var(--sunk); max-height:240px; overflow-y:auto}
+.wire__row{display:grid; grid-template-columns:62px 52px minmax(0,1fr) 54px 56px; gap:10px; align-items:baseline; padding:5px 12px; border-bottom:1px dotted var(--rule); font-family:var(--font-mono); font-size:11px}
 .wire__row:last-child{border-bottom:0}
 .wire__t{color:var(--ink-3)}
 .wire__m{font-weight:700; color:var(--signal)}
@@ -693,13 +836,27 @@ td .val{font-size:11.5px}
 .wire__s.ok{color:var(--jade)} .wire__s.err{color:var(--vermilion)}
 .wire__ms{color:var(--ink-3); text-align:right}
 @media (max-width:640px){
-  .wire__row{grid-template-columns:40px minmax(0,1fr) 52px; row-gap:2px}
+  .wire__row{grid-template-columns:44px minmax(0,1fr) 52px; row-gap:2px}
   .wire__t,.wire__ms{display:none}
 }
 
-.foot{margin:clamp(26px,4vw,44px) 0 48px; padding-top:16px; border-top:1px solid var(--rule); font-size:13px; color:var(--ink-3)}
-.foot p{max-width:84ch}
+/* ---------- foot ------------------------------------------------------------ */
+.foot{
+  margin:clamp(26px,4vw,44px) 0 44px; padding-top:16px; border-top:1px solid var(--rule);
+  font-size:13.5px; color:var(--ink-3);
+  display:flex; gap:14px 24px; align-items:flex-start; flex-wrap:wrap;
+}
+.foot p{max-width:76ch; margin:0}
 .foot b{color:var(--ink-2)}
+.foot__act{margin-left:auto; display:flex; gap:9px; align-items:center; flex-wrap:wrap}
+.devlink{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase;
+  color:var(--ink-3); background:transparent; border:1px solid transparent; border-bottom-color:var(--rule-2);
+  border-radius:0; padding:2px 1px; cursor:pointer; white-space:nowrap;
+}
+.devlink:hover{color:var(--ink-2); border-bottom-color:var(--ink-3)}
+.devlink:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+:root[data-dev="1"] .devlink{color:var(--signal); border-bottom-color:var(--signal)}
 
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
@@ -714,29 +871,30 @@ td .val{font-size:11.5px}
   <div class="wrap rail__in">
     <div class="rail__brand">
       <span class="mark">DESK</span>
-      <span class="rail__title">Volunteer console &middot; issue badges</span>
+      <span class="rail__title">Volunteer desk</span>
     </div>
-    <div class="cells" role="group" aria-label="Console state">
-      <!-- First, and the only control up here: it decides what every call on
-           the page below is asking about. -->
+    <div class="cells auth-in" role="group" aria-label="Desk status">
+      <!-- The only control up here, and the one that decides what every card
+           below is about. -->
       <div class="cell cell--event" id="cell-event">
-        <span class="cell__k"><label for="ev-pick">event &middot; taxon</label></span>
+        <span class="cell__k"><label for="ev-pick">working event</label></span>
         <span class="evrow">
           <select class="evpick" id="ev-pick"><option value="">loading&hellip;</option></select>
-          <span class="evtaxon" id="ev-taxon" title="NFTokenTaxon &mdash; the event id exactly as it is written on chain">&mdash;</span>
+          <span class="evtaxon" id="ev-taxon" title="Event number">&mdash;</span>
         </span>
       </div>
-      <div class="cell"><span class="cell__k">network</span><span class="cell__v" id="hdr-net">&mdash;</span></div>
-      <div class="cell cell--wide"><span class="cell__k">node</span><span class="cell__v" id="hdr-node">&mdash;</span></div>
-      <div class="cell"><span class="cell__k">issuer</span><span class="cell__v" id="hdr-issuer">&mdash;</span></div>
-      <div class="cell"><span class="cell__k">issuer balance</span><span class="cell__v" id="hdr-bal">&mdash;</span></div>
-      <div class="cell cell--tally"><span class="cell__k">issued this session</span><span class="cell__v" id="hdr-tally">0</span></div>
+      <div class="cell cell--tally"><span class="cell__k">badges issued</span><span class="cell__v" id="hdr-tally">0</span></div>
+      <div class="cell"><span class="cell__k">badge fund</span><span class="cell__v" id="hdr-bal">&mdash;</span></div>
+      <div class="cell dev-only"><span class="cell__k">network</span><span class="cell__v" id="hdr-net">&mdash;</span></div>
+      <div class="cell cell--wide dev-only"><span class="cell__k">node</span><span class="cell__v" id="hdr-node">&mdash;</span></div>
+      <div class="cell dev-only"><span class="cell__k">issuer</span><span class="cell__v" id="hdr-issuer">&mdash;</span></div>
     </div>
     <div class="rail__act">
-      <span class="pulse" id="pulse" data-up="1"><span class="dot"></span><span id="pulse-t">live</span></span>
-      <button class="btn btn--go btn--tiny" id="btn-next" type="button" title="Clear the card and start scanning for the next attendee (N)">Next attendee</button>
+      <span class="pulse auth-in" id="pulse" data-up="1"><span class="dot"></span><span id="pulse-t">live</span></span>
+      <button class="btn btn--go btn--tiny auth-in" id="btn-next" type="button" title="Clear the card and start the next attendee (N)">Next attendee</button>
+      <span class="who-in auth-in" id="hdr-who-wrap"><span id="hdr-who">&mdash;</span></span>
+      <button class="btn btn--ghost btn--tiny auth-in" id="btn-out" type="button">Sign out</button>
       <button class="btn btn--ghost btn--tiny" id="btn-theme" type="button" title="Switch between the paper and ink palettes">Theme</button>
-      <button class="btn btn--ghost btn--tiny" id="btn-state" type="button">Refresh</button>
     </div>
   </div>
 </header>
@@ -744,43 +902,136 @@ td .val{font-size:11.5px}
 <div class="wrap">
   <noscript>
     <div class="banners"><div class="banner"><div><span class="banner__t">JavaScript required</span>
-      <p>This console drives the live API from the browser. Nothing on it is pre-rendered.</p></div></div></div>
+      <p>This desk needs JavaScript to read a badge and issue one. Nothing on it is pre-rendered.</p></div></div></div>
   </noscript>
 
   <div class="banners">
     <div class="banner" id="bn-offline" hidden>
       <div>
-        <span class="banner__t">The API is not answering</span>
-        <p id="bn-offline-msg">A request failed at the network layer. This page is served by the API itself, so if the page loaded but a <code>fetch</code> did not, the process is down or restarting. Every button below stays armed &mdash; start the server and press Retry.</p>
+        <span class="banner__t">No connection to the server</span>
+        <p id="bn-offline-msg">Something on this page could not reach the server. Nothing has been lost and nothing was half-done &mdash; check the connection and press Retry.</p>
       </div>
       <span class="banner__act"><button class="btn btn--tiny" id="bn-offline-retry" type="button">Retry</button></span>
     </div>
 
-    <div class="banner" id="bn-state" hidden>
+    <div class="banner auth-in" id="bn-state" hidden>
       <div>
-        <span class="banner__t" id="bn-state-t">Console state unavailable</span>
+        <span class="banner__t" id="bn-state-t">Desk status unavailable</span>
         <p id="bn-state-msg"></p>
       </div>
       <span class="banner__act"><button class="btn btn--tiny" id="bn-state-retry" type="button">Retry</button></span>
     </div>
 
-    <div class="banner banner--warn" id="bn-demo" hidden>
-      <div>
-        <span class="banner__t">Demo helper routes are off</span>
-        <p id="bn-demo-msg"></p>
-      </div>
-    </div>
   </div>
 </div>
 
-<main class="wrap">
+<main class="wrap" id="main">
+
+  <!-- ============ BOOT ============ -->
+  <section id="view-boot" aria-live="polite">
+    <div class="gate"><div class="gate__card"><p class="boot">checking your sign-in</p></div></div>
+  </section>
+
+  <!-- ============ SIGN IN ============ -->
+  <section id="view-login" hidden>
+    <div class="gate">
+      <div class="gate__card">
+        <div class="gate__mark">staff sign-in</div>
+        <div class="card">
+          <div class="card__body">
+            <h1 tabindex="-1" id="login-h">Volunteer desk</h1>
+            <p class="gate__sub">This desk issues real badges and spends the event&rsquo;s funds, so it
+              stays behind the organiser account.</p>
+
+            <div id="login-flash" style="margin-top:16px"></div>
+
+            <form class="form" id="login-form" style="margin-top:16px" autocomplete="on" novalidate>
+              <div class="field" id="f-email">
+                <label for="in-email">Email</label>
+                <input class="in" id="in-email" name="email" type="email" autocomplete="username"
+                       spellcheck="false" autocapitalize="off" autocorrect="off" required
+                       placeholder="you@example.com">
+              </div>
+              <div class="field" id="f-pw">
+                <label for="in-pw">Password</label>
+                <input class="in" id="in-pw" name="password" type="password" autocomplete="current-password" required>
+              </div>
+              <div>
+                <button class="btn btn--go btn--big" id="btn-login" type="submit" style="width:100%">Sign in</button>
+              </div>
+            </form>
+          </div>
+        </div>
+        <p class="gate__foot">Use the organiser account for this event. If you do not have it, ask
+          whoever set the event up &mdash; there is no self-service reset.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ WHICH EVENT ============ -->
+  <section id="view-choose" hidden>
+    <div class="gate">
+      <div class="gate__card" style="width:min(620px,100%)">
+        <div class="gate__mark">before you start</div>
+        <div class="card">
+          <div class="card__body">
+            <h1 tabindex="-1" id="choose-h">Which event are you working?</h1>
+            <p class="gate__sub">Every badge you hand out is stamped with the event you pick here,
+              and that cannot be changed afterwards. So the desk asks rather than guesses &mdash;
+              every time, including after a reload.</p>
+
+            <div id="choose-flash" style="margin-top:14px"></div>
+            <div class="evlist" id="choose-list" style="margin-top:16px"></div>
+          </div>
+          <div class="card__ft" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+            <span class="label" id="choose-who">&mdash;</span>
+            <span style="flex:1"></span>
+            <button class="btn btn--tiny" id="btn-choose-reload" type="button">Refresh</button>
+            <button class="btn btn--tiny" id="btn-choose-out" type="button">Sign out</button>
+          </div>
+        </div>
+        <p class="gate__foot">Nothing here has been chosen for you. If the event you want is not
+          listed, it has not been opened yet &mdash; whoever set it up can do that from the
+          organiser page.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ NO OPERATOR ACCOUNT (503) ============ -->
+  <section id="view-disabled" hidden>
+    <div class="gate">
+      <div class="gate__card" style="width:min(600px,100%)">
+        <div class="gate__mark">desk unavailable</div>
+        <div class="card">
+          <div class="card__body">
+            <h1 tabindex="-1" id="disabled-h">This deployment has no operator account configured</h1>
+            <p class="prose" style="margin-top:10px" id="disabled-msg">
+              There is nothing to sign in to. The desk is switched <strong>off</strong> rather than
+              left open, so no badges can be issued from this browser.
+            </p>
+            <p class="prose" style="margin-top:10px">
+              Whoever runs this deployment needs to configure an operator account and restart it. A
+              sign-in form is deliberately not shown here: it could not work.
+            </p>
+          </div>
+          <div class="card__ft" style="display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+            <span class="label">once that is done</span>
+            <span style="flex:1"></span>
+            <button class="btn btn--tiny" id="btn-disabled-retry" type="button">Check again</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ THE DESK ============ -->
+  <section id="view-console" hidden>
   <div class="deck">
 
-    <!-- ============ 1 · SCAN ============ -->
+    <!-- ---------- scan ---------- -->
     <section class="card bay" id="bay" data-state="idle" data-scan="on" aria-labelledby="bay-t">
       <div class="card__hd">
-        <span class="card__n">1</span>
-        <span class="label" id="bay-t">Scan the attendee</span>
+        <h2 class="card__t" id="bay-t">Scan the attendee</h2>
         <span class="livetag" id="bay-live" hidden><span class="dot"></span>camera on</span>
       </div>
       <div class="card__body">
@@ -790,15 +1041,15 @@ td .val{font-size:11.5px}
           <div class="view__flash" aria-hidden="true"></div>
           <div class="view__msg" id="view-msg" role="status">
             <span class="view__glyph" id="view-glyph" aria-hidden="true">[ ]</span>
-            <h2 class="view__t" id="view-t">Camera is off</h2>
-            <p class="view__b" id="view-b">Start it to read the attendee&rsquo;s QR code &mdash; or skip it entirely and type their address below. Both routes end at the same lookup.</p>
+            <h3 class="view__t" id="view-t">Camera is off</h3>
+            <p class="view__b" id="view-b">Start it to read the attendee&rsquo;s wallet code &mdash; or skip it entirely and type their address below. Both routes end in the same place.</p>
           </div>
         </div>
 
         <div class="baybar">
           <button class="btn" id="btn-cam" type="button">Start camera</button>
           <span class="spacer"></span>
-          <span class="label" id="bay-note">qr &middot; barcodedetector</span>
+          <span class="label" id="bay-note">camera scanner</span>
         </div>
 
         <div class="manual">
@@ -807,80 +1058,80 @@ td .val{font-size:11.5px}
             <span class="manual__note" id="manual-note">always available</span>
           </div>
           <form class="entry" id="entry-form" autocomplete="off">
-            <label class="sr" for="addr">Attendee XRPL address</label>
+            <label class="sr" for="addr">Attendee wallet address</label>
             <input id="addr" name="addr" type="text" inputmode="text" spellcheck="false"
                    autocapitalize="off" autocorrect="off"
                    placeholder="r&hellip; paste or type the attendee&rsquo;s address">
             <button class="btn btn--go" id="btn-lookup" type="submit">Look up</button>
           </form>
           <p class="hint">
-            Paste anything the QR contained &mdash; a bare <code>r&hellip;</code> address or a full
-            <code>xrpl:</code> URI. An address inside a longer payload is pulled out for you.
-            <kbd>/</kbd> focuses this field, <kbd>N</kbd> starts the next attendee.
+            Paste whatever their code contained &mdash; the address is pulled out of a longer payload
+            for you. <kbd>/</kbd> jumps here, <kbd>N</kbd> starts the next attendee.
           </p>
         </div>
       </div>
     </section>
 
-    <!-- ============ 2 · THE DECISION ============ -->
+    <!-- ---------- the decision ---------- -->
     <section class="card docket" id="docket" data-verdict="empty" aria-labelledby="docket-t">
       <div class="card__hd">
-        <span class="card__n">2</span>
-        <span class="label" id="docket-t">Attendee</span>
-        <span class="label" id="docket-src" style="margin-left:auto">GET /demo/lookup</span>
+        <h2 class="card__t" id="docket-t">Attendee</h2>
+        <span class="label" id="docket-src" style="margin-left:auto">&mdash;</span>
       </div>
       <div class="docket__body" id="docket-body"><!-- painted by JS --></div>
       <div class="acts" id="docket-acts"><!-- painted by JS --></div>
     </section>
   </div>
 
-  <!-- ============ 3 · ROSTERS ============ -->
+  <!-- ---------- rosters: secondary ---------- -->
+  <div class="benchhd">
+    <h2>Badges</h2>
+    <span class="label">everything issued, here and elsewhere</span>
+  </div>
+
   <div class="bench">
     <section class="card" aria-labelledby="sess-t">
       <div class="card__hd">
-        <span class="card__n">3</span>
         <span class="src src--desk">this desk</span>
-        <span class="label" id="sess-t">Session roster</span>
-        <span class="label" id="sess-sub" style="margin-left:auto">held in this tab</span>
+        <span class="label" id="sess-t">Issued at this desk</span>
+        <span class="label" id="sess-sub" style="margin-left:auto">this session only</span>
       </div>
       <div class="tablebox">
         <table>
           <thead>
-            <tr><th>#</th><th class="col-art" id="sess-art-h">art</th><th>attendee</th><th>nftoken id</th><th>status</th><th>attendance tx</th></tr>
+            <tr><th>#</th><th class="col-art" id="sess-art-h">badge</th><th>attendee</th><th class="dev-only">nftoken id</th><th>status</th><th>confirmation</th></tr>
           </thead>
           <tbody id="sess-rows"></tbody>
         </table>
       </div>
-      <p class="empty" id="sess-empty">Nobody yet. The first badge you issue at this desk appears here, and flips to <b>confirmed</b> the moment the attendee signs.</p>
+      <p class="empty" id="sess-empty">Nobody yet. The first badge you issue appears here, and turns <b>confirmed</b> the moment the attendee accepts it.</p>
       <div class="card__ft" style="display:flex; gap:9px; align-items:center; flex-wrap:wrap">
         <span class="label" id="sess-count">0 offered &middot; 0 confirmed</span>
         <span style="flex:1"></span>
-        <button class="btn btn--tiny" id="btn-recheck" type="button">Re-check all pending</button>
-        <button class="btn btn--tiny btn--ghost" id="btn-clearsess" type="button">Clear log</button>
+        <button class="btn btn--tiny" id="btn-recheck" type="button">Re-check pending</button>
       </div>
     </section>
 
     <section class="card" aria-labelledby="chain-t">
       <div class="card__hd">
-        <span class="card__n">4</span>
-        <span class="src src--chain">the chain</span>
-        <span class="label" id="chain-t">On-chain roster</span>
+        <span class="src src--chain">all desks</span>
+        <span class="label" id="chain-t">Everyone with this badge</span>
         <span class="label" id="chain-ev" style="margin-left:auto">&mdash;</span>
       </div>
       <div class="card__body">
-        <p class="prose" style="font-size:14px; margin-bottom:11px">
-          <code class="mono" style="font-size:12px">GET /events/<span id="chain-path">&hellip;</span>/roster</code> walks every badge
-          ever minted under this taxon via <code>nfts_by_issuer</code>. It is the deliberately expensive
-          read &mdash; the ledger, not the index. Press it to reconcile the desk against the chain.
+        <p class="prose" style="font-size:13.5px; margin-bottom:12px">
+          Every badge ever issued for this event<span class="dev-only"> (taxon <span id="chain-path">&hellip;</span>)</span>,
+          counted from the ledger itself rather than from this desk&rsquo;s own list. Use it to check
+          the desk against the full picture.
         </p>
-        <button class="btn" id="btn-chain" type="button">Read the chain</button>
+        <button class="btn" id="btn-chain" type="button">Check the ledger</button>
         <div id="chain-out"></div>
       </div>
     </section>
   </div>
 
-  <section class="wirewrap">
-    <div class="card__hd" style="border:1px solid var(--rule); border-bottom:0; border-radius:2px 2px 0 0">
+  <section class="wirewrap dev-only">
+    <div class="wire__hd">
       <span class="label">Request log</span>
       <span class="label" style="margin-left:auto; color:var(--ink-3)">every call this page made, newest first</span>
     </div>
@@ -890,23 +1141,22 @@ td .val{font-size:11.5px}
   </section>
 
   <footer class="foot">
-    <p>
-      <b>No seed, secret or private key is ever requested by, displayed in, or stored by this page.</b>
-      The issuer key lives server-side and is absent from responses, logs and errors by design. The attendee
-      signs in their own wallet; this desk only ever sees their public address.
-    </p>
-    <p style="margin-top:9px">
-      <b>Camera frames never leave this tab.</b> Decoding happens locally through the browser&rsquo;s built-in
-      <code>BarcodeDetector</code>; nothing is uploaded, nothing is recorded, and the track is stopped the
-      instant a code is read or the tab is hidden.
-    </p>
-    <p style="margin-top:9px">
-      <b>Attendance is an event, not a state.</b> A badge that is later burned still verifies, because the
-      attendee&rsquo;s <code>NFTokenAcceptOffer</code> hash <em>is</em> the attendance record.
-    </p>
+    <div>
+      <p>
+        <b>This desk never sees a private key.</b> The attendee approves the badge in their own wallet,
+        on their own phone; all the desk ever handles is their public address.
+      </p>
+      <p style="margin-top:8px">
+        <b>Camera images never leave this tab.</b> Codes are read on this machine, nothing is uploaded
+        or recorded, and the camera is released the moment a code is read or the tab is hidden.
+      </p>
+    </div>
+    <div class="foot__act">
+      <button class="devlink" id="btn-dev" type="button" title="Show the request log and raw responses (D)">Diagnostics</button>
+    </div>
   </footer>
+  </section>
 </main>
-
 <script>
 (function () {
   "use strict";
@@ -914,10 +1164,10 @@ td .val{font-size:11.5px}
   /* =====================================================================
      State this tab owns.
      ===================================================================== */
-  var state = null;            // GET /demo/state
+  var state = null;            // the ledger and badge fund this desk is on
   var stateProblem = "";
   var offline = false;
-  var look = null;             // last GET /demo/lookup body
+  var look = null;             // last attendee-lookup body
   var lookRaw = null;          // last raw call outcome, for the raw panel
   var current = "";            // address currently on the docket
   var currentRawScan = "";     // exactly what the QR/field contained
@@ -930,10 +1180,15 @@ td .val{font-size:11.5px}
   var events = [];             // GET /api/events — the open and live ones
   var eventsProblem = "";      // why the list is short, if it is
   var eventsLoading = true;    // before the first answer, "no event" would be a lie
-  var picked = null;           // the taxon this desk chose; null means "the demo's"
+  var picked = null;           // the event this desk chose; null means none yet
+  var me = null;               // { email } once signed in
+  var consoleBooted = false;   // the desk's one-time boot has run
   var SESS_KEY = "poap-desk:session";
   var THEME_KEY = "poap-desk:theme";
   var EVENT_KEY = "poap-desk:event";
+  var DEV_KEY = "poap-desk:dev";
+  var CSRF_COOKIE = "poap_csrf";
+  var CSRF_HEADER = "x-csrf-token";
   var ADDR_RE = /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/;
   var ADDR_FIND = /r[1-9A-HJ-NP-Za-km-z]{24,34}/;
   var MAX_SUBMIT = 512;        // past this we do not bother the server
@@ -994,8 +1249,8 @@ td .val{font-size:11.5px}
     if (!hash) return wrap;
     if (state && state.network && state.network !== "testnet") return wrap;
     var targets = [
-      ["bithomp", "https://test.bithomp.com/explorer/" + encodeURIComponent(hash)],
-      ["xrpl.org", "https://testnet.xrpl.org/transactions/" + encodeURIComponent(hash)]
+      ["Bithomp", "https://test.bithomp.com/explorer/" + encodeURIComponent(hash)],
+      ["XRPL.org", "https://testnet.xrpl.org/transactions/" + encodeURIComponent(hash)]
     ];
     for (var i = 0; i < targets.length; i++) {
       var a = node("a", "link", targets[i][0]);
@@ -1007,21 +1262,58 @@ td .val{font-size:11.5px}
     return wrap;
   }
 
+  /**
+   * One reference row. `hex: true` means the value is a 64-character machine id
+   * that nobody at a desk reads aloud: it is truncated hard, the full string
+   * stays on the title and on the clipboard button, and the row lives well
+   * below the decision it belongs to.
+   */
   function kv(label, value, opts) {
     opts = opts || {};
     var row = node("div", "kv");
     row.appendChild(node("span", "kv__k", label));
     var v = node("span", "kv__v" + (opts.tone ? " tone-" + opts.tone : ""));
     var text = (value === undefined || value === null || value === "") ? "—" : String(value);
-    v.appendChild(node("code", "val", text));
+    var shown = (text !== "—" && opts.hex) ? short(text, 8, 6) : text;
+    var code = node("code", "val", shown);
+    if (shown !== text) code.title = text;
+    v.appendChild(code);
     if (text !== "—" && opts.copy) v.appendChild(copyBtn(text));
     if (text !== "—" && opts.explore) v.appendChild(explorerLinks(text));
     row.appendChild(v);
     return row;
   }
 
+  /** A plain-language line a volunteer can act on. Replaces a field dump. */
+  function fact(tone, mark, text, detail) {
+    var li = node("li", "fact" + (tone ? " fact--" + tone : ""));
+    li.appendChild(node("span", "fact__m", mark));
+    var s = node("span");
+    s.appendChild(document.createTextNode(text));
+    if (detail) s.appendChild(node("em", null, "  " + detail));
+    li.appendChild(s);
+    return li;
+  }
+  function facts(list) {
+    var ul = node("ul", "facts");
+    for (var i = 0; i < list.length; i++) if (list[i]) ul.appendChild(list[i]);
+    return ul;
+  }
+
+  /** The demoted strip at the foot of a card: machine ids, nothing to read. */
+  function refBlock(title, rows) {
+    var box = node("div", "ref");
+    var hd = node("div", "ref__hd");
+    hd.appendChild(node("span", "label", title));
+    box.appendChild(hd);
+    for (var i = 0; i < rows.length; i++) if (rows[i]) box.appendChild(rows[i]);
+    return box;
+  }
+
+  /* Raw bodies are diagnostics, not desk furniture: built as always, and
+     invisible until the Diagnostics toggle is on. */
   function rawPanel(title, r) {
-    var d = node("details", "raw");
+    var d = node("details", "raw dev-only");
     var s = node("summary");
     s.appendChild(node("span", null, title));
     var st = node("span", "status " + (r && r.ok ? "status--ok" : "status--err"),
@@ -1096,26 +1388,182 @@ td .val{font-size:11.5px}
     setText("pulse-t", v ? "no reply" : "live");
   }
 
+  /* =====================================================================
+     THE ADMIN SESSION — a SECOND wrapper, deliberately kept apart.
+
+     The public reads — the event list, issuing a badge, the roster — go
+     through call() above: no credentials, no headers, no session. Everything
+     that is the OPERATOR's rather than the public's goes through the wrapper
+     below, which carries the session cookie and the CSRF header: the four
+     routes that guard the door, plus the desk's own three (state, attendee
+     lookup, wallet top-up). The lookup returns a registered person's name and
+     the top-up spends the issuer's XRP; neither belongs on an open route.
+
+     The server double-submits CSRF: it sets a `poap_csrf` cookie that JS is
+     deliberately allowed to read, and every non-GET under /admin/api must
+     echo it back in an `x-csrf-token` header or the request is 403 FORBIDDEN.
+     There is exactly ONE place below that attaches it, because a hand-rolled
+     fetch that forgets the header is the bug this page would otherwise ship.
+
+     The cookie is re-read immediately before every request rather than
+     cached: it rotates with the session, and a stale copy 403s.
+     ===================================================================== */
+  function readCookie(name) {
+    var all = String(document.cookie || "").split(";");
+    for (var i = 0; i < all.length; i++) {
+      var pair = all[i].trim();
+      var eq = pair.indexOf("=");
+      if (eq < 0) continue;
+      if (pair.slice(0, eq) !== name) continue;
+      var raw = pair.slice(eq + 1);
+      try { return decodeURIComponent(raw); } catch (e) { return raw; }
+    }
+    return "";
+  }
+
+  function isSafe(method) { return method === "GET" || method === "HEAD"; }
+
+  /** One admin fetch. Attaches CSRF when the method needs it. Never throws. */
+  function adminSend(method, path, body) {
+    var t0 = now();
+    var headers = { accept: "application/json" };
+    var init = { method: method, headers: headers, credentials: "same-origin" };
+
+    if (!isSafe(method)) {
+      // Read the cookie NOW, not at page load: it rotates with the session.
+      headers[CSRF_HEADER] = readCookie(CSRF_COOKIE);
+    }
+    if (body !== undefined) {
+      headers["content-type"] = "application/json";
+      init.body = JSON.stringify(body);
+    }
+
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+        logWire(method, path, res.status, now() - t0);
+        setOffline(false);
+        return {
+          network: true, ok: res.ok, status: res.status, statusText: res.statusText || "",
+          method: method, path: path, json: json, text: text,
+          retryAfter: res.headers ? res.headers.get("retry-after") : null
+        };
+      });
+    }, function (err) {
+      logWire(method, path, 0, now() - t0);
+      setOffline(true);
+      return {
+        network: false, ok: false, status: 0, statusText: "network error",
+        method: method, path: path, json: null, retryAfter: null,
+        text: String((err && err.message) || err)
+      };
+    });
+  }
+
+  /* The desk's own routes. Named once so a path cannot drift between the call
+     and the label a diagnostics panel prints for it. */
+  var DESK_ATTENDEES = "/admin/api/desk/attendees";
+  var DESK_SPONSOR = "/admin/api/desk/sponsor";
+
+  /**
+   * A failure that never left the tab, shaped like one that did, so the same
+   * error card renders it. Used when no event is selected: there is nothing to
+   * ask the server, and the fix is a picker at the top of this page.
+   */
+  function noEventFailure() {
+    return {
+      network: true, ok: false, status: 0, statusText: "", method: "GET",
+      path: DESK_ATTENDEES, text: "",
+      json: { error: { code: "NO_EVENT_SELECTED",
+        message: "No event is selected, so there is nothing to look this person up against. Pick the event this desk is working at the top of the page, then scan again." } }
+    };
+  }
+
+  function codeOf(r) {
+    var e = r && r.json && r.json.error;
+    return e && typeof e === "object" && e.code ? String(e.code) : "";
+  }
+  function messageOf(r) {
+    var e = r && r.json && r.json.error;
+    if (e && typeof e === "object" && e.message) return String(e.message);
+    if (!r.network) return "The server did not answer.";
+    return (r.text || r.statusText || "The request did not go through.").slice(0, 400);
+  }
+
+  /**
+   * The wrapper every admin caller uses.
+   *
+   *   403 + FORBIDDEN  -> the CSRF cookie is stale or missing. GET
+   *                       /admin/api/me re-issues it (it is derived from the
+   *                       session id, so re-sending is free), then the request
+   *                       is retried EXACTLY ONCE. A second 403 is surfaced.
+   *   401              -> the session is gone. Drop to sign-in saying so,
+   *                       rather than showing a generic failure. Opt out with
+   *                       { noAuth: true } — the sign-in POST's own 401 means
+   *                       "wrong password", not "expired".
+   *   503 ADMIN_DISABLED -> nothing is configured. Show the operator screen;
+   *                       there is nothing to sign in to.
+   */
+  function api(method, path, body, opts) {
+    opts = opts || {};
+    return adminSend(method, path, body).then(function (r) {
+      if (r.status === 403 && codeOf(r) === "FORBIDDEN" && !isSafe(method) && !opts.retried) {
+        return adminSend("GET", "/admin/api/me").then(function (mr) {
+          if (mr.status === 401) { expire(); return r; }
+          if (!mr.ok) return r;
+          var again = {};
+          for (var k in opts) if (Object.prototype.hasOwnProperty.call(opts, k)) again[k] = opts[k];
+          again.retried = true;
+          return api(method, path, body, again);
+        });
+      }
+      if (r.status === 401 && !opts.noAuth) { expire(); return r; }
+      if (r.status === 503 && codeOf(r) === "ADMIN_DISABLED") { toDisabled(r); return r; }
+      return r;
+    });
+  }
+
+  function flash(hostId, tone, code, message, sub) {
+    var host = $(hostId);
+    if (!host) return;
+    clear(host);
+    var f = node("div", "flash" + (tone === "bad" ? " flash--bad" : tone === "warn" ? " flash--warn" : ""));
+    f.appendChild(node("span", "flash__c", code));
+    var m = node("div", "flash__m");
+    m.appendChild(document.createTextNode(message));
+    if (sub) m.appendChild(node("em", null, sub));
+    f.appendChild(m);
+    host.appendChild(f);
+  }
+  function clearFlash(hostId) { var h = $(hostId); if (h) clear(h); }
+
   function errorOf(r) {
     if (!r.network) {
       return {
         code: "NETWORK_UNREACHABLE",
-        message: "The request never reached a server: " + r.text,
-        hint: "This page is served by the API itself, so a failed fetch means the process is down or restarting. Start it and press the button again — nothing here is one-shot."
+        message: "The server did not answer, so nothing happened at all.",
+        hint: "Check the desk’s connection and press the button again — nothing here is one-shot, and nothing was half-done."
       };
     }
     var e = r.json && r.json.error;
     if (e && typeof e === "object") {
       return { code: String(e.code || "ERROR"), message: String(e.message || ""), details: e.details };
     }
-    return { code: "HTTP_" + r.status, message: (r.text || r.statusText || "Request failed").slice(0, 400) };
+    return { code: "HTTP_" + r.status, message: (r.text || r.statusText || "That did not go through.").slice(0, 400) };
+  }
+
+  /* The machine code is kept — behind the Diagnostics toggle. What a volunteer
+     reads is the sentence the server wrote, then what to do about it. */
+  function errCode(text, warn) {
+    return node("div", "errbox__code dev-only" + (warn ? "" : ""), text);
   }
 
   function errBox(r, hint, warn) {
     var e = errorOf(r);
     var b = node("div", "errbox" + (warn ? " errbox--warn" : ""));
-    b.appendChild(node("div", "errbox__code", e.code + (r.network ? "  ·  HTTP " + r.status : "")));
-    b.appendChild(node("div", "errbox__msg", e.message || "(no message)"));
+    b.appendChild(errCode(e.code + (r.network ? "  ·  HTTP " + r.status : "")));
+    b.appendChild(node("div", "errbox__msg", e.message || "That did not go through."));
     if (hint || e.hint) b.appendChild(node("div", "errbox__hint", hint || e.hint));
     return b;
   }
@@ -1159,10 +1607,15 @@ td .val{font-size:11.5px}
      what the volunteer recognises, the TAXON is what is on chain.
      ===================================================================== */
 
-  /** The event the desk chose, or the demo's own when it never chose one. */
+  /**
+   * The event this desk is working, or null.
+   *
+   * NULL IS A REAL ANSWER and every caller has to handle it. There is no
+   * fallback event on purpose: an unattended default is how a volunteer issues
+   * badges for the wrong event all evening without a single error on screen.
+   */
   function eventId() {
-    if (picked != null) return picked;
-    return (state && state.eventId != null) ? state.eventId : null;
+    return picked != null ? picked : null;
   }
   function eventPath() { return encodeURIComponent(String(eventId())); }
 
@@ -1182,7 +1635,6 @@ td .val{font-size:11.5px}
     if (id == null) return "no event";
     var e = eventRecord(id);
     if (e) return e.name;
-    if (state && state.eventId === id) return "Demo event";
     return "Event " + id;
   }
 
@@ -1203,8 +1655,8 @@ td .val{font-size:11.5px}
 
   /**
    * GET /api/events — the open and the live ones, which is exactly the set a
-   * desk can be working. A failure here is not fatal: the picker falls back to
-   * whatever the demo state named, and the banner says why the list is short.
+   * desk can be working. A failure here is not fatal: a remembered choice from
+   * a previous shift still stands, and the banner says why the list is short.
    */
   function loadEvents() {
     return call("GET", "/api/events?limit=100").then(function (r) {
@@ -1226,20 +1678,17 @@ td .val{font-size:11.5px}
       events = clean;
       eventsLoading = false;
       eventsProblem = r.ok
-        ? (clean.length ? "" : "GET /api/events returned no open or live events.")
-        : ("GET /api/events failed with " + (r.network ? r.status : "no reply") + ".");
-      // Nothing chosen yet: prefer an event that is actually happening. Falling
-      // back to the demo's own taxon here would be the silent-walk-up trap.
+        ? (clean.length ? "" : "No open or live events were found for this deployment.")
+        : ("The list of events could not be loaded" + (r.network ? "." : " — the server did not answer."));
+      // NOTHING IS CHOSEN HERE. A desk works whichever event a person told it
+      // to work, and the list arriving is not a person. Picking "the live one"
+      // for them is the silent-wrong-event trap: at a venue running two rooms,
+      // or on the morning after, the first live event in the list is a coin
+      // toss, and a wrong badge is minted under the wrong taxon before anyone
+      // notices. The chooser in front of the console is where this happens.
       var was = eventId();
-      if (picked == null && clean.length) {
-        var best = null;
-        for (var k = 0; k < clean.length; k++) {
-          if (clean[k].status === "live") { best = clean[k]; break; }
-          if (!best) best = clean[k];
-        }
-        if (best) { picked = best.eventId; writePicked(picked); }
-      }
       paintEventPicker();
+      paintChooser();
       if (artPainted !== eventId()) paintSession();
       setText("chain-path", eventId() != null ? String(eventId()) : "{eventId}");
       /* A volunteer can scan the first attendee before this list lands. If that
@@ -1266,12 +1715,6 @@ td .val{font-size:11.5px}
       seen[e.eventId] = 1;
       opts.push({ id: e.eventId, label: e.name, group: e.status === "live" ? "live now" : (e.status || "listed") });
     }
-    // The demo's own event stays reachable — it is where the /demo/attendee
-    // role-play lives — but it never wins by default.
-    if (state && state.eventId != null && !seen[state.eventId]) {
-      seen[state.eventId] = 1;
-      opts.push({ id: state.eventId, label: "Demo event · " + state.eventId, group: "the demo" });
-    }
     // A remembered event that has since closed is kept, not silently swapped
     // for another one. The desk decides that, not a page load.
     if (id != null && !seen[id]) {
@@ -1284,7 +1727,7 @@ td .val{font-size:11.5px}
        and the closed control has room for the NAME and nothing else. The list
        comes back sorted by date, so gather each status into one run first —
        a stable sort, because date order inside a group is worth keeping. */
-    var RANK = { "not listed": 0, "live now": 1, "open": 2, "the demo": 9 };
+    var RANK = { "not listed": 0, "live now": 1, "open": 2 };
     for (var s = 0; s < opts.length; s++) opts[s].seq = s;
     opts.sort(function (a, b) {
       var ra = RANK[a.group] === undefined ? 5 : RANK[a.group];
@@ -1315,17 +1758,17 @@ td .val{font-size:11.5px}
     }
     sel.disabled = (opts.length === 1 && opts[0].id == null);
 
-    setText("ev-taxon", id == null ? "—" : String(id));
-    // Say the scoping out loud everywhere it applies, not only in the rail.
-    setText("docket-src", "GET /demo/lookup?eventId=" + (id == null ? "…" : id));
-    setText("chain-ev", eventName(id) + " · " + (id == null ? "—" : id));
+    setText("ev-taxon", id == null ? "—" : "#" + id);
+    // Say which event this card is about, everywhere it applies.
+    setText("docket-src", eventName(id));
+    setText("chain-ev", eventName(id));
 
     var rec = eventRecord(id);
     var bits = [eventName(id)];
     if (rec && rec.status) bits.push("status " + rec.status);
     if (rec && rec.eventDate) bits.push(rec.eventDate);
     if (rec && rec.venue) bits.push(rec.venue);
-    bits.push("taxon " + (id == null ? "—" : id) + " — every lookup, claim and roster call on this page uses it");
+    bits.push("Event number " + (id == null ? "—" : id) + " — everything on this page is about this event");
     if (eventsProblem) bits.push(eventsProblem);
     if (cell) cell.title = bits.join("\n");
   }
@@ -1340,9 +1783,9 @@ td .val{font-size:11.5px}
     if (!isTaxon(id)) return;
     var changed = (id !== eventId());
     // Always pin the choice, even when it matches what was already in effect:
-    // "the demo event, deliberately" and "the demo event, by default" are the
-    // same taxon but not the same decision, and only one of them should survive
-    // the console learning about a different one.
+    // "this event, deliberately" and "this event, because it was first in the
+    // list" are the same number but not the same decision, and only one of them
+    // should survive the console learning about a different one.
     picked = id;
     writePicked(id);
     if (!changed) { paintEventPicker(); return; }
@@ -1354,7 +1797,7 @@ td .val{font-size:11.5px}
     var out = $("chain-out");
     if (out) clear(out);
     var cb = $("btn-chain");
-    if (cb) { cb.disabled = false; cb.removeAttribute("aria-busy"); cb.textContent = "Read the chain"; }
+    if (cb) { cb.disabled = false; cb.removeAttribute("aria-busy"); cb.textContent = "Check the ledger"; }
     if (current) { verdict = "looking"; paintDocket(); lookup(current); }
     else paintDocket();
   }
@@ -1362,50 +1805,41 @@ td .val{font-size:11.5px}
   /** Every read of an attendee is scoped to an event. There is no unscoped one. */
   function lookupPath(address, id) {
     if (id === undefined) id = eventId();
-    var p = "/demo/lookup?address=" + encodeURIComponent(address);
-    if (id != null) p += "&eventId=" + encodeURIComponent(String(id));
+    var p = "/admin/api/desk/attendees/" + encodeURIComponent(address);
+    if (id != null) p += "?eventId=" + encodeURIComponent(String(id));
     return p;
   }
 
   /* =====================================================================
-     GET /demo/state
+     What this desk is plugged into — the ledger it writes to and how much is
+     left in the badge fund. Signed-in only, so it runs after the door opens.
      ===================================================================== */
   function loadState() {
-    return call("GET", "/demo/state").then(function (r) {
+    return api("GET", "/admin/api/desk/state").then(function (r) {
       var bnState = $("bn-state");
-      var bnDemo = $("bn-demo");
       if (!r.network) {
         state = null;
-        stateProblem = "The API at this origin is not answering, so the console has no event id, issuer or network to work against.";
+        stateProblem = "The server is not answering, so the desk cannot tell you how the badge fund stands.";
         bnState.hidden = false;
-        setText("bn-state-t", "Console state unavailable");
+        setText("bn-state-t", "Desk status unavailable");
         setText("bn-state-msg", stateProblem);
-        bnDemo.hidden = true;
       } else if (r.status === 404) {
         state = null;
-        stateProblem = "GET /demo/state returned 404 — the demo helper routes are not mounted on this build. Lookup and funding need them; badge issuing uses the real /events endpoints and is unaffected once an event id is known.";
+        stateProblem = "This server is an older build that cannot report the badge fund. Looking attendees up and issuing badges still work.";
         bnState.hidden = false;
-        setText("bn-state-t", "Demo routes are not mounted");
+        setText("bn-state-t", "Some desk details are not available here");
         setText("bn-state-msg", stateProblem);
-        bnDemo.hidden = true;
       } else if (!r.ok) {
         var e = errorOf(r);
+        stateProblem = e.message || "The desk status could not be read.";
         state = null;
-        stateProblem = "GET /demo/state failed with " + r.status + " " + e.code + ": " + e.message;
         bnState.hidden = false;
-        setText("bn-state-t", "Console state unavailable");
+        setText("bn-state-t", "Desk status unavailable");
         setText("bn-state-msg", stateProblem);
-        bnDemo.hidden = true;
       } else {
         state = r.json || null;
         stateProblem = "";
         bnState.hidden = true;
-        if (state && state.enabled === false) {
-          bnDemo.hidden = false;
-          setText("bn-demo-msg", "GET /demo/state reports enabled:false. The lookup and sponsor helpers are switched off on this server, so the attendee card cannot be filled in and wallets cannot be funded from here. POST /events/" + (state.eventId != null ? state.eventId : "{eventId}") + "/claims is a real endpoint and still works.");
-        } else {
-          bnDemo.hidden = true;
-        }
       }
       paintHeader();
       // Roster thumbnails are addressed by (address, eventId), so a roster
@@ -1439,7 +1873,7 @@ td .val{font-size:11.5px}
 
   var BAY_COPY = {
     idle: ["[ ]", "Camera is off",
-      "Start it to read the attendee’s QR code — or skip it entirely and type their address below. Both routes end at the same lookup."],
+      "Start it to read the attendee’s wallet code — or skip it entirely and type their address below. Both routes end in the same place."],
     requesting: ["◎", "Waiting for permission",
       "Your browser is asking whether this page may use the camera. Choose Allow. Frames are decoded in this tab and thrown away; nothing is uploaded."],
     live: ["", "", ""],
@@ -1450,9 +1884,9 @@ td .val{font-size:11.5px}
     busy: ["■", "The camera is already in use",
       "Another application or tab holds the camera. Close it and press Start again, or just use the address field below."],
     unsupported: ["⚠", "This browser cannot scan",
-      "Scanning uses the browser’s built-in BarcodeDetector, which Chrome and Edge ship and Safari and Firefox do not. There is nothing to install — use the address field below, which does exactly the same job."],
+      "Code scanning needs Chrome or Edge; Safari and Firefox cannot do it. There is nothing to install — use the address field below, which does exactly the same job."],
     insecure: ["⚠", "Camera needs a secure origin",
-      "getUserMedia is only offered over HTTPS or on localhost, and this page is on neither. Use the address field below, or serve the console from localhost."],
+      "Browsers only allow the camera on a secure address, and this desk is not on one. Use the address field below, which does exactly the same job."],
     error: ["✕", "The camera could not be started", ""],
     stopped: ["[ ]", "Camera stopped",
       "The track is released and the camera light is off. Press Start when the next attendee is in front of you, or use the address field."]
@@ -1482,7 +1916,7 @@ td .val{font-size:11.5px}
       btn.className = "btn" + (s === "live" ? " btn--stop" : "");
       btn.disabled = false;
     }
-    setText("bay-note", promote ? "scanner unavailable" : "qr · barcodedetector");
+    setText("bay-note", promote ? "scanner unavailable" : "camera scanner");
   }
 
   function stopCamera(nextState) {
@@ -1612,7 +2046,7 @@ td .val{font-size:11.5px}
   }
 
   /* =====================================================================
-     GET /demo/lookup
+     Looking one attendee up, and deciding what the desk should do about them.
      ===================================================================== */
   function submit(raw, source) {
     var n = normalise(raw);
@@ -1644,7 +2078,17 @@ td .val{font-size:11.5px}
   }
 
   function lookup(address) {
-    return call("GET", lookupPath(address)).then(function (r) {
+    /* The desk answers about ONE event, and refuses to guess which. Asking
+       without one is a 400 the volunteer can do nothing with, so the question
+       never leaves the tab — the card says which knob to turn instead. */
+    if (eventId() == null) {
+      look = null;
+      lookRaw = noEventFailure();
+      verdict = "error";
+      paintDocket({ failed: lookRaw, failedWhat: "lookup" });
+      return Promise.resolve(lookRaw);
+    }
+    return api("GET", lookupPath(address)).then(function (r) {
       lookRaw = r;
       if (!r.ok) {
         look = null;
@@ -1679,7 +2123,7 @@ td .val{font-size:11.5px}
   /* =====================================================================
      Badge artwork
      ---------------------------------------------------------------------
-     GET /demo/art?address=…&eventId=… renders the same SVG that gets pinned
+     GET /badge/{eventId}/{address}.png renders the same artwork that gets pinned
      to IPFS for that attendee. It is a pure function of the two parameters,
      so it costs one same-origin request and needs no claim, no badge and no
      gateway. That makes it a real operational check at the desk: the
@@ -1710,8 +2154,8 @@ td .val{font-size:11.5px}
   function artUrl(address, id) {
     if (id === undefined) id = eventId();
     if (id == null || !address) return "";
-    return "/demo/art?address=" + encodeURIComponent(address) +
-           "&eventId=" + encodeURIComponent(String(id));
+    return "/badge/" + encodeURIComponent(String(id)) + "/" +
+           encodeURIComponent(address) + ".png";
   }
   function artOn() { return artSupported && eventId() != null; }
 
@@ -1781,20 +2225,17 @@ td .val{font-size:11.5px}
     var pin = node("span", "plate__pin");
     pin.setAttribute("data-pin", pinned ? "ipfs" : "local");
     pin.appendChild(node("em", "plate__dot"));
-    pin.appendChild(node("span", null, pinned ? "on ipfs" : "local render"));
+    pin.appendChild(node("span", null, pinned ? "saved" : "preview"));
     pin.title = pinned
-      ? ("This attendee's artwork is pinned." + (imageUri ? "\nimage: " + imageUri : "") +
-         (metaUri ? "\nmetadata: " + metaUri : "") +
-         "\nThe square above is rendered here, so the desk never waits on a gateway.")
-      : ("Not pinned yet. The square above is a local render of the same deterministic " +
-         "artwork — identical bytes to whatever gets pinned for this attendee.");
+      ? "This attendee's artwork has been stored permanently. The square above is drawn here, so the desk never waits."
+      : "Not stored yet. The square above is the same artwork this attendee will get — it is generated from their address, so it is already final.";
     cap.appendChild(pin);
     if (gateway) {
-      var g = node("a", "link plate__link", "view pinned");
+      var g = node("a", "link plate__link", "full size");
       g.href = gateway;
       g.target = "_blank";
       g.rel = "noopener noreferrer";
-      g.title = gateway;
+      g.title = "Open this attendee's badge artwork in a new tab";
       cap.appendChild(g);
     }
     fig.appendChild(cap);
@@ -1819,14 +2260,14 @@ td .val{font-size:11.5px}
      ===================================================================== */
   var STAMP = {
     empty:    ["[ ]", "No attendee", "waiting for a scan"],
-    looking:  ["◌", "Reading…", "GET /demo/lookup"],
-    invalid:  ["?",      "Not an address", "valid: false"],
-    attended: ["✓", "Badge confirmed", "attended: true"],
-    claimed:  ["■", "Already claimed", "duplicate guard held"],
-    sponsor:  ["⚡", "Needs funding", "needsSponsorship: true"],
+    looking:  ["◌", "Reading…", "checking their wallet"],
+    invalid:  ["?",      "Not an address", "that code was something else"],
+    attended: ["✓", "Badge confirmed", "signed and recorded"],
+    claimed:  ["■", "Already claimed", "they already have this badge"],
+    sponsor:  ["⚡", "Needs funding", "wallet cannot hold a badge yet"],
     ready:    ["→", "Ready", "clear to issue"],
-    waiting:  ["◌", "Waiting on phone", "offer open"],
-    error:    ["✕", "Request failed", "retryable"]
+    waiting:  ["◌", "Waiting on phone", "sent to the attendee"],
+    error:    ["✕", "Try again", "nothing was issued"]
   };
 
   function stampBlock(say) {
@@ -1994,24 +2435,23 @@ td .val{font-size:11.5px}
 
     if (verdict === "empty") {
       body.appendChild(stampBlock(
-        "Scan a QR code on the left, or type the attendee’s address into the field. " +
-        "What comes back decides what this card offers you — and it is the only thing you have to read."));
-      var ul = node("div", "grp");
-      var hd = node("div", "grp__hd"); hd.appendChild(node("span", "label", "what you will see")); ul.appendChild(hd);
-      var bd = node("div", "grp__bd");
-      bd.appendChild(kv("working event", eventName() + "  ·  taxon " + (eventId() == null ? "—" : eventId()),
-        { tone: eventId() == null ? "bad" : "" }));
-      bd.appendChild(kv("ready", "clear to issue — one button, mints and offers the badge"));
-      bd.appendChild(kv("needs funding", "unactivated wallet — it cannot hold an NFT until it is funded"));
-      bd.appendChild(kv("already claimed", "the duplicate guard already holds this address — nothing to do"));
-      bd.appendChild(kv("not an address", "the QR held something else — normal, not an error"));
-      ul.appendChild(bd);
-      body.appendChild(ul);
+        "Scan the attendee’s wallet code on the left, or type their address in. " +
+        "Whatever comes back, this card tells you the one thing to do next."));
+      var evFact = (eventId() == null)
+        ? fact("bad", "!", "No event is selected. Pick one at the top before you scan anyone.")
+        : fact("ok", "•", "This desk is working " + eventName() + ".");
+      body.appendChild(facts([
+        evFact,
+        fact("", "→", "Ready — one press issues their badge."),
+        fact("", "⚡", "Needs funding — their wallet has to be topped up before a badge can land."),
+        fact("", "■", "Already claimed — they have this badge; there is nothing to do."),
+        fact("", "?", "Not an address — the code held something else. Common, and not an error.")
+      ]));
       if (stateProblem) {
         var w = node("div", "errbox errbox--warn");
-        w.appendChild(node("div", "errbox__code", "CONSOLE_STATE"));
+        w.appendChild(errCode("CONSOLE_STATE"));
         w.appendChild(node("div", "errbox__msg", stateProblem));
-        w.appendChild(node("div", "errbox__hint", "Press Refresh in the rail. Nothing here is lost."));
+        w.appendChild(node("div", "errbox__hint", "Press Refresh at the top of the page. Nothing here is lost."));
         body.appendChild(w);
       }
       acts.appendChild(actBtn("act-focus", "Enter an address", "btn--go", function () { $("addr").focus(); $("addr").select(); }));
@@ -2036,7 +2476,7 @@ td .val{font-size:11.5px}
         "the same button will work once the cause is fixed."));
       body.appendChild(whoRow(current));
       body.appendChild(errBox(opts.failed, opts.failedWhat === "lookup"
-        ? "GET /demo/lookup is a read. Retrying it is free and safe."
+        ? "Looking someone up changes nothing at all, so pressing Retry is free and safe."
         : null));
       if (opts.failed) body.appendChild(rawPanel("Raw · " + opts.failed.method + " " + opts.failed.path, opts.failed));
       acts.appendChild(actBtn("act-primary", "Retry lookup", "btn--go", function () {
@@ -2049,11 +2489,11 @@ td .val{font-size:11.5px}
 
     if (verdict === "invalid") {
       body.appendChild(stampBlock(
-        "That QR was <b>not an XRPL address</b>. Nothing is wrong — people scan wifi codes, " +
+        "That code was <b>not a wallet address</b>. Nothing is wrong — people scan wifi codes, " +
         "ticket links and other people’s badges. Ask them to open their wallet and show the receive code."));
       var g = node("div", "grp");
       var gh = node("div", "grp__hd");
-      gh.appendChild(node("span", "label", "what was decoded"));
+      gh.appendChild(node("span", "label", "what the code contained"));
       gh.appendChild(node("span", "label", (currentRawScan || "").length + " chars"));
       g.appendChild(gh);
       var gb = node("div", "grp__bd");
@@ -2069,8 +2509,8 @@ td .val{font-size:11.5px}
       body.appendChild(g);
       if (opts.note) body.appendChild(node("p", "say", opts.note));
       if (lookRaw) {
-        if (look && look.address) body.appendChild(kv("server read it as", look.address));
-        body.appendChild(rawPanel("Raw · GET /demo/lookup", lookRaw));
+        if (look && look.address) body.appendChild(kv("read as", look.address));
+        body.appendChild(rawPanel("Raw · GET " + DESK_ATTENDEES, lookRaw));
       }
       acts.appendChild(actBtn("act-primary", "Scan again", "btn--go", reset));
       acts.appendChild(node("span", "spacer"));
@@ -2091,98 +2531,97 @@ td .val{font-size:11.5px}
     var claim = l.claim || {};
     var done = (l.attended === true);
     body.appendChild(stampBlock(done
-      ? "This wallet <b>already accepted a badge for this event</b>. The attendance transaction below is the record, and it is permanent. There is nothing to issue."
-      : "A badge for this address <b>already exists</b>. The claim slot is taken — <code>UNIQUE(event_id, address)</code> is the mint guard, and it is holding. Issuing again is not offered, because it would not happen."));
+      ? "They <b>already have this badge</b> and have accepted it. That is permanent and cannot be taken back. There is nothing to issue."
+      : "A badge for this attendee <b>already exists</b>. They just have not accepted it yet, so there is nothing new to issue — a second one is not possible."));
     body.appendChild(whoRow(l.address || current));
 
-    var g = node("div", "grp " + (done ? "grp--good" : ""));
-    var gh = node("div", "grp__hd");
-    gh.appendChild(node("span", "label", done ? "the attendance record" : "the badge already issued"));
-    g.appendChild(gh);
-    var gb = node("div", "grp__bd");
-    gb.appendChild(kv("nftoken id", claim.nftokenId || l.nftokenId, { copy: true }));
-    if (claim.offerId) gb.appendChild(kv("offer id", claim.offerId, { copy: true }));
-    if (claim.status) gb.appendChild(kv("claim status", claim.status));
-    gb.appendChild(kv("attended", done ? "true" : "false", { tone: done ? "ok" : "warn" }));
-    if (l.attendedTxHash) gb.appendChild(kv("attendance tx", l.attendedTxHash, { copy: true, explore: true }));
-    gb.appendChild(kv("balance", l.balanceXrp != null ? l.balanceXrp + " XRP" : null));
-    g.appendChild(gb);
-    body.appendChild(g);
+    body.appendChild(facts([
+      done
+        ? fact("ok", "✓", "Badge accepted and recorded.")
+        : fact("warn", "◌", "Badge issued, not yet accepted on their phone."),
+      fact("ok", "✓", "This attendee is covered — do not issue another."),
+      l.balanceXrp != null ? fact("", "•", "Wallet balance " + l.balanceXrp + " XRP.") : null
+    ]));
 
     if (done) {
       var lock = node("div", "lock");
-      lock.innerHTML = "<b>Attendance is an event, not a state.</b> If this badge is ever burned, that hash still verifies. " +
-        "Nobody needs to hold the token for the attendance to be true.";
+      lock.innerHTML = "<b>This record is permanent.</b> Even if the badge itself is destroyed later, " +
+        "the fact that they were here still checks out. Nobody has to keep hold of anything.";
       body.appendChild(lock);
     } else {
       body.appendChild(node("p", "say",
-        "The attendee has the offer but has not signed it yet. Send them back to their phone — or show them the existing offer again, which mints nothing."));
+        "Send them back to their phone to accept it — or show them the code again, which issues nothing new."));
     }
+    if (opts.failed) body.appendChild(claimFailure(opts.failed));
+
+    body.appendChild(refBlock("reference", [
+      l.attendedTxHash ? kv("confirmation", l.attendedTxHash, { copy: true, explore: true, hex: true }) : null,
+      kv("badge", claim.nftokenId || l.nftokenId, { copy: true, hex: true }),
+      claim.offerId ? kv("offer", claim.offerId, { copy: true, hex: true }) : null
+    ]));
+
     if (opts.failed) {
-      body.appendChild(claimFailure(opts.failed));
       body.appendChild(rawPanel("Raw · POST /events/" + (eventId() != null ? eventId() : "{eventId}") + "/claims", opts.failed));
     } else if (lookRaw) {
-      body.appendChild(rawPanel("Raw · GET /demo/lookup", lookRaw));
+      body.appendChild(rawPanel("Raw · GET " + DESK_ATTENDEES, lookRaw));
     }
 
     acts.appendChild(actBtn("act-primary", "Next attendee", "btn--go", reset));
     acts.appendChild(node("span", "spacer"));
     if (!done) {
-      acts.appendChild(actBtn("act-watch", "Watch for their signature", "btn--ghost", function () {
+      acts.appendChild(actBtn("act-watch", "Watch for them to accept", "btn--ghost", function () {
         var addr = l.address || current;
         lastClaim = { address: addr, found: true, nftokenId: claim.nftokenId, offerId: claim.offerId };
         verdict = "waiting";
         paintDocket(lastClaim);
         startWatch(addr);
       }));
-      acts.appendChild(actBtn("act-recover", "Show existing offer · mints nothing", "btn--tiny btn--ghost", function () {
+      acts.appendChild(actBtn("act-recover", "Show their code again", "btn--tiny btn--ghost", function () {
         issue(true);
       }));
     }
-    acts.appendChild(actBtn("act-again", "Re-read", "btn--tiny btn--ghost", function () { lookup(current); }));
+    acts.appendChild(actBtn("act-again", "Check again", "btn--tiny btn--ghost", function () { lookup(current); }));
   }
 
   /* ---- needs sponsorship --------------------------------------------- */
   function paintSponsor(body, acts, opts) {
     var l = look || {};
     body.appendChild(stampBlock(
-      "This wallet is <b>not activated on the ledger</b>, so it cannot hold an NFT yet. " +
-      "XRPL requires a base reserve before an account exists at all. Fund it and the badge can land."));
+      "Their wallet is <b>brand new and empty</b>, so it cannot hold a badge yet. " +
+      "Top it up from the event fund and the badge can land."));
     body.appendChild(whoRow(l.address || current));
 
     var g = node("div", "grp grp--money");
     var gh = node("div", "grp__hd");
-    gh.appendChild(node("span", "label", "the money, before it moves"));
+    gh.appendChild(node("span", "label", "before any money moves"));
     g.appendChild(gh);
     var gb = node("div", "grp__bd");
-    gb.appendChild(kv("wallet balance", l.balanceXrp != null ? l.balanceXrp + " XRP" : "0 XRP", { tone: "bad" }));
-    gb.appendChild(kv("activated", String(l.activated === true), { tone: l.activated ? "ok" : "bad" }));
-    gb.appendChild(kv("shortfall", l.reserveShortfallXrp != null ? l.reserveShortfallXrp + " XRP" : null, { tone: "warn" }));
-    gb.appendChild(kv("would send", l.sponsorAmountXrp != null ? l.sponsorAmountXrp + " XRP" : null, { tone: "warn" }));
+    gb.appendChild(kv("their wallet holds", l.balanceXrp != null ? l.balanceXrp + " XRP" : "0 XRP", { tone: "bad" }));
+    gb.appendChild(kv("short by", l.reserveShortfallXrp != null ? l.reserveShortfallXrp + " XRP" : null, { tone: "warn" }));
+    gb.appendChild(kv("this desk will send", l.sponsorAmountXrp != null ? l.sponsorAmountXrp + " XRP" : null, { tone: "warn" }));
     g.appendChild(gb);
     body.appendChild(g);
 
     body.appendChild(node("p", "say",
-      "Sponsorship is real money leaving the issuer, and it is booked against the daily cap before the payment is submitted. Fund first, then issue — two separate steps, so you can see which one spent what."));
+      "This is real money leaving the event fund, and it counts against the daily limit. Top up first, then issue — two separate presses, so you can always see which one spent what."));
 
     if (opts && opts.sponsorResult) body.appendChild(opts.sponsorResult);
     if (opts && opts.failed) {
       body.appendChild(sponsorFailure(opts.failed, l));
-      body.appendChild(rawPanel("Raw · POST /demo/sponsor", opts.failed));
+      body.appendChild(rawPanel("Raw · POST " + DESK_SPONSOR, opts.failed));
     } else if (lookRaw) {
-      body.appendChild(rawPanel("Raw · GET /demo/lookup", lookRaw));
+      body.appendChild(rawPanel("Raw · GET " + DESK_ATTENDEES, lookRaw));
     }
 
-    var canFund = !!eventId() && !(state && state.enabled === false);
-    var fund = actBtn("act-primary", "Fund this wallet", "btn--go btn--big", function () { sponsor(); });
+    var canFund = !!eventId();
+    var fund = actBtn("act-primary", "Top up this wallet", "btn--go btn--big", function () { sponsor(); });
     fund.disabled = !canFund || busyAction;
     acts.appendChild(fund);
     if (!canFund) {
-      acts.appendChild(node("span", "label",
-        !eventId() ? "no event id — refresh the console" : "demo helpers are off on this server"));
+      acts.appendChild(node("span", "label", "pick an event first"));
     }
     acts.appendChild(node("span", "spacer"));
-    acts.appendChild(actBtn("act-again", "Re-read", "btn--tiny btn--ghost", function () { lookup(current); }));
+    acts.appendChild(actBtn("act-again", "Check again", "btn--tiny btn--ghost", function () { lookup(current); }));
     acts.appendChild(nextBtn());
   }
 
@@ -2190,61 +2629,56 @@ td .val{font-size:11.5px}
     if (r.status === 403) {
       var b = errBox(r, null);
       b.appendChild(node("div", "errbox__hint",
-        "Sponsorship was refused for this wallet — the server decides who it will fund, and it said no. " +
-        "The attendee can still receive a badge if the wallet is funded from somewhere else: it needs about " +
-        (l && l.reserveShortfallXrp != null ? l.reserveShortfallXrp + " XRP" : "the base reserve") + "."));
+        "This wallet will not be topped up from the event fund. The attendee can still get their badge if " +
+        "the wallet is funded another way: it needs about " +
+        (l && l.reserveShortfallXrp != null ? l.reserveShortfallXrp + " XRP" : "the minimum balance") + "."));
       return b;
     }
     if (r.status === 429) {
       var c = node("div", "errbox errbox--warn");
       var e = errorOf(r);
-      c.appendChild(node("div", "errbox__code", e.code + "  ·  HTTP 429"));
-      c.appendChild(node("div", "errbox__msg", e.message || "The daily sponsorship cap has been reached."));
+      c.appendChild(errCode(e.code + "  ·  HTTP 429"));
+      c.appendChild(node("div", "errbox__msg", e.message || "The daily top-up limit has been reached."));
       c.appendChild(node("div", "errbox__hint",
-        "This is the cap working, not a fault. The spend is reserved before the payment is submitted, so the issuer " +
-        "cannot be drained by hammering this button — and it will not have quietly sent anything. No more wallets can be " +
-        "funded from this issuer today. The attendee needs about " +
-        (l && l.reserveShortfallXrp != null ? l.reserveShortfallXrp + " XRP" : "the base reserve") +
-        " from another source before a badge can land."));
+        "That is the daily limit doing its job, not a fault — and nothing was quietly sent. No more wallets can be " +
+        "topped up from this event today. The attendee needs about " +
+        (l && l.reserveShortfallXrp != null ? l.reserveShortfallXrp + " XRP" : "the minimum balance") +
+        " from somewhere else before a badge can land."));
       return c;
     }
-    return errBox(r, "Nothing was sent. Press Fund again once the cause is clear.");
+    return errBox(r, "No money was sent. Press Top up again once the cause is clear.");
   }
 
   /* ---- ready ---------------------------------------------------------- */
   function paintReady(body, acts, opts) {
     var l = look || {};
     body.appendChild(stampBlock(
-      "This wallet is activated and holds no badge for this event. <b>One press mints it, " +
-      "creates the offer and locks it to this address.</b>"));
+      "Their wallet can receive a badge and does not have this one yet. " +
+      "<b>One press issues it and locks it to them.</b>"));
     body.appendChild(whoRow(l.address || current));
 
-    var g = node("div", "grp");
-    var gh = node("div", "grp__hd"); gh.appendChild(node("span", "label", "what the ledger says")); g.appendChild(gh);
-    var gb = node("div", "grp__bd");
-    gb.appendChild(kv("activated", String(l.activated === true), { tone: l.activated ? "ok" : "warn" }));
-    gb.appendChild(kv("balance", l.balanceXrp != null ? l.balanceXrp + " XRP" : null));
-    gb.appendChild(kv("needs sponsorship", String(l.needsSponsorship === true), { tone: l.needsSponsorship ? "warn" : "ok" }));
-    gb.appendChild(kv("already has badge", String(l.alreadyHasBadge === true), { tone: "ok" }));
-    gb.appendChild(kv("attended", String(l.attended === true)));
-    g.appendChild(gb);
-    body.appendChild(g);
+    body.appendChild(facts([
+      fact("ok", "✓", "Their wallet can receive a badge.",
+        l.balanceXrp != null ? "holds " + l.balanceXrp + " XRP" : null),
+      fact("ok", "✓", "No badge for this event yet."),
+      fact("", "•", "Nothing is spent from the event fund for this one.")
+    ]));
 
     if (opts && opts.failed) {
       body.appendChild(claimFailure(opts.failed));
       body.appendChild(rawPanel("Raw · POST /events/" + (eventId() != null ? eventId() : "{eventId}") + "/claims", opts.failed));
     } else {
       if (opts && opts.sponsorResult) body.appendChild(opts.sponsorResult);
-      if (lookRaw) body.appendChild(rawPanel("Raw · GET /demo/lookup", lookRaw));
+      if (lookRaw) body.appendChild(rawPanel("Raw · GET " + DESK_ATTENDEES, lookRaw));
     }
 
     var canIssue = !!eventId();
     var go = actBtn("act-primary", "Issue badge", "btn--go btn--big", function () { issue(false); });
     go.disabled = !canIssue || busyAction;
     acts.appendChild(go);
-    if (!canIssue) acts.appendChild(node("span", "label", "no event id — refresh the console"));
+    if (!canIssue) acts.appendChild(node("span", "label", "pick an event first"));
     acts.appendChild(node("span", "spacer"));
-    acts.appendChild(actBtn("act-again", "Re-read", "btn--tiny btn--ghost", function () { lookup(current); }));
+    acts.appendChild(actBtn("act-again", "Check again", "btn--tiny btn--ghost", function () { lookup(current); }));
     acts.appendChild(nextBtn());
   }
 
@@ -2252,23 +2686,22 @@ td .val{font-size:11.5px}
     var e = errorOf(r);
     if (r.status === 409) {
       var b = node("div", "errbox errbox--warn");
-      b.appendChild(node("div", "errbox__code", e.code + "  ·  HTTP 409"));
-      b.appendChild(node("div", "errbox__msg", e.message || "A claim for this address already exists."));
+      b.appendChild(errCode(e.code + "  ·  HTTP 409"));
+      b.appendChild(node("div", "errbox__msg", e.message || "This attendee already has a badge for this event."));
       b.appendChild(node("div", "errbox__hint",
-        "The duplicate guard caught it: the claim slot is taken before anything is minted, so a second badge was never a possibility. " +
-        "Re-read the address to see the badge that already exists."));
+        "Nothing was issued twice — a second badge was never possible. Press Check again to see the one they already have."));
       return b;
     }
     if (r.status === 403 || r.status === 429) {
       var c = node("div", "errbox errbox--warn");
-      c.appendChild(node("div", "errbox__code", e.code + "  ·  HTTP " + r.status));
-      c.appendChild(node("div", "errbox__msg", e.message || (r.status === 429 ? "Rate or cap limit reached." : "Sponsorship denied.")));
+      c.appendChild(errCode(e.code + "  ·  HTTP " + r.status));
+      c.appendChild(node("div", "errbox__msg", e.message || (r.status === 429 ? "Too many badges too quickly — wait a moment." : "This wallet will not be topped up.")));
       c.appendChild(node("div", "errbox__hint", r.status === 429
-        ? "A designed protection, not a fault. Claims are rate limited harder than anything else because they spend the issuer’s XRP, and the daily sponsorship cap is reserved before money moves. Nothing was minted and nothing was sent. Wait, then press again."
-        : "The wallet needed funding and the server refused to provide it. Nothing was minted. Fund the wallet another way, then re-read the address."));
+        ? "That is a deliberate limit, not a fault: issuing spends the event’s funds, so it is capped. No badge was issued and no money moved. Wait a moment, then press again."
+        : "The wallet needed topping up and that was refused. No badge was issued. Fund the wallet another way, then press Check again."));
       return c;
     }
-    return errBox(r, "Nothing partial survives a failed claim — the slot is released, so pressing again is safe.");
+    return errBox(r, "Nothing half-done survives a failed attempt, so pressing again is safe.");
   }
 
   /* =====================================================================
@@ -2325,9 +2758,9 @@ td .val{font-size:11.5px}
     w.appendChild(node("div", "netwarn__t", "before they approve"));
     var p = node("p");
     p.innerHTML =
-      "<b>Xaman opens on mainnet by default.</b> This badge is on <b>testnet</b>, so the attendee has to point " +
-      "Xaman at a testnet node first — <code>Settings → Advanced → Node</code> — or they will sign against a " +
-      "chain where this offer does not exist, and the accept fails after they have already approved it.";
+      "<b>This is a test badge.</b> Xaman has to be switched to the test network first — " +
+      "<code>Settings → Advanced → Node</code> — or their approval will simply not land, and they will " +
+      "think they are done when they are not.";
     w.appendChild(p);
     return w;
   }
@@ -2355,7 +2788,9 @@ td .val{font-size:11.5px}
       plate.appendChild(b);
     }
     fig.appendChild(plate);
-    fig.appendChild(node("p", "qr__cap", "xaman sign request" + (h.uuid ? " · " + short(h.uuid, 8, 4) : "")));
+    var cap = node("p", "qr__cap", "scan with xaman");
+    if (h.uuid) cap.appendChild(node("span", "dev-only", " · " + short(h.uuid, 8, 4)));
+    fig.appendChild(cap);
     return fig;
   }
 
@@ -2404,14 +2839,13 @@ td .val{font-size:11.5px}
       without minting anything. */
   function noHandoffBlock() {
     var b = node("div", "errbox errbox--warn");
-    b.appendChild(node("div", "errbox__code", "NO_XAMAN_CODE"));
+    b.appendChild(errCode("NO_XAMAN_CODE"));
     b.appendChild(node("div", "errbox__msg",
-      "There is nothing to show the attendee yet — this offer came back without a Xaman sign request. " +
-      "The badge is minted and the offer is open, so nothing is lost and nothing needs re-issuing."));
+      "There is nothing to show the attendee yet — no scannable code came back. " +
+      "Their badge is issued and waiting for them, so nothing is lost and nothing needs doing twice."));
     b.appendChild(node("div", "errbox__hint",
-      "Either this server has no Xaman credentials (XUMM_API_KEY / XUMM_API_SECRET) or Xaman did not answer. " +
-      "Ask for a code below — it hands back the same offer and mints nothing. Failing that, the attendee can " +
-      "accept the raw payload at the foot of this card in any XRPL wallet."));
+      "Press Get their code below: it hands back the same badge and issues nothing new. If that keeps failing, " +
+      "the attendee can accept it from their own wallet app instead."));
     return b;
   }
 
@@ -2426,10 +2860,10 @@ td .val{font-size:11.5px}
     }
 
     body.appendChild(stampBlock(opts.reused
-      ? "This attendee already had an open offer, so <b>nothing new was minted</b>. The server handed back the same one — that is a normal retry, not an error."
+      ? "They already had one waiting, so <b>nothing new was issued</b>. This is the same badge handed back — a normal retry, not a mistake."
       : (opts.found
-        ? "There is an open offer for this address already. Nothing new has been minted; the console is simply watching for the signature."
-        : "Minted and offered. <b>Now it is the attendee’s turn</b> — they accept in their own wallet, on their own phone. The issuer never sees their key.")));
+        ? "A badge is already waiting for this attendee. Nothing new has been issued; the desk is just watching for them to accept it."
+        : "Issued. <b>Now it is the attendee’s turn</b> — they accept it in their own wallet, on their own phone. This desk never sees their key.")));
     body.appendChild(whoRow(addr));
 
     /* The handoff comes before the progress bar on purpose: until the attendee
@@ -2446,36 +2880,30 @@ td .val{font-size:11.5px}
     wait.appendChild(wh);
     var bar = node("div", "wait__bar"); bar.appendChild(node("i")); wait.appendChild(bar);
     var wb = node("div", "wait__bd");
-    wb.innerHTML = "Polling <code>GET /demo/lookup</code> against <b>" + esc(eventName()) +
-      "</b> <code>&middot; taxon " + esc(String(eventId() == null ? "—" : eventId())) +
-      "</code> every three seconds until <b>attended</b> flips to true. " +
-      "Leave this card up and start the next person when you like — the session roster keeps watching.";
+    wb.innerHTML = "Checking every few seconds for <b>" + esc(eventName()) + "</b>. " +
+      "Leave this up and start the next person whenever you like — the list below keeps watching for you.";
     wait.appendChild(wb);
     body.appendChild(wait);
 
-    // Why this one was slower than the last one. Only when the server says so.
+    // Why this one took a moment longer than the last. Only when the server says so.
     if (opts.pinnedOnDemand) {
       var pn = node("div", "pinnote");
-      pn.appendChild(node("span", "label", "pinned on demand"));
+      pn.appendChild(node("span", "label", "first time"));
       pn.appendChild(node("span", null,
-        "Not on the pre-pinned roster, so their artwork went up to IPFS during the claim — " +
-        "which is why this one took longer."));
+        "This attendee’s artwork had to be made and stored just now, which is why it took a moment longer."));
       body.appendChild(pn);
     }
 
-    var g = node("div", "grp grp--good");
-    var gh = node("div", "grp__hd"); gh.appendChild(node("span", "label", "what was created")); g.appendChild(gh);
-    var gb = node("div", "grp__bd");
-    gb.appendChild(kv("nftoken id", opts.nftokenId, { copy: true }));
-    gb.appendChild(kv("offer id", opts.offerId, { copy: true }));
-    gb.appendChild(kv("locked to", addr, { copy: true }));
-    g.appendChild(gb);
-    body.appendChild(g);
-
     var lock = node("div", "lock");
-    lock.innerHTML = "<b>The offer carries a Destination.</b> It can only be accepted by " +
-      "<code>" + esc(short(addr, 12, 8)) + "</code>. Nobody else at this event can take this badge, even with the offer id in hand.";
+    lock.innerHTML = "<b>Only they can accept this.</b> The badge is locked to " +
+      "<code>" + esc(short(addr, 12, 8)) + "</code>. Nobody else at this event can take it, even by mistake.";
     body.appendChild(lock);
+
+    body.appendChild(refBlock("reference", [
+      kv("badge", opts.nftokenId, { copy: true, hex: true }),
+      kv("offer", opts.offerId, { copy: true, hex: true }),
+      kv("locked to", addr, { copy: true })
+    ]));
 
     if (opts.raw) body.appendChild(rawPanel("Raw · POST /events/" + (eventId() != null ? eventId() : "{eventId}") + "/claims", opts.raw));
 
@@ -2484,7 +2912,7 @@ td .val{font-size:11.5px}
     } else {
       /* Without a code there is nothing to hand over, so fetching one is the
          next action — and it reuses the open offer rather than minting. */
-      var get = actBtn("act-primary", "Get a Xaman code · mints nothing", "btn--go", function () { issue(true); });
+      var get = actBtn("act-primary", "Get their code", "btn--go", function () { issue(true); });
       get.disabled = busyAction || eventId() == null;
       acts.appendChild(get);
       acts.appendChild(actBtn("act-next", "Next attendee", "btn--ghost", reset));
@@ -2507,25 +2935,26 @@ td .val{font-size:11.5px}
     clear(body); clear(acts);
 
     body.appendChild(stampBlock(
-      "Signed and on the ledger. The attendee accepted the badge in their own wallet, and " +
-      "<b>the hash below is the attendance record</b> — permanent, and independent of who holds the token from here."));
+      "Done. They accepted the badge in their own wallet, and <b>it is recorded permanently</b>. " +
+      "Send them on their way."));
     body.appendChild(whoRow(l.address || current));
 
-    var g = node("div", "grp grp--good");
-    var gh = node("div", "grp__hd"); gh.appendChild(node("span", "label", "confirmed on chain")); g.appendChild(gh);
-    var gb = node("div", "grp__bd");
-    gb.appendChild(kv("attendance tx", l.attendedTxHash, { copy: true, explore: true }));
-    gb.appendChild(kv("nftoken id", (l.claim && l.claim.nftokenId) || null, { copy: true }));
-    gb.appendChild(kv("attended", "true", { tone: "ok" }));
-    g.appendChild(gb);
-    body.appendChild(g);
+    body.appendChild(facts([
+      fact("ok", "✓", "Badge accepted on their phone."),
+      fact("ok", "✓", "Recorded permanently — nothing else is needed from them.")
+    ]));
 
     var lock = node("div", "lock");
-    lock.innerHTML = "<b>Attendance is an event, not a state.</b> Burn the badge tomorrow and this still verifies; " +
-      "verification replays the transaction rather than asking who holds the token.";
+    lock.innerHTML = "<b>This cannot be undone or lost.</b> Even if they destroy the badge tomorrow, the record " +
+      "that they were here still checks out.";
     body.appendChild(lock);
 
-    if (lookRaw) body.appendChild(rawPanel("Raw · GET /demo/lookup", lookRaw));
+    body.appendChild(refBlock("reference", [
+      kv("confirmation", l.attendedTxHash, { copy: true, explore: true, hex: true }),
+      kv("badge", (l.claim && l.claim.nftokenId) || null, { copy: true, hex: true })
+    ]));
+
+    if (lookRaw) body.appendChild(rawPanel("Raw · GET " + DESK_ATTENDEES, lookRaw));
 
     acts.appendChild(actBtn("act-primary", "Next attendee", "btn--go btn--big", reset));
     acts.appendChild(node("span", "spacer"));
@@ -2533,7 +2962,7 @@ td .val{font-size:11.5px}
   }
 
   /* =====================================================================
-     POST /demo/sponsor
+     Topping up an attendee's wallet, so a badge has somewhere to land.
      ===================================================================== */
   function sponsor() {
     if (busyAction) return;
@@ -2544,7 +2973,7 @@ td .val{font-size:11.5px}
     var b = $("act-primary");
     if (b) { b.setAttribute("aria-busy", "true"); b.disabled = true; b.textContent = "Sending…"; }
 
-    call("POST", "/demo/sponsor", { address: addr, eventId: id }).then(function (r) {
+    api("POST", "/admin/api/desk/sponsor", { address: addr, eventId: id }).then(function (r) {
       busyAction = false;
       if (!r.ok) {
         paintDocket({ failed: r });
@@ -2553,17 +2982,16 @@ td .val{font-size:11.5px}
       var j = r.json || {};
       var ok = node("div", "grp grp--good");
       var oh = node("div", "grp__hd");
-      oh.appendChild(node("span", "label", j.alreadyActivated ? "nothing was sent" : "funded"));
+      oh.appendChild(node("span", "label", j.alreadyActivated ? "nothing was sent" : "topped up"));
       ok.appendChild(oh);
       var ob = node("div", "grp__bd");
       if (j.alreadyActivated) {
-        ob.appendChild(kv("already activated", "true", { tone: "ok" }));
+        ob.appendChild(kv("their wallet", "was already funded", { tone: "ok" }));
         ob.appendChild(kv("amount sent", "0 XRP", { tone: "ok" }));
       } else {
         ob.appendChild(kv("amount sent", j.amountXrp != null ? j.amountXrp + " XRP" : null, { tone: "ok" }));
-        ob.appendChild(kv("payment tx", j.txHash, { copy: true, explore: true }));
+        ob.appendChild(kv("payment", j.txHash, { copy: true, explore: true, hex: true }));
       }
-      ob.appendChild(kv("sponsored", String(j.sponsored === true), { tone: j.sponsored ? "ok" : "warn" }));
       ok.appendChild(ob);
 
       // Re-run the lookup so the card reflects the ledger, not our optimism.
@@ -2583,7 +3011,7 @@ td .val{font-size:11.5px}
     var addr = current;
     busyAction = true;
     var b = $("act-primary");
-    if (b) { b.setAttribute("aria-busy", "true"); b.disabled = true; b.textContent = recovering ? "Fetching…" : "Minting…"; }
+    if (b) { b.setAttribute("aria-busy", "true"); b.disabled = true; b.textContent = recovering ? "Fetching…" : "Issuing…"; }
 
     call("POST", "/events/" + eventPath() + "/claims", { address: addr }).then(function (r) {
       busyAction = false;
@@ -2659,7 +3087,8 @@ td .val{font-size:11.5px}
     /* Roster rows carry the event they were issued under, so a desk that has
        since switched events keeps confirming the earlier ones correctly. */
     if (id === undefined) id = eventId();
-    return call("GET", lookupPath(address, id)).then(function (r) {
+    if (id == null) return Promise.resolve(noEventFailure());
+    return api("GET", lookupPath(address, id)).then(function (r) {
       if (!r.ok) return r;
       var j = r.json || {};
       if (j.attended === true) {
@@ -2774,7 +3203,7 @@ td .val{font-size:11.5px}
       tr.appendChild(node("td", null, String(i + 1)));
 
       var rowEv = rowEvent(s);
-      tr.title = "Event " + eventName(rowEv) + " · taxon " + (rowEv == null ? "—" : rowEv);
+      tr.title = eventName(rowEv) + (rowEv == null ? "" : "  ·  event #" + rowEv);
 
       if (withArt) {
         var tdArt = node("td", "col-art");
@@ -2792,12 +3221,12 @@ td .val{font-size:11.5px}
          roster silently claims credit under the wrong taxon. */
       if (rowEv !== eventId()) {
         var tag = node("span", "pill pill--offered", String(rowEv == null ? "?" : rowEv));
-        tag.title = "Issued under " + eventName(rowEv) + " — not the event now selected";
+        tag.title = "Issued for " + eventName(rowEv) + " — not the event you are working now";
         tdA.appendChild(tag);
       }
       tr.appendChild(tdA);
 
-      var tdN = node("td");
+      var tdN = node("td", "dev-only");
       if (s.nftokenId) {
         var n = node("code", "val", short(s.nftokenId, 10, 8));
         n.title = s.nftokenId;
@@ -2830,7 +3259,7 @@ td .val{font-size:11.5px}
     var btn = $("btn-recheck");
     if (!pending.length) {
       btn.textContent = "nothing pending";
-      setTimeout(function () { btn.textContent = "Re-check all pending"; }, 1400);
+      setTimeout(function () { btn.textContent = "Re-check pending"; }, 1400);
       return;
     }
     btn.disabled = true;
@@ -2854,30 +3283,30 @@ td .val{font-size:11.5px}
     clear(out);
     if (id == null) {
       var w = node("div", "errbox errbox--warn");
-      w.appendChild(node("div", "errbox__code", "NO_EVENT_ID"));
-      w.appendChild(node("div", "errbox__msg", "The console has no event id yet, because GET /demo/state has not answered."));
-      w.appendChild(node("div", "errbox__hint", "Press Refresh in the rail, then try again."));
+      w.appendChild(errCode("NO_EVENT_ID"));
+      w.appendChild(node("div", "errbox__msg", "No event is selected yet, so there is nothing to count."));
+      w.appendChild(node("div", "errbox__hint", "Pick an event at the top of the page, then try again."));
       out.appendChild(w);
       return;
     }
     var btn = $("btn-chain");
     btn.disabled = true;
     btn.setAttribute("aria-busy", "true");
-    btn.textContent = "Walking the ledger…";
+    btn.textContent = "Reading the ledger…";
     call("GET", "/events/" + eventPath() + "/roster").then(function (r) {
       btn.disabled = false;
       btn.removeAttribute("aria-busy");
-      btn.textContent = "Read the chain again";
+      btn.textContent = "Check the ledger again";
       clear(out);
       if (!r.ok) {
-        out.appendChild(errBox(r, "A Clio call against a public server with no SLA. Retrying is reasonable."));
+        out.appendChild(errBox(r, "This is a slow read against a public service. Pressing it again is reasonable."));
         out.appendChild(rawPanel("Raw · GET /events/" + id + "/roster", r));
         return;
       }
       var j = r.json || {};
       var counts = node("div", "counts");
       counts.style.marginTop = "13px";
-      var pairs = [["minted", j.minted], ["claimed", j.claimed], ["burned", j.burned], ["owner unknown", j.ownerUnknown]];
+      var pairs = [["issued", j.minted], ["accepted", j.claimed], ["destroyed", j.burned], ["unaccounted", j.ownerUnknown]];
       for (var i = 0; i < pairs.length; i++) {
         var c = node("div", "count");
         c.appendChild(node("div", "count__n", pairs[i][1] == null ? "—" : String(pairs[i][1])));
@@ -2885,29 +3314,33 @@ td .val{font-size:11.5px}
         counts.appendChild(c);
       }
       out.appendChild(counts);
-      out.appendChild(kv("issuer", j.issuer, { copy: true }));
+      var iss = kv("issued by", j.issuer, { copy: true });
+      iss.className = "kv dev-only";
+      out.appendChild(iss);
 
       var entries = j.entries || [];
       var rows = node("div", "rows");
       if (!entries.length) {
-        rows.appendChild(node("p", "empty", "No badges minted under this taxon yet."));
+        rows.appendChild(node("p", "empty", "No badges have been issued for this event yet."));
       } else {
         for (var k = 0; k < entries.length; k++) {
           var e = entries[k];
           var row = node("div", "row");
-          row.appendChild(node("b", null, short(e.nftokenId, 12, 8)));
+          row.appendChild(node("b", null, "Badge " + e.serial));
           row.appendChild(document.createTextNode(
-            "  ·  serial " + e.serial +
-            "  ·  owner " + (e.owner ? short(e.owner, 8, 6) : "unknown")));
-          if (e.isBurned) row.appendChild(node("span", "flag", "  ·  burned"));
-          else if (e.claimed) row.appendChild(node("span", null, "  ·  claimed"));
+            "  ·  " + (e.owner ? "held by " + short(e.owner, 8, 6) : "not yet accepted")));
+          if (e.isBurned) row.appendChild(node("span", "flag", "  ·  destroyed"));
+          else if (e.claimed) row.appendChild(node("span", null, "  ·  accepted"));
+          var hexTag = node("span", "dev-only", "  ·  " + short(e.nftokenId, 10, 6));
+          hexTag.title = e.nftokenId;
+          row.appendChild(hexTag);
           rows.appendChild(row);
         }
       }
       out.appendChild(rows);
       out.appendChild(node("p", "say",
-        "Counts come from the ledger, not from the index. " +
-        "minted − claimed − ownerUnknown is the number still sitting with the issuer, unaccepted."));
+        "Counted from the ledger itself, not from this desk’s own list. Anything issued but not yet " +
+        "accepted is still sitting with the event, waiting for its attendee."));
       out.appendChild(rawPanel("Raw · GET /events/" + id + "/roster", r));
     });
   }
@@ -2932,8 +3365,323 @@ td .val{font-size:11.5px}
   }
 
   /* =====================================================================
+     DIAGNOSTICS
+     ---------------------------------------------------------------------
+     Nothing was deleted when this page stopped looking like an instrument
+     panel — the request log, the raw bodies, the endpoint paths, the error
+     codes and the 64-character ids are all still built, all still correct,
+     and all carry `dev-only`. This is the one switch that reveals them, and
+     it is remembered so a debugging session survives a reload.
+     ===================================================================== */
+  function setDev(on) {
+    var root = document.documentElement;
+    if (on) root.setAttribute("data-dev", "1");
+    else root.removeAttribute("data-dev");
+    var b = $("btn-dev");
+    if (b) {
+      b.textContent = on ? "Diagnostics on" : "Diagnostics";
+      b.setAttribute("aria-pressed", on ? "true" : "false");
+    }
+    try { localStorage.setItem(DEV_KEY, on ? "1" : "0"); } catch (e) { /* private mode */ }
+    measureRail();
+  }
+  function devOn() { return document.documentElement.getAttribute("data-dev") === "1"; }
+
+  /* =====================================================================
+     THE EVENT CHOOSER — the step between signing in and the desk.
+
+     The console cannot open without an event, and the event is never inferred:
+     not from the list, not from what this browser did last time. `readPicked()`
+     still exists and is still written, but it is only ever used to LABEL the
+     row this desk used last — a one-tap shortcut, not a decision made on the
+     volunteer's behalf while they were looking at their phone.
+     ===================================================================== */
+  function openChooser(opts) {
+    opts = opts || {};
+    /* Leaving the console for the chooser must not leave a camera on, a
+       watcher polling or a half-drawn attendee behind it. */
+    closeConsole();
+    if (!opts.keep) {
+      picked = null;
+      current = "";
+      currentRawScan = "";
+      look = null;
+      lookRaw = null;
+      lastClaim = null;
+      verdict = "empty";
+    }
+    showView("view-choose", "choose-h");
+    setText("choose-who", me && me.email ? me.email : "\u2014");
+    paintChooser();
+    // Always re-read: an event opened while this tab sat on the sign-in screen
+    // should be in the list the volunteer is looking at.
+    loadEvents();
+  }
+
+  function paintChooser() {
+    var box = $("choose-list");
+    if (!box) return;
+    clear(box);
+
+    if (eventsLoading) {
+      box.appendChild(node("p", "boot", "reading the list of events"));
+      return;
+    }
+    if (!events.length) {
+      var none = node("div", "evnone");
+      none.appendChild(document.createTextNode(
+        eventsProblem || "No events are open right now, so there is nothing to work."));
+      box.appendChild(none);
+      return;
+    }
+
+    var last = readPicked();
+    for (var i = 0; i < events.length; i++) {
+      box.appendChild(chooserRow(events[i], last));
+    }
+  }
+
+  function chooserRow(e, last) {
+    var b = node("button", "ev");
+    b.type = "button";
+    b.setAttribute("data-live", e.status === "live" ? "1" : "0");
+
+    var top = node("div", "ev__top");
+    top.appendChild(node("span", "ev__n", e.name));
+    top.appendChild(node("span", "ev__s", e.status === "live" ? "happening now" : (e.status || "listed")));
+    b.appendChild(top);
+
+    var bits = [];
+    if (e.eventDate) bits.push(e.eventDate);
+    if (e.venue) bits.push(e.venue);
+    if (bits.length) b.appendChild(node("p", "ev__m", bits.join("  \u00b7  ")));
+
+    /* The shortcut, and the whole of the memory: this desk worked that event
+       last. It is a label on a row somebody still has to press. */
+    if (last != null && e.eventId === last) {
+      b.appendChild(node("span", "ev__last", "you worked this last"));
+    }
+
+    var num = node("p", "ev__m dev-only", "#" + e.eventId);
+    b.appendChild(num);
+
+    b.addEventListener("click", function () { commitEvent(e.eventId); });
+    return b;
+  }
+
+  /** A deliberate choice, from the chooser. The only way into the console. */
+  function commitEvent(id) {
+    if (!isTaxon(id)) return;
+    picked = id;
+    writePicked(id);
+    paintEventPicker();
+    setText("chain-path", String(id));
+    openConsole();
+  }
+
+  /* =====================================================================
+     VIEWS — boot, sign in, no-operator-account, choose an event, the desk
+     ===================================================================== */
+  var VIEWS = ["view-boot", "view-login", "view-disabled", "view-choose", "view-console"];
+  /** Signed in AND working an event. Not the same as signed in. */
+  function consoleOpen() {
+    var n = $("view-console");
+    return !!n && !n.hidden;
+  }
+
+  function showView(id, focusId) {
+    for (var i = 0; i < VIEWS.length; i++) {
+      var n = $(VIEWS[i]);
+      if (n) n.hidden = (VIEWS[i] !== id);
+    }
+    document.documentElement.setAttribute("data-auth", id === "view-console" ? "in" : "out");
+    measureRail();
+    if (focusId) { var f = $(focusId); if (f) { try { f.focus(); } catch (e) { /* not focusable */ } } }
+  }
+
+  function setSignedIn(email) {
+    me = email ? { email: email } : null;
+    setText("hdr-who", email || "—");
+    var w = $("hdr-who");
+    if (w) w.title = email || "";
+  }
+
+  function toDisabled(r) {
+    closeConsole();
+    setSignedIn(null);
+    var msg = r ? messageOf(r) : "";
+    if (msg) setText("disabled-msg", msg);
+    showView("view-disabled", "disabled-h");
+  }
+
+  /** A 401 anywhere except the sign-in POST means the session is over. */
+  function expire() {
+    if (!me) return;                 // already at the sign-in screen
+    closeConsole();
+    setSignedIn(null);
+    showView("view-login", "login-h");
+    flash("login-flash", "warn", "session", "Your session expired. Sign in again to carry on.",
+      "Nothing was lost — anything already issued is on the ledger, not in this tab.");
+    if ($("in-pw")) $("in-pw").value = "";
+  }
+
+  /** Signed in: hand the desk over. The one-time boot runs exactly once. */
+  function openConsole() {
+    showView("view-console");
+    startSweep();
+    if (consoleBooted) { measureRail(); return; }
+    consoleBooted = true;
+    bootConsole();
+  }
+
+  /** Signed out: no camera, no watcher, no polling. */
+  function closeConsole() {
+    /* A camera still running behind a sign-in screen is exactly what this gate
+       exists to prevent — and if the desk is signed into again, the bay must
+       not still be claiming to be live when the track is long gone. */
+    if (scanning) stopCamera("stopped"); else stopCamera();
+    stopWatch();
+    stopSweep();
+  }
+
+  function startSweep() { if (!sweepTimer) sweepTimer = setInterval(sweepPending, 20000); }
+  function stopSweep() { if (sweepTimer) { clearInterval(sweepTimer); sweepTimer = 0; } }
+
+  /* =====================================================================
+     SIGN IN
+     ===================================================================== */
+  function wireLogin() {
+    $("login-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var email = $("in-email").value.trim();
+      var password = $("in-pw").value;
+      var btn = $("btn-login");
+
+      $("f-email").removeAttribute("data-bad");
+      $("f-pw").removeAttribute("data-bad");
+
+      if (!email || !password) {
+        if (!email) $("f-email").setAttribute("data-bad", "1");
+        if (!password) $("f-pw").setAttribute("data-bad", "1");
+        flash("login-flash", "bad", "check", "Both fields are required.");
+        return;
+      }
+
+      btn.disabled = true;
+      btn.setAttribute("aria-busy", "true");
+      clearFlash("login-flash");
+
+      // noAuth: a 401 here means "wrong credentials", never "session expired".
+      api("POST", "/admin/api/login", { email: email, password: password }, { noAuth: true })
+        .then(function (r) {
+          btn.disabled = false;
+          btn.removeAttribute("aria-busy");
+
+          if (r.ok && r.json && r.json.email) {
+            // The password never survives the submit — not in a variable this
+            // page keeps, not in the field.
+            $("in-pw").value = "";
+            setSignedIn(r.json.email);
+            clearFlash("login-flash");
+            openConsole();
+            return;
+          }
+
+          if (r.status === 401) {
+            // One message for both halves. Which of the two was wrong is
+            // exactly what an attacker wants to learn, so it is not said.
+            $("f-email").setAttribute("data-bad", "1");
+            $("f-pw").setAttribute("data-bad", "1");
+            $("in-pw").value = "";
+            $("in-pw").focus();
+            flash("login-flash", "bad", "sign in", "That email or password is incorrect.");
+            return;
+          }
+
+          if (r.status === 429) {
+            var wait = Number(r.retryAfter);
+            var whenAgain = isFinite(wait) && wait > 0
+              ? "Try again in about " + Math.ceil(wait / 60) + " minute" + (wait > 90 ? "s" : "") + "."
+              : "Wait a few minutes and try again.";
+            flash("login-flash", "warn", "slow down",
+              "Too many sign-in attempts. " + whenAgain,
+              "This is the attempt limit, not a wrong password — what you typed was never checked.");
+            return;
+          }
+
+          if (r.status === 503 && codeOf(r) === "ADMIN_DISABLED") return; // handled by api()
+
+          flash("login-flash", "bad", "problem", messageOf(r),
+            r.network ? null : "The server did not answer. Sign-in will work as soon as it is back.");
+        });
+    });
+  }
+
+  function checkMe(firstLoad) {
+    return api("GET", "/admin/api/me", undefined, { noAuth: true }).then(function (r) {
+      if (r.ok && r.json && r.json.email) {
+        setSignedIn(r.json.email);
+        // Signed in is not the same as ready to work. The event comes next, and
+        // it comes from a person — including after a reload, which is exactly
+        // when a remembered event would otherwise be applied unnoticed.
+        if (picked == null) openChooser();
+        else openConsole();
+        return r;
+      }
+      closeConsole();
+      if (r.status === 503 && codeOf(r) === "ADMIN_DISABLED") { toDisabled(r); return r; }
+      if (r.status === 401) {
+        setSignedIn(null);
+        showView("view-login", firstLoad ? null : "login-h");
+        if (!firstLoad) flash("login-flash", "warn", "signed out", "You are signed out.");
+        return r;
+      }
+      // Network down, or something nobody planned for. Say so on the sign-in
+      // screen rather than leaving a blank page.
+      setSignedIn(null);
+      showView("view-login");
+      flash("login-flash", "bad", "problem", messageOf(r),
+        r.network ? null : "The server is not answering. Sign-in will work as soon as it is back.");
+      return r;
+    });
+  }
+
+  /* =====================================================================
      Wiring
      ===================================================================== */
+  wireLogin();
+
+  $("btn-out").addEventListener("click", function () {
+    var b = $("btn-out");
+    b.disabled = true;
+    // POST, so this is the call that must carry the CSRF header — and the one
+    // that exercises the single retry when the cookie has gone stale.
+    api("POST", "/admin/api/logout").then(function (r) {
+      b.disabled = false;
+      closeConsole();
+      setSignedIn(null);
+      showView("view-login", "login-h");
+      if (r.ok) flash("login-flash", "ok", "signed out", "Signed out on the server, not just in this browser.");
+      else flash("login-flash", "warn", "signed out", "This browser dropped the session. " + messageOf(r));
+    });
+  });
+
+  $("btn-disabled-retry").addEventListener("click", function () { checkMe(false); });
+
+  /* Neither the event list nor a status re-read has a button in the rail. That
+     bar is for what a volunteer touches once per attendee, and these are not
+     that: the working-event menu is already up there for a switch, E opens the
+     full list, and the banner that reports a status problem carries its own
+     retry rather than making the whole desk wear one. */
+  $("btn-choose-reload").addEventListener("click", function () {
+    eventsLoading = true;
+    paintChooser();
+    loadEvents();
+  });
+  $("btn-choose-out").addEventListener("click", function () { $("btn-out").click(); });
+
+  $("btn-dev").addEventListener("click", function () { setDev(!devOn()); });
+
   $("entry-form").addEventListener("submit", function (e) {
     e.preventDefault();
     submit($("addr").value, "typed");
@@ -2956,9 +3704,11 @@ td .val{font-size:11.5px}
     else startCamera();
   });
   $("btn-next").addEventListener("click", reset);
-  $("btn-state").addEventListener("click", function () { loadState(); loadEvents(); });
   $("bn-state-retry").addEventListener("click", function () { loadState(); loadEvents(); });
   $("bn-offline-retry").addEventListener("click", function () {
+    // Signed out there is no desk to retry — the only thing worth re-asking is
+    // whether the server is back and who we are.
+    if (!me) { checkMe(false); return; }
     loadState();
     loadEvents();
     if (current) lookup(current);
@@ -2972,11 +3722,11 @@ td .val{font-size:11.5px}
   });
   $("btn-chain").addEventListener("click", readChain);
   $("btn-recheck").addEventListener("click", recheckPending);
-  $("btn-clearsess").addEventListener("click", function () {
-    session = [];
-    saveSession();
-    paintSession();
-  });
+  /* No "clear list". This roster is the only place a volunteer can see that
+     somebody served twenty minutes ago still has not accepted their badge, and
+     the button that threw all of that away sat one thumb-width from the one
+     that re-checks it. Rows carry the event they were issued under, so the list
+     stays correct across a change of event and does not need clearing. */
   $("btn-theme").addEventListener("click", function () {
     var root = document.documentElement;
     var cur = root.getAttribute("data-theme");
@@ -2994,6 +3744,14 @@ td .val{font-size:11.5px}
       if (e.key === "Escape") { t.blur(); }
       return;
     }
+    // The one shortcut that works at the sign-in screen too.
+    if (e.key === "d" || e.key === "D") { e.preventDefault(); setDev(!devOn()); return; }
+    // The desk's own shortcuts must not reach through the gate — N would start
+    // the camera on a page nobody has signed in to. Signed in is not enough
+    // either: the chooser is a signed-in screen with no console behind it yet,
+    // and S there would turn a camera on for a desk with no event.
+    if (!me || !consoleOpen()) return;
+    if (e.key === "e" || e.key === "E") { e.preventDefault(); openChooser(); return; }
     if (e.key === "/") { e.preventDefault(); $("addr").focus(); $("addr").select(); }
     else if (e.key === "n" || e.key === "N") { e.preventDefault(); reset(); }
     else if (e.key === "s" || e.key === "S") {
@@ -3008,11 +3766,19 @@ td .val{font-size:11.5px}
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) {
       if (scanning) { wantResume = true; stopCamera("stopped"); }
-    } else {
+      return;
+    }
+    if (!me) return;
+    if (consoleOpen()) {
       if (wantResume) { wantResume = false; startCamera(); }
       if (watch) pollOnce();
       sweepPending();
     }
+    /* Coming back to a tab that has been open for hours is exactly when the
+       session has expired. One check on return, not a polling loop. */
+    api("GET", "/admin/api/me", undefined, { noAuth: true }).then(function (r) {
+      if (r.status === 401) expire();
+    });
   });
   window.addEventListener("pagehide", function () { stopCamera(); });
 
@@ -3021,25 +3787,34 @@ td .val{font-size:11.5px}
     if (r) document.documentElement.style.setProperty("--railh", r.offsetHeight + "px");
   }
   window.addEventListener("resize", measureRail);
+  /* The rail wraps to two or three rows on a narrow screen, and its height is
+     what holds the sticky scanner column level with the decision card. A resize
+     listener alone leaves a stale value behind whenever the rail changes height
+     without a resize — a longer event name, the sign-in row appearing — so the
+     rail is observed rather than sampled. */
+  if (typeof window.ResizeObserver === "function") {
+    try {
+      var railEl = document.querySelector(".rail");
+      if (railEl) new window.ResizeObserver(measureRail).observe(railEl);
+    } catch (e) { /* older browsers still have the resize listener */ }
+  }
 
   /* =====================================================================
      Boot
+     ---------------------------------------------------------------------
+     Two stages. The page boots into the gate; the DESK boots only once
+     somebody is signed in, and then it does exactly what it always did, in
+     exactly the order it always did it.
      ===================================================================== */
-  (function boot() {
-    try {
-      var saved = localStorage.getItem(THEME_KEY);
-      if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
-    } catch (e) { /* private mode */ }
-
-    // The remembered event must be in place before the first lookup can fire,
-    // so it is read from storage rather than waited on from the network.
-    picked = readPicked();
+  function bootConsole() {
+    // `picked` is already set — commitEvent() is the only way in, and it sets it
+    // before opening the console. Nothing is read from storage here: that read
+    // is what used to make a reload silently resume last night's event.
     paintEventPicker();
 
     measureRail();
     loadSession();
     paintDocket();
-    sweepTimer = setInterval(sweepPending, 20000);
 
     // Say up front what the scanner can and cannot do here, before anyone
     // presses anything. This is the state most desk laptops are in.
@@ -3061,6 +3836,21 @@ td .val{font-size:11.5px}
       if ($("bay").getAttribute("data-scan") === "off") $("addr").focus();
     });
     loadEvents().then(measureRail);
+  }
+
+  (function boot() {
+    try {
+      var saved = localStorage.getItem(THEME_KEY);
+      if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
+    } catch (e) { /* private mode */ }
+
+    var dev = "0";
+    try { dev = localStorage.getItem(DEV_KEY) || "0"; } catch (e) { /* private mode */ }
+    setDev(dev === "1");
+
+    measureRail();
+    showView("view-boot");
+    checkMe(true).then(measureRail);
   })();
 })();
 </script>

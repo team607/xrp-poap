@@ -234,6 +234,7 @@ function unusedChainOps(): ChainOps {
     mint: unused("mint"),
     createClaimOffer: unused("createClaimOffer"),
     accountExists: unused("accountExists"),
+    getAccountBalanceXrp: unused("getAccountBalanceXrp"),
     sponsorWallet: unused("sponsorWallet"),
     verifyClaim: unused("verifyClaim"),
     getRoster: unused("getRoster"),
@@ -1690,7 +1691,7 @@ describe("GET /demo/art", () => {
     // The head and tail are what a person compares against their own wallet.
     expect(res.body).toContain(address.slice(0, 6));
     expect(res.body).toContain(address.slice(-6));
-    expect(res.body).toContain(`TAXON ${h.state.eventId}`);
+    expect(res.body).toContain(`EVENT ${h.state.eventId}`);
   });
 
   it("serves exactly the bytes the pinner would have pinned", async () => {

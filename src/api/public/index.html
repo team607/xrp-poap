@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<title>Attendance badges</title>
+<style>
+/* ==========================================================================
+   THE FRONT DOOR — what someone gets for typing the bare address.
+
+   Before this existed the root answered `{"error":{"code":"NOT_FOUND"}}`, which
+   is the single worst thing a client-facing host can say: it reads as broken
+   even though every real page underneath it is fine.
+
+   This is a HALLWAY, not a home page. It has no content of its own and nothing
+   to sell — it takes one look at who is standing there and points. Same bone
+   paper, same deep ink, same engraved invitation language as /register, so
+   arriving here and then landing on the invitation feels like one building.
+
+   AUDIENCE: a guest, most likely on a phone, quite possibly at the door with
+   somebody waiting behind them. Two big doors for them, one small one for the
+   people working. No jargon, no diagnostics, nothing to read twice.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --on-signal:#fffaf2;
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
+  --lift:0 1px 0 rgba(255,255,255,.85) inset, 0 30px 52px -30px rgba(50,36,18,.72);
+  --grid:rgba(93,74,44,.09);
+  --grain-opacity:.055;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+
+    --signal:#e0a24a;
+    --signal-2:rgba(201,135,48,.56);
+    --signal-wash:rgba(224,162,74,.12);
+    --on-signal:#17130c;
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+
+    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
+    --lift:0 1px 0 rgba(255,255,255,.05) inset, 0 34px 58px -34px rgba(0,0,0,1);
+    --grid:rgba(224,214,190,.055);
+    --grain-opacity:.04;
+  }
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  min-height:100svh;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:17px;
+  line-height:1.6;
+  overflow-x:hidden;
+  -webkit-tap-highlight-color:var(--signal-wash);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:28px 20px calc(28px + env(safe-area-inset-bottom));
+}
+
+/* The same faint plate grid the invitation is printed on. Purely paper. */
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px, transparent 1px),
+                   linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:26px 26px;
+  opacity:.5;
+  z-index:0;
+}
+
+main{position:relative; z-index:1; width:100%; max-width:560px}
+
+/* ---- letterhead ---------------------------------------------------------- */
+
+.head{text-align:center; margin:0 0 30px}
+.kicker{
+  font-family:var(--font-mono);
+  font-size:10.5px;
+  letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--signal);
+  font-weight:700;
+  margin:0 0 14px;
+}
+h1{
+  font-size:clamp(1.75rem, 7vw, 2.4rem);
+  line-height:1.12;
+  letter-spacing:-.012em;
+  margin:0;
+  font-weight:600;
+}
+/* Double rule and lozenge: the invitation's ornament, so the two pages read as
+   the same stationery. */
+.orn{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:9px;
+  margin:18px 0 0;
+  color:var(--rule-2);
+}
+.orn::before,.orn::after{
+  content:"";
+  flex:1 1 0;
+  max-width:104px;
+  border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);
+  height:3px;
+}
+.orn span{font-size:8px; letter-spacing:.4em; color:var(--signal-2)}
+
+.where{
+  margin:16px 0 0;
+  font-family:var(--font-mono);
+  font-size:11px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--ink-3);
+}
+.where b{color:var(--ink-2); font-weight:700}
+
+/* ---- the doors ----------------------------------------------------------- */
+
+.doors{display:grid; gap:14px; margin:0}
+
+a.door{
+  display:block;
+  text-decoration:none;
+  color:inherit;
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:3px;
+  box-shadow:var(--shadow);
+  padding:20px 22px;
+  position:relative;
+  overflow:hidden;
+  transition:box-shadow .18s ease, border-color .18s ease, transform .18s ease;
+}
+/* A tone rule on the top edge, amber for the guest doors. The colour is the
+   only thing separating the two, so it carries a label too — never colour
+   alone. */
+a.door::before{
+  content:"";
+  position:absolute;
+  inset:0 0 auto;
+  height:2px;
+  background:var(--signal);
+}
+a.door--staff::before{background:var(--rule-2)}
+a.door:hover,a.door:focus-visible{
+  border-color:var(--rule-2);
+  box-shadow:var(--lift);
+  transform:translateY(-1px);
+}
+a.door:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+a.door:active{transform:translateY(0)}
+
+.door__t{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:14px;
+}
+.door__n{font-size:1.16rem; font-weight:600; letter-spacing:-.005em}
+.door__go{
+  font-family:var(--font-mono);
+  font-size:10px;
+  letter-spacing:.18em;
+  text-transform:uppercase;
+  color:var(--signal);
+  white-space:nowrap;
+  font-weight:700;
+}
+.door--staff .door__go{color:var(--ink-3)}
+.door__d{margin:.35em 0 0; font-size:15px; color:var(--ink-2)}
+
+/* The staff door is deliberately quieter: one person in the building needs it
+   and every guest should skim past it. */
+a.door--staff{background:transparent; box-shadow:none; padding:15px 22px}
+a.door--staff .door__n{font-size:1rem; font-weight:600; color:var(--ink-2)}
+a.door--staff .door__d{font-size:14px; color:var(--ink-3)}
+
+.sep{
+  display:flex;
+  align-items:center;
+  gap:12px;
+  margin:26px 0 14px;
+  font-family:var(--font-mono);
+  font-size:9.5px;
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  color:var(--ink-3);
+}
+.sep::before,.sep::after{content:""; flex:1; border-top:1px solid var(--rule)}
+
+/* ---- foot ---------------------------------------------------------------- */
+
+footer{
+  margin:30px 0 0;
+  text-align:center;
+  font-size:13.5px;
+  color:var(--ink-3);
+  line-height:1.55;
+}
+footer p{margin:0}
+footer .safe{margin-top:9px; color:var(--ink-3)}
+
+@media (max-width:420px){
+  body{padding:20px 14px calc(20px + env(safe-area-inset-bottom))}
+  a.door{padding:17px 17px}
+  .door__t{flex-direction:column; gap:2px}
+}
+
+@media (prefers-reduced-motion: reduce){
+  a.door{transition:none}
+  a.door:hover,a.door:focus-visible{transform:none}
+}
+</style>
+</head>
+<body>
+<main>
+  <div class="head">
+    <p class="kicker">Attendance badges</p>
+    <h1 id="title">Which one are you?</h1>
+    <div class="orn"><span>&#9670;</span></div>
+    <p class="where" id="where" hidden></p>
+  </div>
+
+  <div class="doors">
+    <a class="door" id="d-register" href="/register">
+      <span class="door__t">
+        <span class="door__n">I am coming to an event</span>
+        <span class="door__go">Start here</span>
+      </span>
+      <p class="door__d">Takes about a minute. You will need the wallet app on your phone, and nothing else.</p>
+    </a>
+
+    <a class="door" id="d-attend" href="/attend">
+      <span class="door__t">
+        <span class="door__n">I am at the door now</span>
+        <span class="door__go">My pass</span>
+      </span>
+      <p class="door__d">Already signed up? Open your pass and show it to a volunteer.</p>
+    </a>
+  </div>
+
+  <p class="sep">Working here</p>
+
+  <div class="doors">
+    <a class="door door--staff" id="d-volunteer" href="/volunteer">
+      <span class="door__t">
+        <span class="door__n">The badge desk</span>
+        <span class="door__go">Sign in</span>
+      </span>
+      <p class="door__d">Scan a guest, check them off, hand over the badge.</p>
+    </a>
+
+    <a class="door door--staff" id="d-admin" href="/admin">
+      <span class="door__t">
+        <span class="door__n">Organiser</span>
+        <span class="door__go">Sign in</span>
+      </span>
+      <p class="door__d">Set up an event and watch the list fill up.</p>
+    </a>
+  </div>
+
+  <footer>
+    <p>Your badge is yours. It goes to your own wallet and nobody can take it back.</p>
+    <p class="safe">Nothing here ever asks for a seed, a recovery phrase or a password to your wallet.</p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ONE optional nicety, and it must never be load-bearing: when exactly one
+     event is happening, name it and send both guest doors straight at it,
+     skipping a picker with one item on it. Anything at all goes wrong — the
+     request fails, the shape is unfamiliar, there are two events — and the page
+     stays exactly as it was served, which already works. */
+
+  function $(id) { return document.getElementById(id); }
+
+  function point(id, path) {
+    var el = $(id);
+    if (el) el.setAttribute("href", path);
+  }
+
+  try {
+    fetch("/api/events?limit=100", { headers: { accept: "application/json" } })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (body) {
+        if (!body || !Array.isArray(body.events)) return;
+
+        var live = body.events.filter(function (e) {
+          return e && e.status === "live" && typeof e.eventId === "number";
+        });
+        /* Two events running at once is a real thing at a conference, and
+           guessing between them is worse than showing the picker. */
+        if (live.length !== 1) return;
+
+        var ev = live[0];
+        var id = encodeURIComponent(String(ev.eventId));
+        point("d-register", "/register/" + id);
+        point("d-attend", "/attend/" + id);
+
+        var name = (typeof ev.name === "string" && ev.name) ? ev.name : "";
+        if (!name) return;
+
+        var where = $("where");
+        if (!where) return;
+        /* textContent, not innerHTML: the name is operator-supplied and this is
+           the one place on the page that renders anything from the database. */
+        where.textContent = "";
+        where.appendChild(document.createTextNode("Happening now  ·  "));
+        var b = document.createElement("b");
+        b.textContent = name;
+        where.appendChild(b);
+        where.hidden = false;
+      })
+      .catch(function () { /* the served page is the fallback */ });
+  } catch (e) { /* no fetch, no problem */ }
+})();
+</script>
+</body>
+</html>

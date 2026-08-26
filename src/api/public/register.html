@@ -7,7 +7,7 @@
 <meta name="robots" content="noindex">
 <meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
 <meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
-<title>Register — XRPL attendance badge</title>
+<title>Registration</title>
 <style>
 /* ==========================================================================
    THE INVITATION — the public registration page.
@@ -15,13 +15,19 @@
    Sibling of /demo/attendee, which is a letterpress TICKET: ink border, ribbon
    head, perforation, stub. This is the other half of the same stationery — the
    INVITATION that arrives first. Same bone paper, same deep ink, same editorial
-   serif for prose and monospace for anything the ledger said, same amber
+   serif for prose and monospace for the few small-caps labels, same amber
    "live" / jade "confirmed" signalling, same variable names.
 
    The difference is the object, not the language. A ticket is left-aligned and
    industrial because it is read at a desk under pressure. An invitation is
    centred and engraved — double rule, lozenge ornament, the event's name set
    large — because it is read on a sofa a week earlier.
+
+   AUDIENCE. An invited guest, who should never learn that there is an API
+   behind this. Endpoints, verbs, status codes, error codes, raw bodies and the
+   operator's runbook all still exist — they are marked `.devonly` and revealed
+   only by the one developer affordance in the footer (or ctrl/⌘ + alt + D).
+   Nothing is deleted; it is filed.
 
    Phone first. 375px is the design width; everything above it is the same card
    with more air. The primary action lives in a fixed dock in the thumb zone,
@@ -100,12 +106,19 @@ body{
   background:var(--paper);
   color:var(--ink);
   font-family:var(--font-display);
-  font-size:16.5px;
-  line-height:1.58;
+  font-size:17px;
+  line-height:1.6;
   overflow-x:hidden;
   -webkit-tap-highlight-color:var(--signal-wash);
 }
-body.is-docked{padding-bottom:118px}
+body.is-docked{padding-bottom:124px}
+
+/* ---- the one developer affordance ----------------------------------------
+   Everything a guest must not see carries `.devonly`. Hidden by a
+   :not() selector rather than by a class of its own, so that revealing it
+   restores whatever display value the element actually wanted — flex for a
+   row of links, grid for a wire row — with no per-element bookkeeping. */
+html:not(.dev) .devonly{display:none !important}
 
 /* Atmosphere: the plate grid and paper grain of the ticket, unchanged, so the
    two pages read as one product rather than two skins. */
@@ -131,11 +144,11 @@ code,.mono{font-family:var(--font-mono)}
   font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
   color:var(--ink-3); font-weight:600;
 }
-.prose{color:var(--ink-2); font-size:15.5px}
+.prose{color:var(--ink-2); font-size:16px; text-wrap:pretty}
 .prose strong{color:var(--ink); font-weight:600}
 .sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
 
-/* ---- status strip -------------------------------------------------------- */
+/* ---- status strip · developer only --------------------------------------- */
 .strip{
   position:sticky; top:0; z-index:40;
   background:color-mix(in srgb, var(--paper) 90%, transparent);
@@ -159,7 +172,10 @@ code,.mono{font-family:var(--font-mono)}
 .fact__v.ok{color:var(--jade)}
 .fact__v.warn{color:var(--signal)}
 
-.wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:0 13px}
+/* With the diagnostics strip filed away, the page opens on the invitation and
+   nothing else — so the top of the sheet gets real air instead of a toolbar. */
+.wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:26px 13px 0}
+html.dev .wrap{padding-top:12px}
 
 /* ---- banners ------------------------------------------------------------- */
 .banner{
@@ -168,47 +184,78 @@ code,.mono{font-family:var(--font-mono)}
   padding:11px 13px; border-radius:2px;
 }
 .banner--warn{border-color:var(--signal); background:var(--signal-wash)}
-.banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
-.banner p{font-size:14px; color:var(--ink-2); margin:.3em 0 0}
+.banner__t{font-family:var(--font-display); font-size:15.5px; color:var(--ink); font-weight:600; letter-spacing:-.012em}
+.banner p{font-size:14.5px; color:var(--ink-2); margin:.25em 0 0}
 
 /* ---- the card ------------------------------------------------------------
    The ticket has one ink border and a ribbon. The invitation has the engraver's
    double rule: a solid outer edge and a hairline set in from it, drawn with one
    pseudo-element and no extra DOM. */
 .invite{
-  position:relative; margin:18px 0 0;
+  position:relative; margin:0;
   border:1.5px solid var(--ink); border-radius:3px;
-  background:var(--surface); box-shadow:var(--shadow);
+  background:
+    linear-gradient(180deg, color-mix(in srgb, var(--signal-wash) 34%, transparent) 0%, transparent 190px),
+    var(--surface);
+  box-shadow:var(--shadow);
 }
+/* Under the content, not over it: the steps band is full-bleed and should
+   break the inner rule rather than have a hairline ruled across its numerals. */
 .invite::before{
   content:""; position:absolute; inset:5px; pointer-events:none; z-index:0;
   border:1px solid var(--rule-2); border-radius:2px;
 }
+/* A hairline of the current tone laid along the top edge: the sheet picks up
+   amber while something is live and jade once it is done, without a badge or a
+   chip anywhere on the page saying so. */
+.invite::after{
+  content:""; position:absolute; left:0; right:0; top:0; height:2px; z-index:2;
+  pointer-events:none; opacity:0; transition:opacity .4s ease;
+  background:linear-gradient(90deg,transparent,var(--signal),transparent);
+}
 .invite > *{position:relative; z-index:1}
 .invite[data-tone="live"]{border-color:var(--signal-2)}
+.invite[data-tone="live"]::after{opacity:.6}
 .invite[data-tone="good"]{border-color:var(--jade)}
+.invite[data-tone="good"]::after{opacity:.75; background:linear-gradient(90deg,transparent,var(--jade),transparent)}
 /* Amber, not vermilion. Neither dead end on this page is a fault — a closed
-   event and an unconfigured server are both just "not now", and vermilion is
-   reserved across this product for something being wrong. */
+   event and an organiser who has not finished setting up are both just "not
+   now", and vermilion is reserved across this product for something wrong. */
 .invite[data-tone="warn"]{border-color:var(--signal-2)}
 
-/* ---- letterhead ----------------------------------------------------------- */
-.head{padding:24px 20px 18px; text-align:center}
-.head .label{display:block; margin-bottom:11px}
-.head h1{font-size:clamp(1.68rem,7.2vw,2.3rem); letter-spacing:-.032em; text-wrap:balance}
+/* ---- letterhead -----------------------------------------------------------
+   The one place on the page allowed to be generous. Staggered on load, because
+   an invitation should arrive rather than appear. */
+.head{padding:30px 20px 20px; text-align:center}
+/* Staggered, but kept inside the same ~0.6s window the faces already use:
+   `both` means each line is transparent until its delay elapses, so the delay
+   ladder is also how long the letterhead could be blank. Short on purpose —
+   and the event's own name is deliberately exempt from the fade. It only
+   slides, so the one thing the reader came for cannot be hidden by an
+   animation that, for any reason, never runs. */
+.head > *{animation:rise .45s cubic-bezier(.2,.75,.3,1) both}
+.head > h1{animation-name:rise-solid}
+@keyframes rise-solid{from{transform:translateY(9px)}to{transform:none}}
+.head > *:nth-child(2){animation-delay:.06s}
+.head > *:nth-child(3){animation-delay:.12s}
+.head > *:nth-child(4){animation-delay:.17s}
+.head > *:nth-child(5){animation-delay:.22s}
+.head .label{display:block; margin-bottom:13px; color:var(--signal); letter-spacing:.26em}
+.head h1{font-size:clamp(1.8rem,7.8vw,2.55rem); letter-spacing:-.034em; text-wrap:balance; line-height:1.08}
 .head__meta{
-  margin:11px 0 0; font-family:var(--font-mono); font-size:11px; letter-spacing:.15em;
+  margin:13px 0 0; font-family:var(--font-mono); font-size:11px; letter-spacing:.15em;
   text-transform:uppercase; color:var(--ink-2);
   display:flex; justify-content:center; align-items:center; gap:9px; flex-wrap:wrap;
 }
 .head__meta .sep{color:var(--signal); font-size:8px}
-.head__desc{margin:13px auto 0; max-width:46ch; font-size:15px; color:var(--ink-2)}
+.head__desc{margin:14px auto 0; max-width:46ch; font-size:15.5px; color:var(--ink-2); text-wrap:pretty}
 
-/* The lozenge divider: a hairline broken by a rotated square. Pure invitation
-   stationery, and the one ornament on the page. */
-.orn{display:flex; align-items:center; gap:11px; margin:16px 0 0}
-.orn::before,.orn::after{content:""; flex:1; height:1px; background:var(--rule)}
+/* The lozenge divider: a hairline broken by a rotated square, flanked by two
+   fainter satellites. Pure invitation stationery, and the one ornament here. */
+.orn{display:flex; align-items:center; justify-content:center; gap:9px; margin:18px 0 0}
+.orn::before,.orn::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,transparent,var(--rule) 22%,var(--rule) 78%,transparent)}
 .orn__d{width:6px; height:6px; background:var(--signal); transform:rotate(45deg); flex:none}
+.orn__s{width:3px; height:3px; background:var(--rule-2); transform:rotate(45deg); flex:none}
 
 /* ---- the programme: three steps ------------------------------------------
    Three fixed columns, mono labels, ellipsis on every one of them: at 375px
@@ -233,16 +280,33 @@ code,.mono{font-family:var(--font-mono)}
 .step[data-s="now"] .step__t{color:var(--ink); font-weight:700}
 .step[data-s="done"] .step__n{border-color:var(--jade); color:var(--jade); background:transparent}
 .step[data-s="done"] .step__t{color:var(--ink-2)}
+/* The tick replaces the numeral once a step is behind you — the numeral has no
+   job left, and a row of ticks is the cheapest possible progress. */
+.step[data-s="done"] .step__n{font-size:0}
+.step[data-s="done"] .step__n::before{content:"✓"; font-size:10px; line-height:1}
 
 /* ---- faces ---------------------------------------------------------------- */
-.face{padding:20px 15px 18px; animation:rise .42s cubic-bezier(.2,.75,.3,1) both}
+.face{padding:22px 16px 20px; animation:rise .42s cubic-bezier(.2,.75,.3,1) both}
 @keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
-.face__eyebrow{display:flex; align-items:center; gap:11px; margin-bottom:11px}
+.face__eyebrow{display:flex; align-items:center; gap:11px; margin-bottom:12px}
 .face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
-.face__eyebrow--mid{margin-top:22px}
-.face h2{font-size:clamp(1.42rem,5.8vw,1.72rem); letter-spacing:-.026em; text-wrap:balance}
+.face__eyebrow--mid{margin-top:26px}
+.face h2{font-size:clamp(1.46rem,6.1vw,1.82rem); letter-spacing:-.028em; text-wrap:balance}
 .face h2 em{font-style:italic; color:var(--signal)}
-.face h2 + .prose{margin-top:12px}
+.face h2 + .prose{margin-top:13px}
+
+/* ---- the two promises -----------------------------------------------------
+   The only copy on this page that exists to protect the reader rather than to
+   move them along, so it is set as an engraved list and not as fine print. */
+.promises{
+  list-style:none; margin:20px 0 0; padding:15px 15px 15px 14px;
+  border:1px solid var(--rule); border-left:2px solid var(--signal);
+  border-radius:0 2px 2px 0; background:var(--sunk);
+  display:grid; gap:12px;
+}
+.promise{display:grid; grid-template-columns:auto minmax(0,1fr); gap:11px; align-items:start; font-size:14.5px; color:var(--ink-2); line-height:1.5}
+.promise__d{width:6px; height:6px; margin-top:.5em; background:var(--signal); transform:rotate(45deg); flex:none}
+.promise b{color:var(--ink); font-weight:600; font-size:15px}
 
 /* ---- the QR plate --------------------------------------------------------- */
 .plate{
@@ -354,10 +418,17 @@ code,.mono{font-family:var(--font-mono)}
 .row__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; line-height:1.5}
 .row__v.ok{color:var(--jade)}
 .row__v.prose-v{font-family:var(--font-display); font-size:15px}
+/* The keepsake: a bordered slip inside the confirmation, so the thing worth
+   screenshotting looks like a thing worth screenshotting. */
+.rows--quiet{
+  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  padding:2px 13px; margin-top:12px;
+}
+.rows--quiet .row:last-child{border-bottom:0}
 .rows--quiet .row__k{font-size:9px}
-.rows--quiet .row__v{font-size:11.5px; color:var(--ink-2)}
+.rows--quiet .row__v{font-size:12px; color:var(--ink-2)}
 .rows--quiet .row__v.ok{color:var(--jade)}
-.rows--quiet .row__v.prose-v{font-size:14.5px; color:var(--ink)}
+.rows--quiet .row__v.prose-v{font-size:15px; color:var(--ink)}
 .links{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px}
 .link{
   font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
@@ -365,16 +436,25 @@ code,.mono{font-family:var(--font-mono)}
   padding:7px 12px; min-height:40px; display:inline-flex; align-items:center;
 }
 .link::after{content:" ↗"; opacity:.6}
+
+/* ---- errors ---------------------------------------------------------------
+   A guest reads a sentence and a way out. The code, the status and whatever
+   the server actually said are still rendered, one `.devonly` line below. */
 .err{
-  margin-top:16px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
-  padding:11px 13px; border-radius:0 2px 2px 0;
+  margin-top:18px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
+  padding:13px 14px; border-radius:0 2px 2px 0;
 }
-.err__code{font-family:var(--font-mono); font-size:11.5px; font-weight:700; letter-spacing:.1em; color:var(--vermilion)}
-.err__msg{font-size:14.5px; color:var(--ink); margin-top:5px; overflow-wrap:anywhere}
-.err__hint{font-size:13.5px; color:var(--ink-2); margin-top:8px; font-style:italic}
+.err__t{font-size:15.5px; font-weight:600; color:var(--ink); letter-spacing:-.014em; line-height:1.3}
+.err__msg{font-size:14.5px; color:var(--ink-2); margin-top:6px; overflow-wrap:anywhere}
+.err__hint{font-size:13.5px; color:var(--ink-3); margin-top:8px; font-style:italic}
+.err__dev{
+  font-family:var(--font-mono); font-size:10.5px; line-height:1.5; letter-spacing:.02em;
+  color:var(--vermilion); margin-top:10px; padding-top:8px; border-top:1px dotted var(--rule-2);
+  overflow-wrap:anywhere;
+}
 .err--warn{border-left-color:var(--signal); background:var(--signal-wash)}
-.err--warn .err__code{color:var(--signal)}
-.retry{margin-top:13px; display:flex; gap:9px; flex-wrap:wrap}
+.err--warn .err__dev{color:var(--signal)}
+.retry{margin-top:14px; display:flex; gap:9px; flex-wrap:wrap}
 
 /* ---- buttons -------------------------------------------------------------- */
 .btn{
@@ -392,8 +472,8 @@ code,.mono{font-family:var(--font-mono)}
 }
 @keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .btn--act{
-  display:flex; align-items:center; justify-content:center; width:100%; min-height:58px; font-size:14px;
-  background:var(--signal); color:var(--on-signal); border:0;
+  display:flex; align-items:center; justify-content:center; width:100%; min-height:60px; font-size:14px;
+  background:var(--signal); color:var(--on-signal); border:0; letter-spacing:.16em;
   box-shadow:0 1px 0 rgba(255,255,255,.22) inset, 0 12px 24px -16px rgba(0,0,0,.9);
 }
 .btn--act:hover:not(:disabled){filter:brightness(1.07)}
@@ -414,11 +494,12 @@ code,.mono{font-family:var(--font-mono)}
   border-top:1px solid var(--rule);
   animation:dockin .34s cubic-bezier(.2,.8,.3,1) both;
 }
-.dock__in{max-width:640px; margin:0 auto}
+.dock__in{max-width:640px; margin:0 auto; padding:0 0}
 .dock__note{
-  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--ink-3); text-align:center; margin:8px 0 0;
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+  color:var(--ink-3); text-align:center; margin:9px 0 0; line-height:1.4;
 }
+.dock__note:empty{display:none}
 /* A small offset and no opacity: this bar carries the primary tap target, and an
    animation that is throttled must still leave the button on screen. */
 @keyframes dockin{from{transform:translateY(15px)}to{transform:none}}
@@ -442,15 +523,15 @@ code,.mono{font-family:var(--font-mono)}
 /* ---- the stamp: the payoff ------------------------------------------------
    Rotated, double-ruled, jade. The one thing on the page that looks pressed
    into the paper rather than printed on it. */
-.stampwrap{display:flex; justify-content:center; margin:18px 0 4px}
+.stampwrap{display:flex; justify-content:center; margin:22px 0 6px}
 .stamp{
   position:relative; color:var(--jade); border:2px solid currentColor; border-radius:3px;
-  padding:9px 16px 10px; transform:rotate(-1.6deg); text-align:center; max-width:100%;
+  padding:11px 20px 12px; transform:rotate(-1.6deg); text-align:center; max-width:100%;
   animation:press .5s cubic-bezier(.2,.9,.3,1) both;
 }
 .stamp::before{content:""; position:absolute; inset:3px; border:1px solid currentColor; border-radius:2px; opacity:.5}
-.stamp__t{font-family:var(--font-mono); font-size:15px; letter-spacing:.28em; text-transform:uppercase; font-weight:700; display:block}
-.stamp__d{font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; display:block; margin-top:3px}
+.stamp__t{font-family:var(--font-mono); font-size:15.5px; letter-spacing:.3em; text-transform:uppercase; font-weight:700; display:block; text-indent:.3em}
+.stamp__d{font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; display:block; margin-top:4px}
 @keyframes press{from{opacity:0; transform:rotate(-7deg) scale(1.3)}to{opacity:1; transform:rotate(-1.6deg) scale(1)}}
 .already{
   margin-top:14px; border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
@@ -459,8 +540,21 @@ code,.mono{font-family:var(--font-mono)}
 .already__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--jade); font-weight:700}
 .already p{font-size:14px; color:var(--ink-2); margin:.35em 0 0}
 
+/* ---- the way onward -------------------------------------------------------
+   Registration ends in a dead end otherwise: the page says "bring this wallet
+   to the door" and then offers nothing to press. The pass is the next thing a
+   guest needs and the only thing they need, so it gets the full-width action
+   treatment rather than a link in a paragraph. */
+.onward{margin-top:22px}
+.onward .btn{width:100%}
+.onward__n{
+  margin:9px 0 0; text-align:center;
+  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-3);
+}
+
 /* ---- the badge artwork ----------------------------------------------------
-   GET /demo/art?address&eventId is a pure function of the two, so the badge
+   The badge is a pure function of (address, event), so the badge
    exists the moment the wallet is proven — before anything is minted. Same
    mount as the ticket: a board, a hairline keyline, and a bed painted the
    artwork's OWN outer black so the seam disappears. Theme-fixed, because the
@@ -515,7 +609,7 @@ code,.mono{font-family:var(--font-mono)}
 @keyframes art-place{from{opacity:0; transform:translateY(-9px) scale(1.045)}to{opacity:1; transform:none}}
 
 /* ---- wire log + footer ---------------------------------------------------- */
-.wire{margin-top:26px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk)}
+.wire{margin-top:26px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk); border-left:2px solid var(--signal-2)}
 .wire>summary{
   cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px;
   font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
@@ -536,17 +630,42 @@ code,.mono{font-family:var(--font-mono)}
 .wire__s.err{color:var(--vermilion)}
 .wire__empty{padding:11px 12px; font-family:var(--font-mono); font-size:11px; color:var(--ink-3)}
 
-.foot{margin:20px 0 34px; padding-top:16px; border-top:1px solid var(--rule); font-size:13px; color:var(--ink-3)}
+/* ---- colophon -------------------------------------------------------------
+   One reassurance, one hairline, and the single way back to the machinery. */
+.foot{
+  margin:22px 0 38px; padding-top:18px; border-top:1px solid var(--rule);
+  font-size:13.5px; color:var(--ink-3); line-height:1.55;
+}
 .foot b{color:var(--ink-2); font-weight:600}
+.colophon{
+  display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+  margin-top:14px; padding-top:12px; border-top:1px dotted var(--rule);
+}
+.colophon__d{width:4px; height:4px; background:var(--rule-2); transform:rotate(45deg); flex:none}
+/* Quiet by size and setting, not by low contrast — it still has to be legible
+   to the one person in a hundred who is looking for it. */
+.devlink{
+  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.17em; text-transform:uppercase;
+  color:var(--ink-3); background:none; border:0; padding:11px 0; margin-left:auto;
+  cursor:pointer; text-decoration:none; transition:color .16s ease;
+}
+.devlink:hover{color:var(--ink)}
+.devlink:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+html.dev .devlink{color:var(--signal)}
+html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
 
 @media (min-width:560px){
-  .wrap{padding:0 20px}
-  .head{padding:32px 26px 22px}
-  .face{padding:26px 24px 24px}
+  .wrap{padding:44px 20px 0}
+  html.dev .wrap{padding-top:16px}
+  .head{padding:40px 30px 26px}
+  .face{padding:30px 28px 26px}
   .art--preview{grid-template-columns:112px minmax(0,1fr); gap:18px}
   .steps{grid-template-columns:repeat(3,minmax(0,1fr))}
-  .step{padding:10px 14px}
+  .step{padding:11px 16px}
   .step__t{font-size:10px}
+  .promises{padding:18px 18px 18px 17px}
+  .promise{font-size:15px}
+  body.is-docked{padding-bottom:132px}
 }
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
@@ -556,7 +675,9 @@ code,.mono{font-family:var(--font-mono)}
 <body>
 <div class="grain" aria-hidden="true"></div>
 
-<header class="strip">
+<!-- The diagnostics strip. Filed behind the developer affordance: net, event id
+     and internal step names are not an invitation's business. -->
+<header class="strip devonly">
   <div class="strip__in">
     <span class="mark">XRPL</span>
     <div class="facts">
@@ -572,25 +693,25 @@ code,.mono{font-family:var(--font-mono)}
 
   <noscript>
     <div class="banner">
-      <div><span class="banner__t">JavaScript required</span>
-      <p>This page talks to a live API and to Xaman. Nothing here is pre-rendered.</p></div>
+      <div><span class="banner__t">This page needs JavaScript</span>
+      <p>Turn it on and reload, and your invitation will appear.</p></div>
     </div>
   </noscript>
 
   <div class="banner" id="b-offline" hidden>
     <div>
-      <span class="banner__t">The server is not answering</span>
-      <p>A request from this page failed at the network layer. This page is served by the API itself, so if it loaded but a request did not, the process is down or restarting. Nothing you have done is lost — try again.</p>
+      <span class="banner__t">We can’t reach the organiser right now</span>
+      <p>Something between this page and the event isn’t answering. Nothing you have done is lost — give it a moment and try again.</p>
     </div>
   </div>
 
   <section class="invite" id="invite" data-tone="neutral">
 
     <div class="head">
-      <span class="label" id="head-eyebrow">registration</span>
-      <h1 id="head-name">Reading the event…</h1>
+      <span class="label" id="head-eyebrow">you are invited</span>
+      <h1 id="head-name">Your invitation</h1>
       <p class="head__meta" id="head-meta" hidden></p>
-      <div class="orn" aria-hidden="true"><span class="orn__d"></span></div>
+      <div class="orn" aria-hidden="true"><span class="orn__s"></span><span class="orn__d"></span><span class="orn__s"></span></div>
       <p class="head__desc" id="head-desc" hidden></p>
     </div>
 
@@ -602,17 +723,16 @@ code,.mono{font-family:var(--font-mono)}
 
     <!-- ============ boot ============ -->
     <div class="face" data-face="boot">
-      <p class="prose">Reading the event…</p>
+      <p class="prose">One moment — fetching the details.</p>
     </div>
 
     <!-- ============ the event is not open ============ -->
     <div class="face" data-face="closed" hidden>
       <div class="face__eyebrow"><span class="label">Nothing to register for</span></div>
-      <h2>This event is not open for <em>registration</em>.</h2>
+      <h2>This event isn’t open for <em>registration</em>.</h2>
       <p class="prose">
-        Either there is no event behind this link, or the organiser has not opened it yet. Both look
-        the same from out here, on purpose — a draft event is the organiser's scratch space and is
-        never public.
+        Either there is nothing behind this link, or the organiser hasn’t opened it up yet. If you
+        were sent this by someone, it is worth asking them for a fresh link.
       </p>
       <div id="closed-err"></div>
       <div class="retry">
@@ -623,26 +743,26 @@ code,.mono{font-family:var(--font-mono)}
     <!-- ============ pick an event (bare /register) ============ -->
     <div class="face" data-face="picker" hidden>
       <div class="face__eyebrow"><span class="label">Open events</span></div>
-      <p class="prose">Pick the one you are coming to. Registration takes one signature and about a minute.</p>
+      <p class="prose">Pick the one you are coming to. It takes about a minute, and costs nothing.</p>
       <div class="picks" id="picks"></div>
       <div id="picker-err"></div>
     </div>
 
     <!-- ============ Xaman is not configured on this server ============ -->
     <div class="face" data-face="unavailable" hidden>
-      <div class="face__eyebrow"><span class="label">Step one · unavailable</span></div>
-      <h2>Registration is not open <em>yet</em>.</h2>
+      <div class="face__eyebrow"><span class="label">Not yet</span></div>
+      <h2>Registration isn’t open <em>yet</em>.</h2>
       <p class="prose">
-        Proving a wallet needs <strong>Xaman</strong>, and this server has no Xaman credentials
-        configured — so there is nothing for you to approve and nothing for us to verify. Nothing is
-        wrong with your wallet, your phone, or this link.
+        The organiser is still getting this ready. Nothing is wrong with your wallet, your phone or
+        this link — the same link will start working on its own. <strong>Check back soon.</strong>
       </p>
       <div id="unavail-err"></div>
-      <p class="note">
-        <b>For the organiser:</b> set <code>XUMM_API_KEY</code> and <code>XUMM_API_SECRET</code> and
-        restart the API. This page needs no changes — the same link starts working the moment the
-        keys are there. There is deliberately no "just type your address" fallback: an unverified
-        address is a claim, not a proof, and a badge minted to the wrong address is soulbound and
+      <p class="note devonly">
+        <b>For the operator:</b> the wallet proof needs Xaman, and this server has no Xaman
+        credentials. Set <code>XUMM_API_KEY</code> and <code>XUMM_API_SECRET</code> and restart the
+        API. This page needs no changes — the same link starts working the moment the keys are
+        there. There is deliberately no "just type your address" fallback: an unverified address is
+        a claim, not a proof, and a badge minted to the wrong address is soulbound and
         unrecoverable.
       </p>
       <div class="retry">
@@ -653,12 +773,10 @@ code,.mono{font-family:var(--font-mono)}
     <!-- ============ step 1 · prove the wallet ============ -->
     <div class="face" data-face="prove" hidden>
       <div class="face__eyebrow"><span class="label">Step one</span></div>
-      <h2>Prove the <em>wallet</em>.</h2>
+      <h2>Show us which <em>wallet</em> is yours.</h2>
       <p class="prose">
-        Xaman will ask you to sign in. <strong>It is not a transaction</strong> — no fee, nothing
-        submitted, nothing moved. It only proves the wallet is yours, which is the whole point: a
-        badge is <strong>soulbound</strong>, so one minted to a mistyped address can never be moved
-        and never be recovered.
+        Xaman will ask you to sign in, and that is the whole of it — one tap. Your badge is tied to
+        the wallet you use here and stays with it, so it is worth getting right.
       </p>
 
       <div id="prove-live" hidden>
@@ -691,11 +809,21 @@ code,.mono{font-family:var(--font-mono)}
         <div class="retry" id="prove-alt"></div>
       </div>
 
-      <p class="note" id="prove-note">
-        <b>You will never be asked for a seed, a secret or a private key.</b> Not here, not in Xaman,
-        not at the desk. A sign-in is a signature over a challenge; the only thing it hands back is
-        which account signed it.
-      </p>
+      <!-- The only copy on this page written to protect the reader. It stays
+           visible in every state of step one, and in plain words. -->
+      <ul class="promises" id="prove-note">
+        <li class="promise">
+          <span class="promise__d" aria-hidden="true"></span>
+          <span><b>This costs you nothing.</b> Signing in is just that — a signature. There is no
+          fee, nothing is submitted anywhere, and not a penny moves out of your wallet.</span>
+        </li>
+        <li class="promise">
+          <span class="promise__d" aria-hidden="true"></span>
+          <span><b>Nobody will ever ask you for a secret.</b> Not your seed, not your recovery
+          phrase, not a private key — not on this page, not inside Xaman, not at the door. If
+          anything ever does, it isn’t us.</span>
+        </li>
+      </ul>
 
       <div id="prove-err"></div>
     </div>
@@ -707,8 +835,8 @@ code,.mono{font-family:var(--font-mono)}
 
       <div class="proved">
         <div class="proved__k">
-          <span class="label">verified wallet</span>
-          <span class="pill pill--yes">signed in xaman</span>
+          <span class="label">your wallet</span>
+          <span class="pill pill--yes">confirmed</span>
         </div>
         <span class="proved__v" id="proved-addr">—</span>
       </div>
@@ -719,7 +847,7 @@ code,.mono{font-family:var(--font-mono)}
         </div>
         <figcaption class="art__cap">
           <span class="label">your badge</span>
-          <p class="art__prov">Drawn from your address, so it already exists. This exact image is what gets minted to you at the event.</p>
+          <p class="art__prov">Drawn from your own wallet, so no two guests get the same one. This exact artwork is what you will be given at the event.</p>
         </figcaption>
       </figure>
 
@@ -729,8 +857,8 @@ code,.mono{font-family:var(--font-mono)}
           <input id="dn" name="name" type="text" maxlength="120" autocomplete="name"
                  spellcheck="false" placeholder="Ada Lovelace">
           <p class="field__why">
-            So the volunteer at the desk can find you by name instead of reading an address out loud.
-            <b>Not required</b> — without it you are a wallet on a list, which still works.
+            So whoever is on the door can find you by name, rather than reading a long wallet
+            address off a screen. <b>Not required</b> — it just makes arriving quicker.
           </p>
         </div>
 
@@ -740,8 +868,8 @@ code,.mono{font-family:var(--font-mono)}
                  inputmode="email" spellcheck="false" autocapitalize="off" placeholder="you@example.com">
           <p class="field__why">
             <b>Genuinely optional — leave it blank and nothing about your badge changes.</b> Its only
-            use is a one-off note from the organiser after the event, with the link to your badge on
-            the ledger. It is never shown on the public confirmation page and never goes on chain.
+            use is one note from the organiser after the event, with a link to your badge. It is
+            never shown publicly and never printed on the badge itself.
           </p>
         </div>
       </form>
@@ -773,16 +901,21 @@ code,.mono{font-family:var(--font-mono)}
         </figcaption>
       </figure>
 
-      <p class="prose" id="done-next" style="margin-top:18px"></p>
+      <p class="prose" id="done-next" style="margin-top:20px"></p>
+
+      <div class="onward" id="done-onward" hidden>
+        <a class="btn btn--act" id="done-pass" href="#">Open my pass</a>
+        <p class="onward__n" id="done-pass-note"></p>
+      </div>
 
       <div class="face__eyebrow face__eyebrow--mid"><span class="label">keep this</span></div>
       <div class="rows rows--quiet" id="done-rows"></div>
-      <div class="links" id="done-links"></div>
+      <div class="links devonly" id="done-links"></div>
 
       <p class="note">
-        <b>Nothing is minted yet.</b> The badge is issued at the event, to the address above and only
-        to that address. Registering costs nothing and puts nothing on the ledger — the sign-in you
-        approved was a signature, not a transaction.
+        <b>Nothing has been issued yet.</b> Your badge is handed over at the event itself, to the
+        wallet above and to no other. Registering cost you nothing — the sign-in you approved was a
+        signature, not a payment.
       </p>
 
       <div class="retry">
@@ -792,19 +925,26 @@ code,.mono{font-family:var(--font-mono)}
 
   </section>
 
-  <details class="wire">
+  <details class="wire devonly">
     <summary>Every request this page made</summary>
     <div class="wire__box" id="wire">
       <p class="wire__empty">Nothing yet.</p>
     </div>
   </details>
 
-  <p class="foot">
-    This page never asks for a seed, a private key or a secret, and it could not use one if you gave
-    it one — registration needs a <b>signature</b>, which stays inside Xaman on your own device. What
-    it keeps in this browser tab, and only until you close it: the sign-in it started, and the
-    address that sign-in proved.
-  </p>
+  <div class="foot">
+    <p>
+      This page never asks for a seed, a private key or a secret, and it could not use one if you
+      gave it one. All it keeps — and only until you close this tab — is the sign-in it started and
+      the wallet that sign-in confirmed.
+    </p>
+    <div class="colophon">
+      <span class="colophon__d" aria-hidden="true"></span>
+      <span>You were invited. Nothing here is for sale.</span>
+      <button class="devlink" id="devtoggle" type="button" aria-pressed="false"
+              title="Show the diagnostics — also ctrl/⌘ + alt + D">developer view</button>
+    </div>
+  </div>
 </main>
 
 <div class="dock" id="dock" hidden>
@@ -820,6 +960,38 @@ code,.mono{font-family:var(--font-mono)}
   "use strict";
 
   /* ======================================================================
+     A0. THE ONE DEVELOPER AFFORDANCE
+
+     A guest must not learn that there is an API behind this page. Everything
+     that would tell them — the request log, the diagnostics strip, machine
+     error codes, raw server bodies, the operator's runbook — is still built
+     and still in the DOM, marked `.devonly`, and revealed only by this switch.
+     Off by default, remembered in localStorage, and reachable two ways: the
+     small link in the colophon, or ctrl/⌘ + alt + D.
+     ====================================================================== */
+
+  var DEV_KEY = "poap.register.dev";
+  var devOn = false;
+
+  function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function lsSet(k, v) { try { localStorage.setItem(k, v); } catch (e) { /* private mode */ } }
+
+  function applyDev(on) {
+    devOn = !!on;
+    var root = document.documentElement;
+    if (devOn) root.classList.add("dev"); else root.classList.remove("dev");
+    var b = document.getElementById("devtoggle");
+    if (b) {
+      b.setAttribute("aria-pressed", devOn ? "true" : "false");
+      b.textContent = devOn ? "hide diagnostics" : "developer view";
+    }
+  }
+  function setDev(on) { applyDev(on); lsSet(DEV_KEY, devOn ? "1" : "0"); }
+
+  applyDev(lsGet(DEV_KEY) === "1");
+
+
+  /* ======================================================================
      A. WHAT THE PAGE KNOWS
 
      Four calls make this page work, and none of them is optional:
@@ -833,7 +1005,7 @@ code,.mono{font-family:var(--font-mono)}
 
      Two are decoration and must fail silently:
        GET /health                    tells us up front whether Xaman is wired
-       GET /demo/art?address&eventId  the badge they are about to receive
+       GET /badge/{eventId}/{address}.png  the badge they are about to receive
      ====================================================================== */
 
   var POLL_MS = 2500;            /* the signin poll — see startPolling() */
@@ -850,6 +1022,14 @@ code,.mono{font-family:var(--font-mono)}
     event: null,         /* GET /api/events/{eventId} */
     health: null,        /* GET /health — xamanConfigured is the useful bit */
     signin: null,        /* {uuid, deeplink, qrPng, expiresAt} */
+    /* How step one gets its Xaman request.
+       "auto"   — the page asks for one the moment the step is on screen, so the
+                  deeplink already exists when the guest reaches for the button
+                  and opening Xaman is ONE tap.
+       "manual" — something went wrong, or a previous request expired or was
+                  turned down. Then it is a button again, because re-asking on
+                  the guest's behalf after a refusal is not a nicety. */
+    proveStart: "auto",
     address: null,       /* only ever set from a SIGNED sign-in resolution */
     registration: null,  /* the finished row */
     face: "boot",
@@ -987,7 +1167,7 @@ code,.mono{font-family:var(--font-mono)}
       return {
         code: "NETWORK_UNREACHABLE",
         message: "The request never reached the server: " + r.text,
-        hint: "This page is served by the API itself, so a failed request means the process is down or restarting. Nothing is lost — try again."
+        hint: "Nothing was sent and nothing was lost. It is usually worth one more try."
       };
     }
     var e = r.json && r.json.error;
@@ -1005,43 +1185,104 @@ code,.mono{font-family:var(--font-mono)}
     return r.network && !r.ok && errorOf(r).code === "CONFIG_INVALID";
   }
 
-  /** Render {error:{code,message}} where the attendee can see it, with a retry. */
+
+  /* ----------------------------------------------------------------------
+     WORDING.
+
+     `errorOf` above still produces exactly what came off the wire — the code,
+     the status and the server's own sentence — because isUnconfigured() and
+     the retry branches read it, and because the developer view still prints
+     it verbatim. What changes here is only what a GUEST is shown: a title,
+     one plain sentence, and a way out.
+
+     A server sentence is quoted when it reads like something a person wrote.
+     Some are: "That Xaman sign-in has already been used to register." Some
+     are not: the unconfigured message names environment variables, and a
+     synthesised HTTP_500 carries a raw body. Those get a written one.
+     ---------------------------------------------------------------------- */
+
+  /** Codes whose server sentence is written for an operator, never a guest. */
+  var NEVER_QUOTE = { CONFIG_INVALID: 1, NETWORK_UNREACHABLE: 1, BAD_REQUEST: 1 };
+
+  /** The written sentence for a code, when the server's own will not do. */
+  var PLAIN = {
+    NETWORK_UNREACHABLE: "The request did not get through, which usually means the connection dropped for a moment.",
+    CONFIG_INVALID: "The organiser has not finished setting this up. Nothing is wrong with your wallet or this link — check back soon.",
+    NOT_FOUND: "We could not find that. It may have been closed, or this link may be out of date."
+  };
+
+  /** A title the caller could not have known to write. */
+  var TITLE_BY_CODE = { NETWORK_UNREACHABLE: "We could not reach the event" };
+
+  var GENERIC = "Something went wrong at our end. Nothing you have done is lost — try again in a moment.";
+
+  /** Does the server's sentence read like something a person wrote? */
+  function readsWell(s) {
+    if (typeof s !== "string") return false;
+    s = s.trim();
+    if (s.length < 14 || s.length > 240) return false;
+    if (!/\s/.test(s)) return false;
+    if (/[{}<>[\]]|https?:\/\/|\/api\/|\bnull\b|\bundefined\b/.test(s)) return false;
+    if (/[A-Z0-9]{3,}_[A-Z0-9_]{2,}/.test(s)) return false;      /* MACHINE_CODE, XUMM_API_KEY */
+    if (/\br[1-9A-HJ-NP-Za-km-z]{24,}/.test(s)) return false;     /* a bare address */
+    return /^["“'(A-Z]/.test(s) && /[.!?]$/.test(s);
+  }
+
+  /** The sentence a guest reads: the caller's, the server's, or a written one. */
+  function guestSentence(e, plain) {
+    if (plain) return plain;
+    var quotable = !NEVER_QUOTE[e.code] && !/^HTTP_\d+$/.test(String(e.code));
+    if (quotable && readsWell(e.message)) return String(e.message).trim();
+    return PLAIN[e.code] || GENERIC;
+  }
+
+  /** One shape for every error on the page. `dev` is the only technical line. */
+  function errBox(o) {
+    var box = node("div", "err" + (o.warn ? " err--warn" : "") + (o.quiet ? " devonly" : ""));
+    box.setAttribute("role", "alert");
+    box.appendChild(node("div", "err__t", o.title));
+    box.appendChild(node("div", "err__msg", o.message));
+    if (o.hint) box.appendChild(node("div", "err__hint", o.hint));
+    if (o.dev) box.appendChild(node("div", "err__dev devonly", o.dev));
+    if (o.retry) {
+      var bar = node("div", "retry");
+      var b = node("button", "btn btn--quiet", o.retryLabel || "Try again");
+      b.type = "button";
+      b.addEventListener("click", o.retry);
+      bar.appendChild(b);
+      box.appendChild(bar);
+    }
+    return box;
+  }
+
+  /** Render a failed call where the guest can see it, with a way forward. */
   function showError(hostId, r, opts) {
     opts = opts || {};
     var host = $(hostId);
     if (!host) return;
     clear(host);
     var e = errorOf(r);
-    var box = node("div", "err" + (opts.warn ? " err--warn" : ""));
-    box.setAttribute("role", "alert");
-    box.appendChild(node("div", "err__code", e.code));
-    box.appendChild(node("div", "err__msg", e.message));
-    var h = e.hint || opts.hint;
-    if (h) box.appendChild(node("div", "err__hint", h));
-    if (opts.retry) {
-      var bar = node("div", "retry");
-      var b = node("button", "btn btn--quiet", opts.retryLabel || "Try again");
-      b.type = "button";
-      b.addEventListener("click", function () { clear(host); opts.retry(); });
-      bar.appendChild(b);
-      box.appendChild(bar);
-    }
+    var box = errBox({
+      warn: opts.warn,
+      quiet: opts.quiet,
+      title: TITLE_BY_CODE[e.code] || opts.title || "That did not go through",
+      message: guestSentence(e, opts.plain),
+      hint: e.hint || opts.hint,
+      dev: String(e.code) + " · http " + String((r && r.status) || 0) + " · " + String(e.message || ""),
+      retryLabel: opts.retryLabel,
+      retry: opts.retry ? function () { clear(host); opts.retry(); } : null
+    });
     host.appendChild(box);
     return box;
   }
   function clearError(hostId) { var h = $(hostId); if (h) clear(h); }
 
   /** The same block, for something this page worked out on its own. */
-  function showLocalError(hostId, code, message, hint) {
+  function showLocalError(hostId, code, title, message, hint) {
     var host = $(hostId);
     if (!host) return;
     clear(host);
-    var box = node("div", "err err--warn");
-    box.setAttribute("role", "alert");
-    box.appendChild(node("div", "err__code", code));
-    box.appendChild(node("div", "err__msg", message));
-    if (hint) box.appendChild(node("div", "err__hint", hint));
-    host.appendChild(box);
+    host.appendChild(errBox({ warn: true, title: title, message: message, hint: hint, dev: code }));
   }
 
 
@@ -1133,8 +1374,9 @@ code,.mono{font-family:var(--font-mono)}
     } else {
       btn.hidden = false;
       btn.textContent = mode.label;
-      btn.disabled = !!app.busy;
-      btn.setAttribute("aria-busy", app.busy ? "true" : "false");
+      var waiting = !!app.busy || !!mode.busy;
+      btn.disabled = waiting;
+      btn.setAttribute("aria-busy", waiting ? "true" : "false");
       link.hidden = true;
     }
     setText("dock-note", mode.note || "");
@@ -1143,18 +1385,25 @@ code,.mono{font-family:var(--font-mono)}
   function dockMode() {
     if (app.face === "prove") {
       if (!app.signin) {
-        return { label: "Prove my wallet in Xaman", note: "a signature, not a transaction · costs nothing" };
+        /* Waiting on the request we asked for on arrival. Disabled rather than
+           hidden: a dock that appears late moves the page under a thumb that is
+           already on its way down. */
+        if (app.proveStart === "auto") {
+          return { label: "Getting Xaman ready\u2026", busy: true,
+                   note: "one moment \u00b7 nothing has been sent" };
+        }
+        return { label: "Continue with Xaman", note: "a signature, not a payment · costs nothing" };
       }
       var href = safeDeeplink(app.signin.deeplink);
       if (href && (app.coarse || !safeImage(app.signin.qrPng))) {
         /* Coarse pointer, or no QR came back to scan: the link is the action. */
-        return { href: href, label: "Open in Xaman", note: "approve the sign-in, then come back to this page" };
+        return { href: href, label: "Open in Xaman", note: "approve it, then come back to this page" };
       }
       return null; /* desktop mid-proof: the QR is the action, not a button */
     }
     if (app.face === "details") {
       return { label: app.busy ? "Registering…" : "Complete my registration",
-               note: "sends your name and the proof — never a key" };
+               note: "sends your name — never a secret" };
     }
     return null;
   }
@@ -1162,7 +1411,8 @@ code,.mono{font-family:var(--font-mono)}
   function paintHead() {
     var e = app.event;
     if (!e) return;
-    setText("head-eyebrow", "you are invited · registration");
+    show("head-eyebrow", true);
+    setText("head-eyebrow", "you are invited");
     setText("head-name", e.name || ("Event " + app.eventId));
     var meta = $("head-meta");
     clear(meta);
@@ -1178,7 +1428,7 @@ code,.mono{font-family:var(--font-mono)}
     desc.textContent = e.description ? String(e.description) : "";
     desc.hidden = !e.description;
     setText("f-event", String(app.eventId));
-    document.title = (e.name ? e.name + " — " : "") + "register";
+    document.title = (e.name ? e.name + " — " : "") + "Registration";
   }
 
   function paintWallet() {
@@ -1191,19 +1441,19 @@ code,.mono{font-family:var(--font-mono)}
   /* ======================================================================
      D. THE BADGE ARTWORK
 
-     GET /demo/art?address=r...&eventId=N -> image/svg+xml. A pure function of
-     the two values, so the badge exists the moment the wallet is proven and
-     long before anything is minted.
+     GET /badge/{eventId}/{address}.png -> image/png. A pure function of the
+     two values, so the badge exists the moment the wallet is proven and long
+     before anything is minted — and it is the SAME route a wallet reads the
+     minted artwork from, so this is the real badge, not a mock-up.
 
-     It is a delight, not a dependency: the endpoint only exists when the demo
-     routes are enabled, so a 404 — or no endpoint at all — removes the figure
-     and says nothing. There is nothing here for an attendee to act on.
+     It is still a delight rather than a dependency: a failure removes the
+     figure and says nothing. There is nothing here for an attendee to act on.
      ====================================================================== */
 
   function artUrl() {
     if (!app.address || app.eventId === null) return null;
-    return "/demo/art?address=" + encodeURIComponent(app.address) +
-           "&eventId=" + encodeURIComponent(String(app.eventId));
+    return "/badge/" + encodeURIComponent(String(app.eventId)) + "/" +
+           encodeURIComponent(app.address) + ".png";
   }
 
   function paintArt(figureId, imgId) {
@@ -1234,6 +1484,27 @@ code,.mono{font-family:var(--font-mono)}
      ====================================================================== */
 
   function startSignIn() { createSignIn(true); }
+
+  /**
+   * Ask Xaman for a sign-in BEFORE anyone presses anything.
+   *
+   * The two-tap flow this replaces was not a design choice, it was a
+   * constraint: with no request in hand, the first tap could only go and create
+   * one, and by the time the deeplink came back the browser had lost the user
+   * gesture that would have let us follow it. So the guest got "Continue with
+   * Xaman", then "Open in Xaman" — the same intention, expressed twice.
+   *
+   * Asking on arrival costs one unused request from anyone who opens the page
+   * and leaves. They are short-lived and free, and that is a far better trade
+   * than a second tap for everybody who does not leave.
+   */
+  function ensureSignIn() {
+    if (app.face !== "prove") return;
+    if (app.signin || app.busy) return;
+    if (app.proveStart !== "auto") return;
+    if (app.health && app.health.xamanConfigured === false) return;
+    createSignIn(true);
+  }
 
   /**
    * `withReturnUrl` sends Xaman a return_url so that a phone which was taken
@@ -1274,11 +1545,18 @@ code,.mono{font-family:var(--font-mono)}
 
         if (r.status === 404) { showClosed(r); return; }
 
+        /* From here down the page has failed to get a request, and it stops
+           asking on the guest's behalf: the dock goes back to being a button
+           they press when they are ready. */
+        app.proveStart = "manual";
+
         if (r.status === 429) {
           paintDock();
           showError("prove-err", r, {
             warn: true,
-            hint: "That is this server protecting Xaman's rate limit, not a problem with your wallet. Wait a minute and start again.",
+            title: "One moment",
+            plain: "That is a few too many attempts in quick succession. Nothing is wrong with your wallet.",
+            hint: "Give it a minute, then start again.",
             retryLabel: "Start again",
             retry: startSignIn
           });
@@ -1289,7 +1567,8 @@ code,.mono{font-family:var(--font-mono)}
 
         paintDock();
         showError("prove-err", r, {
-          hint: "Nothing was created, so nothing is half-done. Try again.",
+          title: "We could not start the sign-in",
+          hint: "Nothing was created, so nothing is half-done.",
           retryLabel: "Try again",
           retry: startSignIn
         });
@@ -1317,7 +1596,7 @@ code,.mono{font-family:var(--font-mono)}
         : "Scan this with Xaman");
       setText("scan-cap", app.coarse
         ? "Open Xaman on a second phone and scan this."
-        : "Open Xaman on your phone and scan this. This page updates by itself.");
+        : "Open Xaman on your phone and scan this. The page will carry on by itself.");
       setText("qr-alt", "A QR code containing a Xaman sign-in request for this event.");
     } else {
       fold.hidden = true;
@@ -1405,7 +1684,9 @@ code,.mono{font-family:var(--font-mono)}
         paintProve();
         showError("prove-err", r, {
           warn: true,
-          hint: "That sign-in is not on the server any more. Nothing was lost — start a new one.",
+          title: "That sign-in is no longer valid",
+          plain: "It is not there any more — that happens if it has been sitting a while.",
+          hint: "Nothing was lost. Start a new one; it is one tap.",
           retryLabel: "Start again",
           retry: startSignIn
         });
@@ -1421,7 +1702,9 @@ code,.mono{font-family:var(--font-mono)}
         stopPolling();
         showError("prove-err", r, {
           warn: true,
-          hint: "We stopped checking after " + POLL_FAIL_LIMIT + " failed attempts. Your sign-in may still be valid — approve it in Xaman, then press below.",
+          title: "We have stopped watching",
+          plain: "We tried a few times and could not tell whether you had approved it.",
+          hint: "Your sign-in may well still be good — approve it in Xaman, then press below and we will look again.",
           retryLabel: "Check again",
           retry: function () { app.pollFails = 0; startPolling(); }
         });
@@ -1435,8 +1718,8 @@ code,.mono{font-family:var(--font-mono)}
     var paused = document.hidden || !app.timer;
     w.setAttribute("data-paused", paused ? "1" : "0");
     setText("watching-text", document.hidden
-      ? "paused — tab in the background"
-      : app.timer ? "waiting for the signature · every 2.5s" : "not checking");
+      ? "paused while this tab is in the background"
+      : app.timer ? "waiting for you to approve it" : "not watching");
   }
 
   function paintClock() {
@@ -1456,39 +1739,41 @@ code,.mono{font-family:var(--font-mono)}
   function onExpired() {
     stopPolling();
     rememberSignin(null);
+    /* A request that ran out on an unattended screen must not be replaced by
+       another one the moment it lapses — that is a page quietly holding a door
+       open all night. The guest restarts it. */
+    app.proveStart = "manual";
     paintProve();
     var host = $("prove-err");
     clear(host);
-    var box = node("div", "err err--warn");
-    box.setAttribute("role", "alert");
-    box.appendChild(node("div", "err__code", "SIGNIN_EXPIRED"));
-    box.appendChild(node("div", "err__msg", "This sign-in request expired. Xaman payloads are short-lived on purpose — a code left on a screen should stop working once the person who opened it has walked away."));
-    var bar = node("div", "retry");
-    var b = node("button", "btn btn--quiet", "Start again");
-    b.type = "button";
-    b.addEventListener("click", function () { clear(host); startSignIn(); });
-    bar.appendChild(b);
-    box.appendChild(bar);
-    host.appendChild(box);
+    host.appendChild(errBox({
+      warn: true,
+      title: "This sign-in has expired",
+      message: "They are deliberately short-lived, so that a request left open on a screen stops working once you have walked away from it.",
+      hint: "Nothing was signed. Starting again takes a single tap.",
+      dev: "SIGNIN_EXPIRED",
+      retryLabel: "Start again",
+      retry: function () { clear(host); startSignIn(); }
+    }));
   }
 
   function onDeclined() {
     stopPolling();
     rememberSignin(null);
+    // They said no. Asking again unprompted is how a page becomes a nuisance.
+    app.proveStart = "manual";
     paintProve();
     var host = $("prove-err");
     clear(host);
-    var box = node("div", "err err--warn");
-    box.setAttribute("role", "alert");
-    box.appendChild(node("div", "err__code", "SIGNIN_DECLINED"));
-    box.appendChild(node("div", "err__msg", "That sign-in was declined in Xaman. If that was not you — or was a mis-tap — start a new one; nothing was signed and nothing was recorded."));
-    var bar = node("div", "retry");
-    var b = node("button", "btn btn--quiet", "Try again");
-    b.type = "button";
-    b.addEventListener("click", function () { clear(host); startSignIn(); });
-    bar.appendChild(b);
-    box.appendChild(bar);
-    host.appendChild(box);
+    host.appendChild(errBox({
+      warn: true,
+      title: "That sign-in was declined",
+      message: "Xaman says it was turned down. If that was a mis-tap, or was not you at all, just start another one.",
+      hint: "Nothing was signed and nothing was recorded.",
+      dev: "SIGNIN_DECLINED",
+      retryLabel: "Try again",
+      retry: function () { clear(host); startSignIn(); }
+    }));
   }
 
   /** The one place an address is ever set, and it comes from a SIGNED payload. */
@@ -1536,7 +1821,7 @@ code,.mono{font-family:var(--font-mono)}
       clear(host);
       var n = node("p", "nudge");
       n.appendChild(node("b", null, "No name?"));
-      n.appendChild(document.createTextNode(" Then the desk sees only your address, and finding you means reading 33 characters off a screen. Add one, or press again to register without it."));
+      n.appendChild(document.createTextNode(" Then finding you on the door means reading a long wallet address off a screen. Add one, or press again to carry on without it."));
       host.appendChild(n);
       paintDock();
       return;
@@ -1547,7 +1832,8 @@ code,.mono{font-family:var(--font-mono)}
        that decides. Nothing is blocked that the server would have accepted. */
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       showLocalError("details-err", "CHECK_THE_EMAIL",
-        "\"" + email + "\" is missing an @ or a domain, and the server will refuse it.",
+        "That email does not look finished",
+        "“" + email + "” is not quite an address — it needs something either side of the @, and a dot in the part after it.",
         "Fix it, or clear the field — it is optional, and leaving it empty changes nothing about your badge.");
       return;
     }
@@ -1589,11 +1875,16 @@ code,.mono{font-family:var(--font-mono)}
           /* No row attached: the sign-in itself was already spent. */
           rememberSignin(null);
           rememberAddress(null);
+          /* Back at step one with no request in hand. Without this the dock
+             would sit on "Getting Xaman ready…" forever: nothing is coming,
+             because nothing was asked for. */
+          app.proveStart = "manual";
           showFace("prove");
           paintProve();
           showError("prove-err", r, {
             warn: true,
-            hint: "A sign-in can only be used once. Start a new one — it takes a single tap in Xaman.",
+            title: "That sign-in has already been used",
+            hint: "A sign-in works once and once only. Starting a new one takes a single tap in Xaman.",
             retryLabel: "Start a new sign-in",
             retry: startSignIn
           });
@@ -1605,12 +1896,14 @@ code,.mono{font-family:var(--font-mono)}
         if (r.status === 400) {
           rememberSignin(null);
           rememberAddress(null);
+          app.proveStart = "manual";
           paintWallet();
           showFace("prove");
           paintProve();
           showError("prove-err", r, {
             warn: true,
-            hint: "The wallet was never proven, so nothing was stored. Start the sign-in again and approve it in Xaman.",
+            title: "We could not confirm the wallet",
+            hint: "Nothing was stored. Start the sign-in again and approve it in Xaman.",
             retryLabel: "Start again",
             retry: startSignIn
           });
@@ -1622,9 +1915,13 @@ code,.mono{font-family:var(--font-mono)}
 
         showError("details-err", r, {
           warn: r.status === 429,
+          title: r.status === 429 ? "One moment" : "We could not save that",
+          plain: r.status === 429
+            ? "That is a few too many attempts in quick succession."
+            : undefined,
           hint: r.status === 429
-            ? "Too many registrations from here in the last minute. Nothing was written — wait a moment and press again."
-            : "Nothing was written. Your sign-in is still valid, so pressing again is safe.",
+            ? "Nothing was written. Wait a moment and press again."
+            : "Nothing was written. Your sign-in is still good, so pressing again is safe.",
           retryLabel: "Try again",
           retry: submitRegistration
         });
@@ -1653,28 +1950,43 @@ code,.mono{font-family:var(--font-mono)}
       var box = node("div", "already");
       box.appendChild(node("div", "already__t", "you were already on the list"));
       box.appendChild(node("p", null,
-        "This wallet was registered for this event before, so nothing changed. The registration below is the one that already exists — the same one the desk will see."));
+        "This wallet was registered for this event once before, so nothing changed. What you see below is that registration — the same one they will have on the door."));
       already_.appendChild(box);
     }
 
     /* One line: what happens next, in the order it happens. */
     var venue = ev.venue ? String(ev.venue) : "the event";
     setText("done-next",
-      "Bring this wallet to " + venue + ", show the address to a volunteer, and the badge is minted straight to it — soulbound, yours, and impossible to hand to anyone else.");
+      "Bring this wallet to " + venue + ", show it to whoever is on the door, and your badge is handed straight to it. It is yours to keep, and it cannot be passed on to anyone else.");
+
+    /* The pass, for this event, on this phone. Registering and turning up are
+       two different days for most people — but they are the same minute for
+       anyone registering IN the queue, and that person should not have to find
+       their way to another page by hand. */
+    var onward = $("done-onward");
+    var pass = $("done-pass");
+    if (onward && pass && app.eventId !== null) {
+      pass.setAttribute("href", "/attend/" + encodeURIComponent(String(app.eventId)));
+      setText("done-pass-note", ev.status === "live"
+        ? "show this at the door"
+        : "here when the doors open · nothing to do until then");
+      onward.hidden = false;
+    }
 
     var rows = $("done-rows");
     clear(rows);
     rows.appendChild(row("name", reg.displayName || "— not given —", { prose: true }));
-    rows.appendChild(row("verified wallet", reg.address || app.address, { ok: true }));
-    rows.appendChild(row("event", (ev.name || "event " + app.eventId) + " · " + (ev.eventId || app.eventId), { prose: true }));
+    rows.appendChild(row("your wallet", reg.address || app.address, { ok: true }));
+    rows.appendChild(row("event", ev.name || "This event", { prose: true }));
     if (reg.registeredAt) rows.appendChild(row("registered", fmtStamp(reg.registeredAt)));
-    rows.appendChild(row("registration id", reg.id));
+    rows.appendChild(row("reference", reg.id));
 
     var links = $("done-links");
     clear(links);
     if (reg.id) {
       var a = node("a", "link", "your registration record");
-      /* Same-origin, and built from an id the server just gave us. */
+      /* Same-origin, and built from an id the server just gave us. Developer
+         view only: it answers with JSON, which is nothing a guest wants. */
       a.href = "/api/registrations/" + encodeURIComponent(String(reg.id));
       a.target = "_blank";
       a.rel = "noopener noreferrer";
@@ -1694,12 +2006,16 @@ code,.mono{font-family:var(--font-mono)}
   function showClosed(r) {
     stopPolling();
     clearError("closed-err");
-    if (r) showError("closed-err", r, { warn: true });
+    /* `quiet`: the face itself already says this in a sentence a guest can use.
+       The server's own words stay, one developer-only block below. */
+    if (r) showError("closed-err", r, { warn: true, quiet: true, title: "The event lookup failed" });
     /* Only when there is no event to name. An event that closes mid-flow keeps
        its letterhead — the attendee should still see what they came for. */
     if (!app.event) {
-      setText("head-eyebrow", "registration");
-      setText("head-name", app.eventId === null ? "Registration" : "Event " + app.eventId);
+      /* No name to put on the letterhead, so the kicker would only repeat the
+         title. Drop it rather than print "registration / Registration". */
+      show("head-eyebrow", false);
+      setText("head-name", "Registration");
       show("head-meta", false);
       show("head-desc", false);
     }
@@ -1709,16 +2025,19 @@ code,.mono{font-family:var(--font-mono)}
   /**
    * Xaman has no credentials on this server.
    *
-   * This is a configuration fact, not a failure of anything the attendee did,
-   * and it is the state the server is in right now with XUMM_API_KEY unset. It
-   * gets its own face rather than a spinner that never resolves: there is no
-   * QR to draw, nothing to poll, and nothing to wait for.
+   * This is a configuration fact, not a failure of anything the attendee did.
+   * It gets its own face rather than a spinner that never resolves: there is
+   * no QR to draw, nothing to poll, and nothing to wait for.
+   *
+   * A guest reads "registration isn't open yet — check back soon", and reads
+   * it from the face's own copy. The server's sentence names environment
+   * variables, so like the operator's note beside it, it is `quiet`.
    */
   function showUnavailable(r) {
     stopPolling();
     rememberSignin(null);
     clearError("unavail-err");
-    if (r) showError("unavail-err", r, { warn: true });
+    if (r) showError("unavail-err", r, { warn: true, quiet: true, title: "Xaman is not configured here" });
     showFace("unavailable");
   }
 
@@ -1729,14 +2048,20 @@ code,.mono{font-family:var(--font-mono)}
 
   function loadPicker() {
     showFace("picker");
-    setText("head-eyebrow", "registration");
+    show("head-eyebrow", true);
+    setText("head-eyebrow", "you are invited");
     setText("head-name", "Which event?");
     show("head-meta", false);
     show("head-desc", false);
 
     call("GET", "/api/events").then(function (r) {
       if (!r.ok) {
-        showError("picker-err", r, { hint: "Nothing to choose from until that call succeeds.", retryLabel: "Try again", retry: loadPicker });
+        showError("picker-err", r, {
+          title: "We could not fetch the list",
+          hint: "There is nothing to choose from until that works.",
+          retryLabel: "Try again",
+          retry: loadPicker
+        });
         return;
       }
       var list = (r.json && r.json.events) || [];
@@ -1762,8 +2087,12 @@ code,.mono{font-family:var(--font-mono)}
     var bits = [];
     if (e.eventDate) bits.push(fmtDate(e.eventDate));
     if (e.venue) bits.push(String(e.venue));
-    bits.push("#" + e.eventId);
-    a.appendChild(node("p", "pick__meta", bits.join("  ·  ")));
+    /* The numeric id is a handle for whoever runs this, not for a guest — and
+       an event with neither a date nor a venue has no guest-facing meta line
+       at all, so the whole row goes with it rather than leaving a blank. */
+    var meta = node("p", bits.length ? "pick__meta" : "pick__meta devonly", bits.join("  ·  "));
+    meta.appendChild(node("span", "devonly", (bits.length ? "  ·  " : "") + "#" + e.eventId));
+    a.appendChild(meta);
     if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
     return a;
   }
@@ -1862,6 +2191,7 @@ code,.mono{font-family:var(--font-mono)}
 
     showFace("prove");
     paintProve();
+    ensureSignIn();
   }
 
   function boot() {
@@ -1884,16 +2214,31 @@ code,.mono{font-family:var(--font-mono)}
     });
     $("recheck").addEventListener("click", function () {
       clearError("unavail-err");
+      app.proveStart = "auto";
       showFace("prove");
       paintProve();
       startSignIn();
     });
     $("restart").addEventListener("click", function () {
       forgetAll();
+      app.proveStart = "auto";
       paintWallet();
       showFace("prove");
       paintProve();
+      ensureSignIn();
     });
+    /* The developer affordance: a link nobody looking for an invitation will
+       read, and a chord nobody types by accident. */
+    var devBtn = $("devtoggle");
+    if (devBtn) devBtn.addEventListener("click", function () { setDev(!devOn); });
+    document.addEventListener("keydown", function (ev) {
+      if (!ev.altKey || !(ev.ctrlKey || ev.metaKey)) return;
+      /* alt+d yields "∂" on a Mac layout, so the physical key is the check. */
+      if (String(ev.key).toLowerCase() !== "d" && ev.code !== "KeyD") return;
+      ev.preventDefault();
+      setDev(!devOn);
+    });
+
     $("dn").addEventListener("input", paintNameCount);
     $("form").addEventListener("submit", function (ev) { ev.preventDefault(); submitRegistration(); });
     $("em").addEventListener("keydown", function (ev) { if (ev.key === "Enter") { ev.preventDefault(); submitRegistration(); } });

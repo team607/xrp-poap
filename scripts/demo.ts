@@ -251,10 +251,38 @@ async function run(): Promise<void> {
   const phone = lan[0];
 
   // -- 3: the banner --------------------------------------------------------
+  //
+  // THE REAL APP FIRST. The `/demo/*` role-play below it is a harness that
+  // generates wallets and signs as an attendee; the pages printed here are the
+  // ones a guest and a volunteer actually use, and they are what a rehearsal
+  // should be run against. When BADGE_BASE_URL names a public origin — a
+  // tunnel, a staging host — that is the origin a phone can reach, so print it
+  // rather than a loopback address nobody else can open.
+  const publicOrigin = (config.badgeBaseUrl ?? "").replace(/\/+$/, "");
+  const guestOrigin = publicOrigin || phone || origin;
+
   r.blank();
   r.rule();
+  r.note("THE APP. A guest registers, shows their pass at the door, and a");
+  r.note("volunteer on the desk issues the badge. Sign-in required at the desk.");
+  r.blank();
+
+  r.link("register", `${guestOrigin}/register`);
+  r.note("the invitation: prove a wallet in Xaman, put a name to it");
+  r.link("their pass", `${guestOrigin}/attend`);
+  r.note("what a guest opens at the door — the code the desk scans");
+  r.blank();
+
+  r.link("THE DESK", `${guestOrigin}/volunteer`);
+  r.note("scan, decide, issue. Behind the admin login");
+  r.link("organiser", `${guestOrigin}/admin`);
+  r.note("create events, watch registrations arrive");
+  if (guestOrigin !== origin) r.info("on this machine", `${origin}/volunteer`);
+  r.rule();
+
   r.note("TWO SCREENS, one event. Open the attendee page on a phone and the");
   r.note("volunteer page on the laptop, then walk up to yourself.");
+  r.note("These are the ROLE-PLAY pages: they generate a wallet and sign for it.");
   r.blank();
 
   r.link("ATTENDEE", `${origin}/demo/attendee`);

@@ -158,6 +158,9 @@ const unusedChain: ChainOps = {
   async createClaimOffer() {
     throw new XrplLayerError("TX_FAILED", "not used in these tests");
   },
+  async getAccountBalanceXrp() {
+    return "100";
+  },
   async accountExists() {
     return true;
   },
