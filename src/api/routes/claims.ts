@@ -18,7 +18,7 @@
  */
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { ValidationError, XrplLayerError } from "../../errors.js";
+import { AccountNotFoundError, ValidationError, XrplLayerError } from "../../errors.js";
 import {
   MAX_URI_BYTES,
   type AttendanceRecord,
@@ -37,6 +37,13 @@ import {
   type EventIdParams,
 } from "../http-errors.js";
 import { CLAIM_PAYLOAD_EXPIRE_MINUTES, buildAcceptOfferTxjson } from "../../xaman/payloads.js";
+import {
+  BASE_RESERVE_XRP,
+  OWNER_RESERVE_PER_OBJECT_XRP,
+  badgeReadyReserveXrp,
+  canReceiveBadge,
+  reserveShortfallXrp,
+} from "../../xrpl/reserve.js";
 
 /**
  * Tighter than the global limit on purpose. Every accepted request here burns a
@@ -607,16 +614,38 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
       let pinnedOnDemand: boolean | undefined;
 
       try {
-        // 3. An unactivated address cannot receive an NFT (brief 5.4).
-        const activated = await deps.chain.accountExists(deps.gateway, address);
-        if (!activated) {
+        // 3. Can this address receive an NFT at all?
+        //
+        // NOT just "does it exist". Accepting a badge creates an NFTokenPage,
+        // which locks owner reserve, so a real account holding less than
+        // base + one owner reserve refuses the accept. Minting for it produces
+        // a badge nobody can take and locks 0.2 XRP of the issuer's reserve in
+        // an offer that has to be reaped later.
+        let balanceXrp = "0";
+        try {
+          balanceXrp = await deps.chain.getAccountBalanceXrp(deps.gateway, address);
+        } catch (err) {
+          // Unfunded is ordinary here; "0" is the truth about an account that
+          // does not exist, and the reserve arithmetic expects exactly that.
+          if (!(err instanceof AccountNotFoundError)) throw err;
+        }
+
+        if (!canReceiveBadge(balanceXrp)) {
           if (!deps.config.sponsor.enabled) {
             throw new XrplLayerError(
               "ACCOUNT_NOT_FOUND",
-              `${address} does not exist on the ledger yet. XRPL accounts are activated by an ` +
-                "initial payment of at least the base reserve (1 XRP), so send at least that much " +
-                "to the address from an exchange or another wallet, then claim again.",
-              { address, baseReserveXrp: "1", sponsorshipEnabled: false },
+              `${address} cannot receive a badge yet: it holds ${balanceXrp} XRP and needs ` +
+                `${badgeReadyReserveXrp()} XRP — ${BASE_RESERVE_XRP} XRP of base reserve to exist ` +
+                `on the ledger, plus ${OWNER_RESERVE_PER_OBJECT_XRP} XRP of owner reserve for the ` +
+                "badge itself. Send the difference from an exchange or another wallet, then claim " +
+                "again.",
+              {
+                address,
+                balanceXrp,
+                requiredXrp: badgeReadyReserveXrp(),
+                shortfallXrp: reserveShortfallXrp(balanceXrp),
+                sponsorshipEnabled: false,
+              },
             );
           }
           // sponsorWallet() owns the guards: one sponsorship per address per
@@ -629,7 +658,14 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
             ledger: deps.sponsorLedger,
           });
           request.log.info(
-            { address, eventId, sponsored: sponsorship.sponsored, amountXrp: sponsorship.amountXrp },
+            {
+              address,
+              eventId,
+              balanceXrp,
+              shortfallXrp: reserveShortfallXrp(balanceXrp),
+              sponsored: sponsorship.sponsored,
+              amountXrp: sponsorship.amountXrp,
+            },
             "sponsorship checked",
           );
         }

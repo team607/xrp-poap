@@ -493,6 +493,50 @@ describe("GET /admin/api/desk/state", () => {
 // GET /admin/api/desk/attendees/:address
 // ---------------------------------------------------------------------------
 
+describe("the desk offers a top-up whenever the badge cannot land", () => {
+  /**
+   * `needsSponsorship` used to mean `!activated`. It now means "this wallet
+   * cannot receive a badge", which is a strictly larger set: accepting an NFT
+   * creates an NFTokenPage and that locks owner reserve, so an account holding
+   * less than base + 0.2 refuses the accept while looking perfectly healthy.
+   */
+  it("says a dust wallet needs funding, and by how much", async () => {
+    const h = harness();
+    h.balances.set(ATTENDEE, "1");     // real account, 0.2 XRP short
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: scan(ATTENDEE, CONFERENCE),
+      headers: asAdmin,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      activated: true,
+      balanceXrp: "1",
+      needsSponsorship: true,
+      reserveShortfallXrp: "0.2",
+    });
+  });
+
+  it("stops asking the moment the balance is enough", async () => {
+    const h = harness();
+    h.balances.set(ATTENDEE, "1.2");   // exactly base + one owner reserve
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: scan(ATTENDEE, CONFERENCE),
+      headers: asAdmin,
+    });
+
+    expect(res.json()).toMatchObject({
+      activated: true,
+      needsSponsorship: false,
+      reserveShortfallXrp: "0",
+    });
+  });
+});
+
 describe("GET /admin/api/desk/attendees/:address", () => {
   it("says an unactivated wallet needs sponsorship, and by how much", async () => {
     const h = harness();

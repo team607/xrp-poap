@@ -304,7 +304,12 @@ function makeChainMocks() {
       fee: "12",
     })),
     accountExists: vi.fn<ChainOps["accountExists"]>(async () => true),
-    getAccountBalanceXrp: async () => "100",
+    /**
+     * The claim route asks what a wallet HOLDS, not whether it exists — a real
+     * account under base + owner reserve cannot accept a badge either. Tests
+     * that want "this wallet needs funding" set this to a dust balance.
+     */
+    getAccountBalanceXrp: vi.fn<ChainOps["getAccountBalanceXrp"]>(async () => "100"),
     sponsorWallet: vi.fn<ChainOps["sponsorWallet"]>(async (_gateway, input) => ({
       sponsored: true,
       alreadyActivated: false,
@@ -564,6 +569,7 @@ describe("POST /events/:eventId/claims", () => {
   it("409s an unactivated wallet with funding instructions when sponsorship is off", async () => {
     const h = harness();
     h.chain.accountExists.mockResolvedValue(false);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("0");
 
     const res = await h.app.inject({
       method: "POST",
@@ -575,8 +581,61 @@ describe("POST /events/:eventId/claims", () => {
     const body = res.json();
     expect(body.error.code).toBe("ACCOUNT_NOT_FOUND");
     expect(body.error.message).toMatch(/base reserve/i);
+    // The number a person has to act on, not just the word.
+    expect(body.error.message).toMatch(/owner reserve/i);
+    expect(body.error.details).toMatchObject({ balanceXrp: "0", shortfallXrp: "1.2" });
     expect(h.chain.sponsorWallet).not.toHaveBeenCalled();
     expect(h.chain.mint).not.toHaveBeenCalled();
+  });
+
+  /**
+   * THE REGRESSION THIS BLOCK EXISTS FOR.
+   *
+   * The gate used to be `accountExists()`. A wallet holding dust passes that —
+   * the account is real — so nothing was sponsored, the badge was minted, the
+   * offer created, and the attendee's wallet then refused the accept because it
+   * could not afford the NFTokenPage. Cost: a badge nobody can take, 0.2 XRP of
+   * issuer reserve locked in an offer that has to be reaped, and a volunteer
+   * who had been told the wallet was ready.
+   *
+   * A dust balance is MORE likely than an empty account. It belongs to somebody
+   * who has used XRP before, which is exactly who does not expect this.
+   */
+  it("sponsors a wallet that EXISTS but cannot afford the badge", async () => {
+    const h = harness({
+      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
+    });
+    // Real account, activated, and still 0.2 XRP short of holding one badge.
+    h.chain.accountExists.mockResolvedValue(true);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("1");
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims`,
+      payload: { address: ATTENDEE },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.sponsorWallet).toHaveBeenCalledTimes(1);
+    expect(h.chain.mint).toHaveBeenCalledTimes(1);
+  });
+
+  it("leaves a wallet alone the moment it can hold a badge", async () => {
+    const h = harness({
+      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
+    });
+    // Exactly base + one owner reserve. Enough, so not a penny is spent.
+    h.chain.accountExists.mockResolvedValue(true);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("1.2");
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims`,
+      payload: { address: ATTENDEE },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.sponsorWallet).not.toHaveBeenCalled();
   });
 
   it("sponsors an unactivated wallet when sponsorship is on, passing the ledger guard", async () => {
@@ -584,6 +643,7 @@ describe("POST /events/:eventId/claims", () => {
       config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
     });
     h.chain.accountExists.mockResolvedValue(false);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("0");
 
     const res = await h.app.inject({
       method: "POST",
@@ -604,6 +664,7 @@ describe("POST /events/:eventId/claims", () => {
       config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
     });
     h.chain.accountExists.mockResolvedValue(false);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("0");
     h.chain.sponsorWallet.mockRejectedValueOnce(
       new XrplLayerError("SPONSORSHIP_DENIED", "daily cap reached", { kind: "daily_cap" }),
     );
@@ -1553,6 +1614,7 @@ describe("POST /events/:eventId/claims — the mint guard", () => {
       config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
     });
     h.chain.accountExists.mockResolvedValue(false);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("0");
     h.chain.sponsorWallet.mockRejectedValueOnce(
       new XrplLayerError("SPONSORSHIP_DENIED", "daily cap reached", { kind: "daily_cap" }),
     );

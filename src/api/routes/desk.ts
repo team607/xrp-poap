@@ -413,16 +413,28 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
 
       const attended = facts.attendance !== null;
 
+      // WHETHER THE BADGE CAN LAND, not whether the account exists.
+      //
+      // This used to be `!activated`, and the difference cost an attendee their
+      // badge in front of a volunteer who had been told everything was fine.
+      // Accepting an NFT creates an NFTokenPage, and that object locks owner
+      // reserve — so a wallet that EXISTS but holds less than base + one owner
+      // reserve cannot receive anything either. Xaman refuses the accept with
+      // "not enough balance", by which point the badge is already minted and
+      // 0.2 XRP of the issuer's reserve is locked in an offer nobody can take.
+      //
+      // A wallet with a dust balance is more common than an empty one: people
+      // who have touched XRP before, and are the least likely to expect this.
+      const shortfallXrp = reserveShortfallXrp(balanceXrp);
+
       return reply.code(200).send({
         address: scanned,
         valid: true,
         eventId: facts.eventId,
         activated,
         balanceXrp,
-        // An unactivated account cannot receive an NFT at all, so this is the
-        // whole question the volunteer is asking.
-        needsSponsorship: !activated,
-        reserveShortfallXrp: reserveShortfallXrp(balanceXrp),
+        needsSponsorship: !activated || shortfallXrp !== "0",
+        reserveShortfallXrp: shortfallXrp,
         sponsorAmountXrp,
         claim: facts.claim
           ? {

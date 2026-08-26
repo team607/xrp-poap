@@ -22,7 +22,7 @@
  * without a cycle.
  */
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { dropsToXrp, xrpToDrops, type Wallet } from "xrpl";
+import { type Wallet } from "xrpl";
 import { ConfigError } from "../errors.js";
 import type { BurnResult, EventId, NetworkName, XrplGateway } from "../types.js";
 import { MAX_TAXON } from "../types.js";
@@ -75,51 +75,20 @@ export function parseDemoEnabled(raw: string | undefined): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Reserve arithmetic — what "this wallet cannot receive an NFT" costs to fix
+// Reserve arithmetic — moved to src/xrpl/reserve.ts
+//
+// It lives there because `sponsorWallet` needs it too, and src/xrpl may not
+// import from src/api. Re-exported here so the demo routes and their tests keep
+// their existing import, and so there is still exactly one implementation.
 // ---------------------------------------------------------------------------
 
-/**
- * The account reserve. An address that has never received this much does not
- * exist on the ledger at all, which is the state the volunteer has to fix
- * before a badge can be offered to it.
- *
- * Testnet and mainnet have both sat at 1 XRP since the 2024 reduction. It is a
- * network parameter, not a protocol constant, so it is named here rather than
- * inlined: when it moves, one line moves with it and every number this module
- * reports moves with that line.
- */
-export const BASE_RESERVE_XRP = "1";
-
-/**
- * Owner reserve for one ledger object. A badge lands in an NFTokenPage, which
- * is one object however many badges are on it (brief 7).
- */
-export const OWNER_RESERVE_PER_OBJECT_XRP = "0.2";
-
-/** Integer drops. Balances are never touched with floats (CLAUDE.md). */
-function drops(xrp: string): bigint {
-  return BigInt(xrpToDrops(xrp));
-}
-
-/**
- * What a wallet must hold before it can be activated AND hold one badge.
- *
- * COMPUTED, so the number in the response and the reason for it cannot drift
- * apart: change either constant above and this follows.
- */
-export function badgeReadyReserveXrp(): string {
-  return String(dropsToXrp((drops(BASE_RESERVE_XRP) + drops(OWNER_RESERVE_PER_OBJECT_XRP)).toString()));
-}
-
-/**
- * How much more this balance needs before the badge can land. `"0"` once there
- * is enough — never a negative number, which reads as a refund.
- */
-export function reserveShortfallXrp(balanceXrp: string): string {
-  const need = drops(BASE_RESERVE_XRP) + drops(OWNER_RESERVE_PER_OBJECT_XRP);
-  const shortfall = need - drops(balanceXrp);
-  return shortfall <= 0n ? "0" : String(dropsToXrp(shortfall.toString()));
-}
+export {
+  BASE_RESERVE_XRP,
+  OWNER_RESERVE_PER_OBJECT_XRP,
+  badgeReadyReserveXrp,
+  canReceiveBadge,
+  reserveShortfallXrp,
+} from "../xrpl/reserve.js";
 
 // ---------------------------------------------------------------------------
 // Ledger operations the demo needs and the real routes do not
