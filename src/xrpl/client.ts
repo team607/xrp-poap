@@ -99,6 +99,11 @@ export class XrplConnection implements XrplGateway {
   readonly #makeClient: (endpoint: string, opts: { connectionTimeout: number }) => Client;
   /** Collapses a stampede of concurrent failures into one reconnect. */
   #reconnecting: Promise<void> | undefined;
+
+  /**
+   * Stamped on everything this connection submits. See submit().
+   */
+  readonly #sourceTag: number | undefined;
   #closed = false;
 
   /** The raw client. Scripts use this for fundWallet(). */
@@ -120,6 +125,7 @@ export class XrplConnection implements XrplGateway {
     endpoints: readonly string[],
     connectTimeoutMs: number,
     makeClient: (endpoint: string, opts: { connectionTimeout: number }) => Client,
+    sourceTag: number | undefined,
   ) {
     this.#client = client;
     this.#endpoint = endpoint;
@@ -129,6 +135,7 @@ export class XrplConnection implements XrplGateway {
     this.#endpoints = endpoints;
     this.#connectTimeoutMs = connectTimeoutMs;
     this.#makeClient = makeClient;
+    this.#sourceTag = sourceTag;
   }
 
   /**
@@ -251,6 +258,7 @@ export class XrplConnection implements XrplGateway {
           endpoints,
           connectTimeoutMs,
           makeClient,
+          cfg.sourceTag,
         );
       } catch (err) {
         failures.push(`${endpoint}: ${(err as Error).message}`);
@@ -299,9 +307,24 @@ export class XrplConnection implements XrplGateway {
     // verbatim — the ledger enforces one application per (Account, Sequence) —
     // and before resending at all we ask whether it already landed.
 
+    // SourceTag goes on HERE, not at each call site.
+    //
+    // It was wired into the Xaman payload only, so the one transaction the app
+    // does NOT submit — the attendee's accept — carried the tag and the three
+    // it does submit did not. Measured on a live issuer: 1 of 4. `.env.example`
+    // promises "every transaction this app submits", so the promise is kept in
+    // the one place every submission passes through.
+    //
+    // An explicit SourceTag on the transaction wins: a caller that set one
+    // meant it.
+    const tagged: SubmittableTransaction =
+      this.#sourceTag !== undefined && (tx as { SourceTag?: number }).SourceTag === undefined
+        ? ({ ...tx, SourceTag: this.#sourceTag } as SubmittableTransaction)
+        : tx;
+
     // --- prepare + sign: nothing sent yet, retry freely ---------------------
     const signed = await this.#withReconnect(async () => {
-      const prepared = await this.#client.autofill(tx);
+      const prepared = await this.#client.autofill(tagged);
       return wallet.sign(prepared);
     });
 

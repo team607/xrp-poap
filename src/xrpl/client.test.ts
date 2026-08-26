@@ -88,6 +88,68 @@ describe("isDisconnectedError", () => {
   });
 });
 
+describe("SourceTag", () => {
+  /**
+   * The regression: the tag was wired into the Xaman payload and nowhere else,
+   * so the ONE transaction the app does not submit — the attendee's accept —
+   * carried it, and the three it does submit did not. Measured on a live
+   * issuer: 1 of 4. It belongs at the single point every submission passes.
+   */
+  const TAGGED = { ...CFG, sourceTag: 2607210007 } as unknown as AppConfig;
+
+  it("stamps every transaction this connection submits", async () => {
+    let seen: any;
+    const conn = await XrplConnection.connect(TAGGED, {
+      wallet: WALLET,
+      clientFactory: () =>
+        makeFakeClient({
+          onAutofill: (tx) => {
+            seen = tx;
+            return { ...tx, Sequence: 1 };
+          },
+        }),
+    });
+
+    await conn.submit({ TransactionType: "NFTokenMint", Account: "rA" } as any);
+    expect(seen.SourceTag).toBe(2607210007);
+  });
+
+  it("leaves a transaction that already names one alone", async () => {
+    let seen: any;
+    const conn = await XrplConnection.connect(TAGGED, {
+      wallet: WALLET,
+      clientFactory: () =>
+        makeFakeClient({
+          onAutofill: (tx) => {
+            seen = tx;
+            return { ...tx, Sequence: 1 };
+          },
+        }),
+    });
+
+    // A caller that set one meant it.
+    await conn.submit({ TransactionType: "Payment", Account: "rA", SourceTag: 42 } as any);
+    expect(seen.SourceTag).toBe(42);
+  });
+
+  it("adds nothing when SOURCE_TAG is unset", async () => {
+    let seen: any;
+    const conn = await XrplConnection.connect(CFG, {
+      wallet: WALLET,
+      clientFactory: () =>
+        makeFakeClient({
+          onAutofill: (tx) => {
+            seen = tx;
+            return { ...tx, Sequence: 1 };
+          },
+        }),
+    });
+
+    await conn.submit({ TransactionType: "NFTokenMint", Account: "rA" } as any);
+    expect("SourceTag" in seen).toBe(false);
+  });
+});
+
 describe("XrplConnection", () => {
   it("retries a read on a fresh socket after a drop", async () => {
     const clients: any[] = [];
