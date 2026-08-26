@@ -122,6 +122,28 @@ if ! id -u "$APP_USER" >/dev/null 2>&1; then
   info "created $APP_USER"
 else
   info "$APP_USER already exists"
+  # An earlier version of this script put the home directory inside the
+  # checkout. Converge it rather than skipping: a home that is also a git
+  # working tree stops `git clone` dead, and one `git clean -xdf` takes the
+  # deploy key with it. "Already exists" is not the same as "already right".
+  CURRENT_HOME="$(getent passwd "$APP_USER" | cut -d: -f6)"
+  if [ -n "$CURRENT_HOME" ] && [ "$CURRENT_HOME" != "$HOME_DIR" ]; then
+    info "moving the home directory: $CURRENT_HOME -> $HOME_DIR"
+    install -d -o "$APP_USER" -g "$APP_USER" -m 0700 "$HOME_DIR"
+    for keep in .ssh .dbpass; do
+      [ -e "$CURRENT_HOME/$keep" ] || continue
+      if [ -e "$HOME_DIR/$keep" ]; then
+        # Both exist: the one in the new home is live, the other is a leftover.
+        rm -rf "${CURRENT_HOME:?}/${keep:?}"
+        info "  dropped the superseded $keep"
+      else
+        mv "$CURRENT_HOME/$keep" "$HOME_DIR/$keep"
+        info "  kept $keep"
+      fi
+    done
+    usermod -d "$HOME_DIR" "$APP_USER"
+    chown -R "$APP_USER:$APP_USER" "$HOME_DIR"
+  fi
 fi
 install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$APP_DIR"
 install -d -o "$APP_USER" -g "$APP_USER" -m 0700 "$HOME_DIR"
@@ -175,9 +197,25 @@ if [ -d "$APP_DIR/.git" ]; then
   sudo -H -u "$APP_USER" git -C "$APP_DIR" fetch --depth 1 origin "$BRANCH"
   sudo -H -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$BRANCH"
 else
-  # A private repo needs a deploy key that $APP_USER can read. If the clone
-  # fails, upload the tree with rsync instead and re-run — everything after this
-  # step is happy either way.
+  # git refuses to clone into a non-empty directory, and that has nothing to do
+  # with credentials. Diagnose it here, or the handler below blames the deploy
+  # key for it and sends the operator off to re-add a key that was never wrong.
+  if [ -n "$(ls -A "$APP_DIR" 2>/dev/null)" ]; then
+    warn "$APP_DIR is not empty, and is not a checkout. git clone cannot write into it."
+    printf '\n  It contains:\n'
+    ls -A "$APP_DIR" | sed 's/^/    /'
+    cat <<STALEEOF
+
+  If that is all leftover from an earlier run and none of it is yours:
+
+    find $APP_DIR -mindepth 1 -delete
+
+  Then run this again. Nothing before this point has to be redone.
+
+STALEEOF
+    exit 1
+  fi
+
   KEY="$HOME_DIR/.ssh/id_ed25519"
   if [ ! -f "$KEY" ]; then
     sudo -H -u "$APP_USER" ssh-keygen -q -t ed25519 -N "" -f "$KEY" -C "deploy:$DOMAIN"
@@ -185,8 +223,16 @@ else
   fi
 
   info "cloning $REPO ($BRANCH)"
-  if ! sudo -H -u "$APP_USER" git clone --depth 1 --branch "$BRANCH" "$REPO" "$APP_DIR"; then
+  CLONE_LOG="$(mktemp)"
+  trap 'rm -f "$CLONE_LOG"' EXIT
+  if ! sudo -H -u "$APP_USER" git clone --depth 1 --branch "$BRANCH" "$REPO" "$APP_DIR" >"$CLONE_LOG" 2>&1; then
+    sed 's/^/    /' "$CLONE_LOG"
     printf '\n'
+    # Only an authentication failure is a deploy-key problem. Anything else gets
+    # git's own words and no invented explanation on top of them.
+    if ! grep -qiE 'permission denied|publickey|could not read from remote|authenticat|access rights' "$CLONE_LOG"; then
+      die "Clone failed. git's output is above."
+    fi
     warn "Clone failed — the repo has not been given this box's key yet."
     cat <<KEYEOF
 
