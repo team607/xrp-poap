@@ -48,6 +48,10 @@ REPO="${REPO:-git@github.com:team607/xrp-poap.git}"
 BRANCH="${BRANCH:-main}"
 APP_USER="${APP_USER:-poap}"
 APP_DIR="${APP_DIR:-/srv/poap}"
+# Deliberately NOT the checkout. The deploy key and the database password live
+# in here, and a home directory that is also a git working tree is one
+# `git clean -xdf` away from losing both.
+HOME_DIR="${HOME_DIR:-/var/lib/$APP_USER}"
 DB_NAME="${DB_NAME:-xrpl_poap}"
 DB_USER="${DB_USER:-poap}"
 NODE_MAJOR="${NODE_MAJOR:-22}"
@@ -114,12 +118,22 @@ say "3/9  Service account"
 if ! id -u "$APP_USER" >/dev/null 2>&1; then
   # No login shell and no password: this account exists to own files and run one
   # process. Nothing should ever ssh in as it.
-  adduser --system --group --home "$APP_DIR" --shell /usr/sbin/nologin "$APP_USER"
+  adduser --system --group --home "$HOME_DIR" --shell /usr/sbin/nologin "$APP_USER"
   info "created $APP_USER"
 else
   info "$APP_USER already exists"
 fi
 install -d -o "$APP_USER" -g "$APP_USER" -m 0750 "$APP_DIR"
+install -d -o "$APP_USER" -g "$APP_USER" -m 0700 "$HOME_DIR"
+install -d -o "$APP_USER" -g "$APP_USER" -m 0700 "$HOME_DIR/.ssh"
+
+# github.com's host keys, pinned from the published fingerprints rather than
+# accepted on faith the first time a clone runs.
+if [ ! -s "$HOME_DIR/.ssh/known_hosts" ]; then
+  ssh-keyscan -t rsa,ecdsa,ed25519 github.com 2>/dev/null \
+    | install -o "$APP_USER" -g "$APP_USER" -m 0600 /dev/stdin "$HOME_DIR/.ssh/known_hosts"
+  info "recorded github.com host keys — verify against https://api.github.com/meta"
+fi
 
 # ---------------------------------------------------------------------------
 say "4/9  PostgreSQL"
@@ -130,7 +144,7 @@ systemctl enable --now postgresql
 db_exists() { sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$1'" | grep -q 1; }
 role_exists() { sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$1'" | grep -q 1; }
 
-DB_PASS_FILE="$APP_DIR/.dbpass"
+DB_PASS_FILE="$HOME_DIR/.dbpass"
 if [ -f "$DB_PASS_FILE" ]; then
   DB_PASS="$(cat "$DB_PASS_FILE")"
   info "reusing the existing database password"
@@ -158,24 +172,48 @@ say "5/9  Application code"
 
 if [ -d "$APP_DIR/.git" ]; then
   info "updating the existing checkout"
-  sudo -u "$APP_USER" git -C "$APP_DIR" fetch --depth 1 origin "$BRANCH"
-  sudo -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$BRANCH"
+  sudo -H -u "$APP_USER" git -C "$APP_DIR" fetch --depth 1 origin "$BRANCH"
+  sudo -H -u "$APP_USER" git -C "$APP_DIR" reset --hard "origin/$BRANCH"
 else
   # A private repo needs a deploy key that $APP_USER can read. If the clone
   # fails, upload the tree with rsync instead and re-run — everything after this
   # step is happy either way.
+  KEY="$HOME_DIR/.ssh/id_ed25519"
+  if [ ! -f "$KEY" ]; then
+    sudo -H -u "$APP_USER" ssh-keygen -q -t ed25519 -N "" -f "$KEY" -C "deploy:$DOMAIN"
+    info "generated a deploy key"
+  fi
+
   info "cloning $REPO ($BRANCH)"
-  sudo -u "$APP_USER" git clone --depth 1 --branch "$BRANCH" "$REPO" "$APP_DIR" || die \
-    "Clone failed. Either add a deploy key readable by $APP_USER, or copy the tree up yourself:
-       rsync -av --exclude node_modules --exclude .env --exclude out ./ root@HOST:$APP_DIR/
-       chown -R $APP_USER:$APP_USER $APP_DIR
-     then re-run this script."
+  if ! sudo -H -u "$APP_USER" git clone --depth 1 --branch "$BRANCH" "$REPO" "$APP_DIR"; then
+    printf '\n'
+    warn "Clone failed — the repo has not been given this box's key yet."
+    cat <<KEYEOF
+
+  Add this as a DEPLOY KEY on the repository. Read-only: leave
+  "Allow write access" unchecked, because nothing here ever pushes.
+
+    GitHub -> the repo -> Settings -> Deploy keys -> Add deploy key
+
+$(cat "$KEY.pub")
+
+  Then run this script again. Everything up to here is already done.
+
+  Or skip GitHub entirely and push the tree up from your laptop:
+
+    rsync -av --exclude node_modules --exclude .env --exclude out \\
+      ./ root@HOST:$APP_DIR/
+    chown -R $APP_USER:$APP_USER $APP_DIR
+
+KEYEOF
+    exit 1
+  fi
 fi
 
 # Dev dependencies stay installed on purpose: `npm run migrate` runs through tsx,
 # and the .sql migrations are read from the source tree at runtime.
-sudo -u "$APP_USER" npm --prefix "$APP_DIR" ci
-sudo -u "$APP_USER" npm --prefix "$APP_DIR" run build
+sudo -H -u "$APP_USER" npm --prefix "$APP_DIR" ci
+sudo -H -u "$APP_USER" npm --prefix "$APP_DIR" run build
 info "built"
 
 # ---------------------------------------------------------------------------
@@ -274,6 +312,7 @@ Group=$APP_USER
 WorkingDirectory=$APP_DIR
 EnvironmentFile=$APP_DIR/.env
 Environment=NODE_ENV=production
+Environment=HOME=$HOME_DIR
 ExecStart=/usr/bin/node dist/api/server.js
 Restart=on-failure
 RestartSec=5s
@@ -296,7 +335,7 @@ RestrictNamespaces=true
 LockPersonality=true
 MemoryDenyWriteExecute=false
 # The only writable path: badge manifests and the issuer note.
-ReadWritePaths=$APP_DIR/out
+ReadWritePaths=$APP_DIR/out $HOME_DIR
 
 [Install]
 WantedBy=multi-user.target
