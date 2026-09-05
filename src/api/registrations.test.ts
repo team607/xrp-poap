@@ -1063,10 +1063,9 @@ describe("POST /api/events/:eventId/registrations", () => {
     expect(h.registrations.rows).toHaveLength(0);
   });
 
-  it("refuses a registration with no name and no email", async () => {
-    // Neither is needed to mint anything. Both are needed to RUN the event: a
-    // door cannot be worked off a list of wallet addresses, and an organiser
-    // who cannot reach an attendee cannot tell them their badge is waiting.
+  it("refuses a registration with no name", async () => {
+    // A door cannot be worked off a list of wallet addresses, so the name is
+    // required. The email is not — see the test below.
     const res = await h.app.inject({
       method: "POST",
       url: `/api/events/${OPEN_EVENT}/registrations`,
@@ -1077,11 +1076,26 @@ describe("POST /api/events/:eventId/registrations", () => {
     expect(h.registrations.rows).toHaveLength(0);
   });
 
-  it("refuses each one missing on its own", async () => {
+  it("registers with a name and no email", async () => {
+    // Mandatory for one release (migration 008), optional again as of 009:
+    // asking for an address costs registrations at a door, and nothing about
+    // the badge depends on reaching anyone afterwards.
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/api/events/${OPEN_EVENT}/registrations`,
+      payload: { signinUuid: UUID_A, displayName: "Ada" },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(h.registrations.rows).toHaveLength(1);
+    expect(h.registrations.rows[0]).toMatchObject({ displayName: "Ada" });
+    expect(h.registrations.rows[0]?.email ?? null).toBeNull();
+  });
+
+  it("still refuses a name that is only whitespace, and a malformed email", async () => {
     for (const partial of [
-      { signinUuid: UUID_A, displayName: "Ada" },
-      { signinUuid: UUID_A, email: "ada@example.com" },
       { signinUuid: UUID_A, displayName: "   ", email: "ada@example.com" },
+      { signinUuid: UUID_A, displayName: "Ada", email: "not-an-email" },
     ]) {
       const res = await h.app.inject({
         method: "POST",

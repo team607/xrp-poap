@@ -381,6 +381,12 @@ html.dev .wrap{padding-top:12px}
 /* ---- the form ------------------------------------------------------------- */
 .field{margin-top:18px}
 .field > .label{display:flex; align-items:baseline; gap:8px; margin-bottom:7px}
+/* Marks a field a guest may skip. Only the email has one; a form where every
+   label carries a badge tells you nothing. */
+.field .opt{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; color:var(--signal);
+  border:1px solid var(--signal-2); border-radius:2px; padding:1px 5px; font-weight:700;
+}
 /* 16px is not a taste decision: anything smaller and iOS Safari zooms the page
    on focus, which on this form means the dock button scrolls out of reach. */
 .field input{
@@ -854,14 +860,14 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
         </div>
 
         <div class="field">
-          <label class="label" for="em"><span>email</span></label>
+          <label class="label" for="em"><span>email</span><span class="opt">optional</span></label>
           <input id="em" name="email" type="email" maxlength="254" autocomplete="email"
                  inputmode="email" spellcheck="false" autocapitalize="off"
-                 placeholder="you@example.com" required aria-required="true">
+                 placeholder="you@example.com">
           <p class="field__why">
-            So the organiser can reach you about the event, and tell you when your badge is
-            waiting. It is never shown publicly, never printed on the badge, and never passed
-            to anyone else.
+            <b>Leave it blank if you would rather.</b> Nothing about your badge changes. Its only
+            use is so the organiser can reach you about the event. It is never shown publicly,
+            never printed on the badge, and never passed to anyone else.
           </p>
         </div>
       </form>
@@ -1821,20 +1827,13 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
       return;
     }
 
-    if (!email) {
-      showLocalError("details-err", "CHECK_THE_EMAIL",
-        "We need an email address",
-        "It is how the organiser reaches you about the event, and how you are told your badge is waiting.",
-        "It is never shown publicly and never printed on the badge.");
-      focusField("em");
-      return;
-    }
-
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    // Blank is allowed. A typo is not: silently dropping "priya@gmail" would
+    // leave the organiser thinking they can reach somebody they cannot.
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       showLocalError("details-err", "CHECK_THE_EMAIL",
         "That email does not look finished",
         "\u201c" + email + "\u201d is not quite an address \u2014 it needs something either side of the @, and a dot in the part after it.",
-        "Fix the typo and press again.");
+        "Fix the typo, or clear the field \u2014 it is optional.");
       focusField("em");
       return;
     }

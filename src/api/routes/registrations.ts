@@ -86,16 +86,19 @@ const registerBodySchema = z.object({
   /** The payload THIS server created. Its resolution is the only source of the address. */
   signinUuid: z.uuid(),
   /**
-   * Both required.
+   * A name is required; an email is not.
    *
    * Neither is needed to MINT anything — the wallet is the whole of what a
-   * badge depends on, and nothing in the claim or verify path reads either of
-   * these. They are required because the EVENT needs them: a door cannot be
-   * run off a list of wallet addresses, and an organiser who cannot reach an
-   * attendee cannot tell them their badge is waiting.
+   * badge depends on, and nothing in the claim or verify path reads either.
+   * The name is required because the EVENT needs it: a door cannot be run off
+   * a list of wallet addresses.
+   *
+   * The email was mandatory for one release (migration 008) and is optional
+   * again as of 009. Asking for it costs registrations at a door, and the
+   * badge does not depend on reaching anyone afterwards.
    */
   displayName: z.string().trim().min(1).max(MAX_DISPLAY_NAME),
-  email: z.email().max(254),
+  email: z.email().max(254).optional(),
 });
 
 const registrationIdParamsSchema = z.object({ id: z.string().min(1).max(64) });

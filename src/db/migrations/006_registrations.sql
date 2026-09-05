@@ -29,9 +29,9 @@
 --
 -- PII.
 --
--- email is the only personal data anywhere in this schema. It is REQUIRED as
--- of 008 (it was optional here), collected solely so an organiser can contact
--- an attendee, and it is
+-- email is the only personal data anywhere in this schema. Optional here,
+-- required by 008, optional again by 009 — collected solely so an organiser
+-- can contact an attendee, and it is
 -- deliberately NOT uniquely indexed: one person may legitimately register two
 -- wallets for two badges, and a unique constraint would reject the second with
 -- a database error. Treat this column as the thing to redact in logs, exclude
