@@ -1465,6 +1465,7 @@ td .val{font-size:11.5px}
      and the label a diagnostics panel prints for it. */
   var DESK_ATTENDEES = "/admin/api/desk/attendees";
   var DESK_SPONSOR = "/admin/api/desk/sponsor";
+  var DESK_RECONCILE = "/admin/api/desk/reconcile";
 
   /**
    * A failure that never left the tab, shaped like one that did, so the same
@@ -1478,6 +1479,14 @@ td .val{font-size:11.5px}
       json: { error: { code: "NO_EVENT_SELECTED",
         message: "No event is selected, so there is nothing to look this person up against. Pick the event this desk is working at the top of the page, then scan again." } }
     };
+  }
+
+  /* "Not yet" wearing a 422. Set by the server when the accept is real and
+     this node has simply not caught up — never on a genuine mismatch, so it is
+     safe to retry on this and only on this. */
+  function isNotYet(r) {
+    return !!(r && r.json && r.json.error && r.json.error.details &&
+              r.json.error.details.notYet === true);
   }
 
   function codeOf(r) {
@@ -2116,7 +2125,15 @@ td .val{font-size:11.5px}
     if (l.attended === true) return "attended";
     if (l.alreadyHasBadge === true) return "claimed";
     if (l.needsSponsorship === true) return "sponsor";
-    if (l.claim && l.claim.status === "pending" && (l.claim.offerId || l.claim.nftokenId)) return "claimed";
+    /* OFFERED, NOT CLAIMED — and the difference is the whole card.
+       The server is careful about this: /desk/attendees returns
+       `alreadyHasBadge: false` for a pending claim, with a comment saying a
+       pending claim is not a badge. This line used to override that and paint
+       "Already claimed", which told a volunteer there was nothing to do while
+       the attendee was still standing there with nothing in their wallet.
+       "waiting" is the honest state, and its card carries the two things that
+       matter here: Get their code, and who the badge is locked to. */
+    if (l.claim && l.claim.status === "pending" && (l.claim.offerId || l.claim.nftokenId)) return "waiting";
     return "ready";
   }
 
@@ -2858,6 +2875,17 @@ td .val{font-size:11.5px}
     if (lastClaim && lastClaim.address === addr && opts.nftokenId === undefined && opts.offerId === undefined) {
       opts = lastClaim;
     }
+    /* Reached by LOOKING SOMEBODY UP rather than by issuing to them, so there is
+       no lastClaim to borrow from. Everything the card needs is in the lookup;
+       `found` is what switches the copy from "Issued, now it is their turn" to
+       "a badge is already waiting", which is the true sentence here. */
+    if (opts.offerId === undefined && opts.nftokenId === undefined && l.claim) {
+      opts = {
+        found: true,
+        offerId: l.claim.offerId || null,
+        nftokenId: l.claim.nftokenId || null,
+      };
+    }
 
     body.appendChild(stampBlock(opts.reused
       ? "They already had one waiting, so <b>nothing new was issued</b>. This is the same badge handed back — a normal retry, not a mistake."
@@ -2870,6 +2898,16 @@ td .val{font-size:11.5px}
        has scanned something there is nothing to wait for. */
     var hand = xamanOf(opts);
     body.appendChild(hand ? handoffBlock(hand) : noHandoffBlock());
+
+    /* THE CARD SAYS IT IS WATCHING, SO IT HAD BETTER BE.
+       Reached by issuing, the caller starts the watch straight after painting.
+       Reached by LOOKING SOMEBODY UP it did not, and this card then sat there
+       claiming to check every few seconds while nothing ran: no clock, no
+       poll, and "Check now" a no-op because pollOnce() returns early with no
+       watch. Two attendees on testnet held their badge while this said it was
+       waiting for them. Guarded so an ordinary repaint does not restart the
+       clock. */
+    if (!watch || watch.address !== addr || watch.eventId !== eventId()) startWatch(addr);
 
     var wait = node("div", "wait");
     var wh = node("div", "wait__hd");
@@ -2918,7 +2956,13 @@ td .val{font-size:11.5px}
       acts.appendChild(actBtn("act-next", "Next attendee", "btn--ghost", reset));
     }
     acts.appendChild(node("span", "spacer"));
-    acts.appendChild(actBtn("act-check", "Check now", "btn--tiny", function () { pollOnce(); }));
+    acts.appendChild(actBtn("act-check", "Check now", "btn--tiny", function () {
+      // Never a no-op. pollOnce() needs a watch; this button is pressed exactly
+      // when a volunteer suspects the watching is not happening.
+      if (!watch || watch.address !== addr) startWatch(addr);
+      pollOnce();
+      reconcile(addr, eventId());
+    }));
     acts.appendChild(actBtn("act-stopwatch", "Stop watching", "btn--tiny btn--ghost", function () {
       stopWatch();
       lookup(current);
@@ -3013,7 +3057,10 @@ td .val{font-size:11.5px}
     var b = $("act-primary");
     if (b) { b.setAttribute("aria-busy", "true"); b.disabled = true; b.textContent = recovering ? "Fetching…" : "Issuing…"; }
 
-    call("POST", "/events/" + eventPath() + "/claims", { address: addr }).then(function (r) {
+    // api(), not call(): minting is behind the admin session now, so this has to
+    // carry the cookie and the CSRF header. The desk already has both — the page
+    // does not open without them — it just was not sending them here.
+    api("POST", "/events/" + eventPath() + "/claims", { address: addr }).then(function (r) {
       busyAction = false;
       if (!r.ok) {
         // Failures re-render whatever card we were on, with the error attached.
@@ -3056,7 +3103,18 @@ td .val{font-size:11.5px}
     stopWatch();
     // Pin the event at the moment watching starts: the answer to "have they
     // signed" is only meaningful against the taxon the offer was made under.
-    watch = { address: address, eventId: eventId(), startedAt: Date.now(), timer: 0, tick: 0, polls: 0 };
+    //
+    // The payload uuid and the offer id ride along so the desk can CONFIRM the
+    // accept itself. Without them it could only wait for somebody else to do
+    // it — and if the attendee scanned the code off this screen rather than
+    // opening their own pass, nobody ever would.
+    watch = {
+      address: address, eventId: eventId(), startedAt: Date.now(),
+      timer: 0, tick: 0, polls: 0, confirming: false,
+      uuid: (lastClaim && lastClaim.address === address && lastClaim.xaman)
+        ? String(lastClaim.xaman.uuid || "") : "",
+      offerId: (lastClaim && lastClaim.address === address) ? (lastClaim.offerId || "") : ""
+    };
     watch.tick = setInterval(function () {
       var el = $("wait-clock");
       if (!el || !watch) return;
@@ -3076,7 +3134,96 @@ td .val{font-size:11.5px}
     watch.polls++;
     if (watch.polls > 400) { stopWatch(); return; }   // ~20 minutes of desk time
     checkAttended(address, id);
+    confirmIfSigned();
+    // Every fifth poll, ~15s. The Xaman path above is faster when it is
+    // available; this one works when it is not, which is most of the time
+    // after a reload. Slower because it can cost the server a ledger read.
+    if (watch.polls % 5 === 1) reconcile(address, id);
   }
+
+  /**
+   * Ask the server to go and look on the ledger.
+   *
+   * THE PATH THAT SURVIVES A RELOAD. confirmIfSigned() needs the Xaman payload
+   * id, and that only exists in this tab, only for a claim this tab created.
+   * Press "Watch for them to accept" on a card built from a lookup, reload
+   * mid-signature, or take over a desk from another volunteer, and there is no
+   * payload id to poll — while the attendee is looking at a badge that
+   * arrived. Two of those on testnet, both stuck until the row was written by
+   * hand.
+   *
+   * Fire-and-forget: the reply is not read, because the next checkAttended()
+   * sees the row this created and paints the confirmed card. The one exception
+   * is the ledger disagreeing, which is worth saying out loud.
+   */
+  var reconciling = {};   // keyed on address+event: the roster sweeps too
+
+  function reconcile(address, id) {
+    if (id == null) return;
+    var key = address + "@" + id;
+    if (reconciling[key]) return;          // one in flight per person, not per watch
+    reconciling[key] = true;
+    api("POST", DESK_RECONCILE, { address: address, eventId: id }).then(function (r) {
+      delete reconciling[key];
+      if (!r.ok || !r.json) return;
+      // "not-visible-yet" is the same race seen from the server. Keep waiting.
+      if (r.json.reason !== "verification-failed") return;
+      if (current !== address || eventId() !== id) return;
+      stopWatch();
+      verdict = "error";
+      paintDocket({ failed: r, failedWhat: "confirm" });
+    }, function () { delete reconciling[key]; });
+  }
+
+  /**
+   * Ask Xaman whether the attendee signed, and if so tell the server.
+   *
+   * THE DESK CONFIRMS ITS OWN ISSUES. `/confirm` is what writes the attendance
+   * row, and until this existed the desk only ever polled for that row to
+   * appear — waiting on the attendee's own pass to do the posting. An attendee
+   * who scanned the code straight off this screen never opened that page, so
+   * the badge landed on the ledger and this card waited for it forever.
+   *
+   * The hash is a hint, not evidence: /confirm re-reads the transaction off the
+   * chain and runs all five checks before a row exists. Sending a wrong one
+   * fails there, it does not record anything false.
+   */
+  function confirmIfSigned() {
+    if (!watch || watch.confirming || !watch.uuid || !watch.offerId) return;
+    var w = watch;
+    w.confirming = true;
+
+    call("GET", "/api/claims/payload/" + encodeURIComponent(w.uuid)).then(function (r) {
+      if (!watch || watch !== w) return;              // moved on to another attendee
+      if (!r.ok || !r.json || !r.json.txHash) { w.confirming = false; return; }
+
+      return api("POST", "/events/" + encodeURIComponent(String(w.eventId)) +
+                 "/claims/" + encodeURIComponent(w.offerId) + "/confirm",
+                 { address: w.address, txHash: String(r.json.txHash) })
+        .then(function (c) {
+          if (!watch || watch !== w) return;
+          w.confirming = false;
+          // Either way the next checkAttended() sees the row and paints the
+          // confirmed card; a 422 means the chain disagreed and is worth saying.
+          // A 422 seconds after a signature is almost always the ledger
+          // catching up, not the ledger disagreeing: Xaman hands over the
+          // transaction hash the instant it submits, and validation takes a
+          // few seconds more. The server now says which one it is, and only a
+          // real contradiction ends the wait. Measured: a confirm 422'd at
+          // 12:03:07 and the identical one returned 200 at 12:06:06, with this
+          // card giving up in between.
+          if (!c.ok && c.status === 422 && !isNotYet(c) && current === w.address) {
+            // The chain disagreed. paintDocket already renders a failure into
+            // the card; flash() would have gone nowhere, since the docket has
+            // no flash host.
+            stopWatch();
+            verdict = "error";
+            paintDocket({ failed: c, failedWhat: "confirm" });
+          }
+        });
+    }, function () { if (watch === w) w.confirming = false; });
+  }
+
 
   /**
    * One lookup, used by both the 3s foreground watcher and the 20s background
@@ -3124,6 +3271,10 @@ td .val{font-size:11.5px}
     for (var i = 0; i < pending.length; i++) {
       if (watch && watch.address === pending[i].address) continue;   // the fast watcher has it
       checkAttended(pending[i].address, rowEvent(pending[i]));
+      // "Next attendee" must not abandon someone mid-signature, and for a row
+      // the desk has moved past there is no payload id left to poll — so the
+      // roster's own confirm has to be the ledger one.
+      reconcile(pending[i].address, rowEvent(pending[i]));
     }
   }
 

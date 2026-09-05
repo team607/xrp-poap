@@ -159,6 +159,52 @@ export async function getSellOffers(
 }
 
 /**
+ * Is this claim offer still sitting on the ledger, unaccepted?
+ *
+ * The cheap half of "have they signed yet". An NFTokenOffer object is deleted
+ * the instant it is accepted OR cancelled, so `false` means only that
+ * something happened to it — the caller still has to go and find the accept
+ * before it may believe one occurred. `true` is the useful answer: while the
+ * object is there nobody has signed, and there is nothing to go looking for.
+ *
+ * One `ledger_entry` per call, which is why this can sit in a polling loop
+ * that an `account_tx` scan could not.
+ */
+export async function isClaimOfferOpen(
+  gateway: XrplGateway,
+  offerId: string,
+): Promise<boolean> {
+  let response: { result?: { error?: string; node?: unknown } };
+  try {
+    response = await gateway.request({
+      command: "ledger_entry",
+      nft_offer: offerId,
+      ledger_index: "validated",
+    });
+  } catch (err) {
+    // "Gone" arrives as a thrown response on some nodes and as an error field
+    // on others; both mean the same thing and neither is a fault.
+    if (isRippledError(err, "entryNotFound")) return false;
+    throw new XrplLayerError(
+      "LEDGER_QUERY_FAILED",
+      `ledger_entry for offer ${offerId} failed: ${err instanceof Error ? err.message : String(err)}`,
+      { method: "ledger_entry", offerId },
+    );
+  }
+
+  const result = response?.result ?? {};
+  if (typeof result.error === "string") {
+    if (result.error === "entryNotFound") return false;
+    throw new XrplLayerError(
+      "LEDGER_QUERY_FAILED",
+      `ledger_entry for offer ${offerId} failed: ${result.error}`,
+      { method: "ledger_entry", offerId, rippledError: result.error },
+    );
+  }
+  return result.node !== undefined;
+}
+
+/**
  * Counts the issuer's pending NFTokenOffer objects, following the marker
  * through every page.
  *

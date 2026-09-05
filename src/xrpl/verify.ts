@@ -227,6 +227,113 @@ export function recoverNftokenId(
 }
 
 // ---------------------------------------------------------------------------
+// Finding an accept nobody told us about
+// ---------------------------------------------------------------------------
+
+/**
+ * The transaction hash, whichever API version the node speaks.
+ *
+ * account_tx puts it at the top of the entry in API v2 and inside the
+ * transaction body in v1, and a node that has been failed over to mid-session
+ * may not be the one that answered last time.
+ */
+function accountTxHash(entry: Record<string, any>, body: Record<string, any>): string | undefined {
+  return hex64(entry.hash) ?? hex64(body.hash);
+}
+
+/**
+ * Find the transaction in which `address` accepted `offerId`.
+ *
+ * WHY THIS EXISTS. The desk learns an attendee signed by asking Xaman about
+ * the payload it created, and that payload id lives in one browser tab. Reload
+ * the page, hand the desk to the next volunteer, or scan a code off a card
+ * that was issued ten minutes ago, and the id is gone — while the badge sits
+ * accepted on the ledger and the claim row says `pending` forever. The chain
+ * is the record; this reads it back.
+ *
+ * A HINT, NOT A VERDICT. The hash returned here goes straight into
+ * `verifyClaim`, which re-reads the transaction and runs all five checks. This
+ * function deciding wrongly cannot record a false attendance — the worst it
+ * can do is hand over a hash that then fails verification.
+ *
+ * Returns `undefined` when the accept is not in the window searched, which
+ * includes the ordinary case of an offer that was cancelled rather than taken.
+ */
+export async function findAcceptTxHash(
+  gateway: XrplGateway,
+  input: { address: string; offerId: string; limit?: number },
+): Promise<string | undefined> {
+  const offerId = String(input.offerId ?? "").trim().toUpperCase();
+  if (!HASH_RE.test(offerId)) {
+    throw new ValidationError(
+      "INVALID_INPUT",
+      `"${input.offerId}" is not a 64-character hex offer id`,
+      { offerId: input.offerId },
+    );
+  }
+
+  // The attendee's own history, newest first. An accept is the FIRST thing a
+  // fresh badge wallet does after being funded, so the default window is
+  // generous for a desk and still one round trip.
+  let result: Record<string, any>;
+  try {
+    result = unwrapResult(
+      await gateway.request({
+        command: "account_tx",
+        account: input.address,
+        ledger_index_min: -1,
+        ledger_index_max: -1,
+        limit: input.limit ?? 40,
+        forward: false,
+      }),
+    );
+  } catch (err) {
+    // A wallet the node has never seen has no accepts in it. That is an
+    // answer, not a failure — an attendee can be scanned before they are
+    // funded, and the desk asks about them on every poll.
+    if (isRippledError(err, "actNotFound")) return undefined;
+    throw new XrplLayerError(
+      "LEDGER_QUERY_FAILED",
+      `account_tx for ${input.address} failed: ${err instanceof Error ? err.message : String(err)}`,
+      { method: "account_tx", address: input.address },
+    );
+  }
+
+  if (typeof result.error === "string") {
+    if (result.error === "actNotFound") return undefined;
+    throw new XrplLayerError(
+      "LEDGER_QUERY_FAILED",
+      `account_tx for ${input.address} failed: ${result.error}`,
+      { method: "account_tx", address: input.address, rippledError: result.error },
+    );
+  }
+
+  const entries: Record<string, any>[] = Array.isArray(result.transactions)
+    ? result.transactions
+    : [];
+
+  for (const entry of entries) {
+    const body: Record<string, any> = entry.tx ?? entry.tx_json ?? {};
+    if (body.TransactionType !== "NFTokenAcceptOffer") continue;
+    if (sellOfferIdOf(body) !== offerId) continue;
+
+    // A failed accept consumed a fee and nothing else. Reporting its hash
+    // would send verifyClaim off to fail check 4 and make the desk say the
+    // ledger disagreed, when the truth is simply that they have not accepted.
+    const meta = entry.meta ?? entry.metaData;
+    const engineResult = typeof meta === "object" && meta !== null
+      ? (meta as Record<string, any>).TransactionResult
+      : undefined;
+    if (engineResult !== "tesSUCCESS") continue;
+
+    const hash = accountTxHash(entry, body);
+    if (hash) return hash;
+  }
+
+  return undefined;
+}
+
+// ---------------------------------------------------------------------------
 // verifyClaim
 // ---------------------------------------------------------------------------
 
@@ -290,9 +397,12 @@ export async function verifyClaim(
     result = unwrapResult(await gateway.request({ command: "tx", transaction: txHash }));
   } catch (err) {
     if (isRippledError(err, "txnNotFound")) {
+      // NOT YET, not no. A confirm fired off the back of a Xaman signature
+      // beats the ledger it is asking about, every time, for a few seconds.
       return fail(
         "transactionFound",
-        `No transaction ${txHash} on this ledger. Either the claim was never submitted, or this node's history does not reach back far enough.`,
+        `No transaction ${txHash} on this ledger yet. Either it has not been validated, the claim was never submitted, or this node's history does not reach back far enough.`,
+        { notYet: true },
       );
     }
     throw new XrplLayerError(
@@ -304,7 +414,9 @@ export async function verifyClaim(
 
   if (typeof result.error === "string") {
     if (result.error === "txnNotFound") {
-      return fail("transactionFound", `No transaction ${txHash} on this ledger.`);
+      return fail("transactionFound", `No transaction ${txHash} on this ledger yet.`, {
+        notYet: true,
+      });
     }
     throw new XrplLayerError(
       "LEDGER_QUERY_FAILED",
@@ -363,12 +475,18 @@ export async function verifyClaim(
   const engineResult = meta?.TransactionResult;
   const validated = (result.validated ?? body.validated) === true;
   if (engineResult !== "tesSUCCESS" || !validated) {
+    // The second race, and the subtler one: the node HAS the transaction and
+    // it succeeded, but the ledger holding it is not validated yet. That is a
+    // few seconds, and it is not the same answer as tecNO_PERMISSION.
+    const pending = engineResult === "tesSUCCESS" && !validated;
     return fail(
       "succeeded",
       meta === undefined
         ? `Transaction ${txHash} came back without decoded metadata, so its result cannot be confirmed.`
-        : `Transaction ${txHash} did not succeed on a validated ledger (result ${String(engineResult)}, validated ${String(validated)}).`,
-      found,
+        : pending
+          ? `Transaction ${txHash} succeeded but its ledger is not validated yet.`
+          : `Transaction ${txHash} did not succeed on a validated ledger (result ${String(engineResult)}, validated ${String(validated)}).`,
+      pending ? { ...found, notYet: true } : found,
     );
   }
   checks.succeeded = true;

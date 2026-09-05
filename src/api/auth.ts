@@ -639,6 +639,29 @@ export function isAdminApiPath(url: string): boolean {
   return path === ADMIN_API_PREFIX || path.startsWith(`${ADMIN_API_PREFIX}/`);
 }
 
+/**
+ * `POST /events/<id>/claims` — the mint — and nothing else.
+ *
+ * WHY THIS EXISTS. `requireAdmin` only reads `request.admin`, and that is set by
+ * the onRequest hook below, which used to run for `/admin/api` paths alone. So
+ * putting `adminGuard` on a route outside that prefix produced a 401 for
+ * everybody, signed in or not: the cookie arrived (it is `path: "/"`) and
+ * nothing ever turned it into a session.
+ *
+ * The pattern is deliberately tight. Two sibling routes under the same prefix
+ * MUST stay public, and a looser match would take them with it:
+ *
+ *   GET  /events/:id/claims/for/:address     the attendee reading their offer
+ *   POST /events/:id/claims/:offerId/confirm indexing an accept off the ledger
+ *
+ * Anchored, digits only, one optional trailing slash.
+ */
+const MINT_PATH = /^\/events\/\d+\/claims\/?$/;
+
+export function isGuardedMintPath(method: string, url: string): boolean {
+  return method === "POST" && MINT_PATH.test(pathnameOf(url));
+}
+
 /** Trailing slashes are the same route to fastify; treat them the same here. */
 function isLoginPath(path: string): boolean {
   return path === LOGIN_PATH || path === `${LOGIN_PATH}/`;
@@ -756,7 +779,12 @@ export function registerAdminAuth(app: FastifyInstance, deps: ApiDeps): AdminAut
   app.register(cookie, { secret: state.sessionSecret, hook: "onRequest" });
 
   app.addHook("onRequest", async (request, reply) => {
-    if (!isAdminApiPath(request.url)) return undefined;
+    // The mint is outside /admin/api but needs the same treatment: a resolved
+    // session, and a CSRF token, because it is an authenticated state-changing
+    // POST that spends money.
+    if (!isAdminApiPath(request.url) && !isGuardedMintPath(request.method, request.url)) {
+      return undefined;
+    }
 
     const session = await readSession(app, deps, request);
     request.adminSession = session;

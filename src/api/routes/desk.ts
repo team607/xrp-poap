@@ -44,7 +44,9 @@ import { SponsorshipDeniedError, XrplLayerError } from "../../errors.js";
 import { badgeManifestPath, loadBadgeManifest } from "../../metadata/badge-uri-resolver.js";
 import type { AttendanceRecord, ClaimRecord, EventId } from "../../types.js";
 import { assertValidTaxon } from "../../xrpl/encoding.js";
+import { isClaimOfferOpen } from "../../xrpl/offers.js";
 import { getAccountBalanceXrp } from "../../xrpl/sponsor.js";
+import { findAcceptTxHash } from "../../xrpl/verify.js";
 import { reserveShortfallXrp } from "../demo-state.js";
 import type { ApiDeps } from "../deps.js";
 import {
@@ -54,6 +56,7 @@ import {
   statusForXrplError,
 } from "../http-errors.js";
 import { badgeImageUrl } from "./badge.js";
+import { markArrival, verifyThenRecord } from "./claims.js";
 import { adminGuard } from "./events.js";
 
 // ---------------------------------------------------------------------------
@@ -292,6 +295,9 @@ type AttendeeQuery = z.infer<typeof attendeeQuerySchema>;
 const sponsorBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
 type SponsorBody = z.infer<typeof sponsorBodySchema>;
 
+const reconcileBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
+type ReconcileBody = z.infer<typeof reconcileBodySchema>;
+
 // ---------------------------------------------------------------------------
 // Routes
 // ---------------------------------------------------------------------------
@@ -453,6 +459,100 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
         // not an error.
         registration,
         art,
+      });
+    },
+  );
+
+  /**
+   * POST /admin/api/desk/reconcile { address, eventId } — did they accept?
+   *
+   * THE DESK'S SECOND WAY TO FIND OUT, and the one that does not depend on the
+   * browser. The first way is to ask Xaman about the payload the desk created,
+   * which works only while the tab that created it is still open: reload the
+   * page, hand the desk to the next volunteer, or scan a card issued ten
+   * minutes ago, and the payload id is gone. The badge is on the ledger, the
+   * claim row still says `pending`, and the card waits forever. Measured, not
+   * imagined — two attendees on testnet, both holding their badge.
+   *
+   * CHEAP FIRST. While the NFTokenOffer object is still on the ledger nobody
+   * has signed, and that is one `ledger_entry`. Only once it is gone does this
+   * spend an `account_tx` looking for the accept, and only once, because the
+   * next call finds the attendance row instead.
+   *
+   * TRUSTS NOTHING IT FINDS. The hash discovered here goes through the same
+   * `verifyThenRecord` as a confirm the attendee posted themselves — all five
+   * checks, every time. This route cannot record an attendance the ledger does
+   * not support; the worst it can do is fail verification out loud.
+   *
+   * 200 always, with `reconciled` and a `reason` — "not yet" is the normal
+   * answer at a desk and is not an error. 400 bad input | 401 no session
+   */
+  app.post<{ Body: ReconcileBody }>(
+    `${DESK_PREFIX}/reconcile`,
+    { schema: { body: reconcileBodySchema }, preHandler: requireAdmin },
+    async (request, reply) => {
+      const { address, eventId } = request.body;
+      const facts = await readAddressFacts(deps, eventId, address);
+
+      // Already an attendance row: whoever got there first — the attendee's own
+      // pass, the Xaman webhook, an earlier poll — did the work.
+      if (facts.attendance) {
+        return reply.code(200).send({
+          reconciled: false,
+          reason: "already-recorded",
+          attended: true,
+          txHash: facts.attendance.txHash,
+        });
+      }
+
+      const offerId = facts.claim?.status === "pending" ? facts.claim.offerId : null;
+      if (!offerId) {
+        // No badge has been issued to them, or the claim was abandoned. Either
+        // way there is no accept to go looking for.
+        return reply.code(200).send({ reconciled: false, reason: "no-open-claim" });
+      }
+
+      if (await isClaimOfferOpen(deps.gateway, offerId)) {
+        return reply.code(200).send({ reconciled: false, reason: "offer-open", offerId });
+      }
+
+      const txHash = await findAcceptTxHash(deps.gateway, { address, offerId });
+      if (!txHash) {
+        // The offer is gone but no successful accept by this address consumed
+        // it. Cancelled, expired, or accepted so recently that this node has
+        // not caught up — all three look the same from here and all three are
+        // answered by asking again.
+        return reply.code(200).send({ reconciled: false, reason: "accept-not-found", offerId });
+      }
+
+      const outcome = await verifyThenRecord(
+        deps,
+        { eventId, address, txHash, claimedOfferId: offerId },
+        request.log,
+      );
+
+      if (!outcome.verification.attended) {
+        const { status, failedCheck, reason, checks, notYet } = outcome.verification;
+        // A node that has the accept in its history but has not validated the
+        // ledger holding it yet is behind, not disagreeing. Saying
+        // "verification-failed" here would put a red card in front of a
+        // volunteer for a badge that lands four seconds later.
+        return reply.code(200).send({
+          reconciled: false,
+          reason: notYet ? "not-visible-yet" : "verification-failed",
+          txHash,
+          verification: { status, failedCheck, reason, checks },
+        });
+      }
+
+      await markArrival(deps, eventId, address, request.log);
+
+      return reply.code(200).send({
+        reconciled: true,
+        attended: true,
+        alreadyRecorded: outcome.alreadyRecorded,
+        txHash,
+        record: outcome.record,
       });
     },
   );

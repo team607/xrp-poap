@@ -27,6 +27,7 @@ import {
   type VerifyClaimResult,
 } from "../../types.js";
 import type { ApiDeps } from "../deps.js";
+import { adminGuard } from "./events.js";
 import {
   addressSchema,
   eventIdParamsSchema,
@@ -504,12 +505,27 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
    * 409 already attended, claim in flight, or wallet not activated
    * 502 ledger trouble
    */
+  // MINTING IS PRIVILEGED, and this route was open to the internet.
+  //
+  // It spends the issuer's XRP — 0.2 locked in every offer, plus up to 1.5
+  // sponsoring a wallet that cannot hold a badge — and writes a permanent,
+  // unrevocable record. Anyone who could reach the host could mint against any
+  // open event, using a fresh address each time to walk straight past the
+  // per-address limit, until the daily sponsorship cap stopped them.
+  //
+  // It was public because the attendee's own page called it. That page now
+  // READS an offer the desk created (GET .../claims/for/:address below) rather
+  // than creating one, so nothing anonymous needs this route.
+  //
+  // Both guards run. `enforceAddressLimit` still applies: an authenticated desk
+  // can fat-finger the same attendee twice as easily as anyone else.
+  const mintGuard = adminGuard(deps);
   app.post<{ Params: ClaimParams; Body: ClaimBody }>(
     "/events/:eventId/claims",
     {
       schema: { params: eventIdParamsSchema, body: claimBodySchema },
       config: { rateLimit },
-      ...(enforceAddressLimit ? { preHandler: enforceAddressLimit } : {}),
+      preHandler: enforceAddressLimit ? [mintGuard, enforceAddressLimit] : mintGuard,
     },
     async (request, reply) => {
       const { eventId } = request.params;
@@ -754,6 +770,81 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
    * 502 ledger trouble
    */
   /**
+   * GET /events/:eventId/claims/for/:address — is a badge waiting for me?
+   *
+   * PUBLIC, AND READ-ONLY. This is the half of the old POST that an attendee
+   * legitimately needs: the offer the DESK created for them, and a Xaman request
+   * to accept it. It mints nothing, spends nothing, and creates no claim slot —
+   * if the desk has not issued yet, it is a 404 and the answer is "see a
+   * volunteer".
+   *
+   * WHY IT IS SAFE TO LEAVE OPEN. A claim offer is destination-locked and
+   * already public on the ledger: anyone can read `nft_sell_offers` and see the
+   * same thing. Nothing here is a secret, and nothing here can be spent by the
+   * person reading it — only the destination address can accept, and only with
+   * a key this server has never held.
+   *
+   * Rate limited like the mint it replaced, because each call asks Xaman for a
+   * fresh payload.
+   *
+   * 200 an offer is open | 404 nothing waiting yet | 400 bad address or event
+   */
+  app.get<{
+    Params: { eventId: number; address: string };
+    Querystring: { returnUrl?: string };
+  }>(
+    "/events/:eventId/claims/for/:address",
+    {
+      schema: {
+        params: z.object({ eventId: eventIdSchema, address: addressSchema }),
+        // Where Xaman sends the attendee back to after they approve. Same field
+        // and same validation the POST body carried, moved to the query string
+        // because a GET has no body — without it a phone that leaves for Xaman
+        // has no way back and the one-tap flow becomes two.
+        querystring: z.object({ returnUrl: z.string().url().max(2000).optional() }),
+      },
+      config: { rateLimit },
+    },
+    async (request, reply) => {
+      const { eventId, address } = request.params;
+      const { returnUrl } = request.query;
+
+      const held = await deps.claims.find(eventId, address);
+      if (!held || held.status !== "pending" || !held.offerId) {
+        // Not an error — the ordinary state before a volunteer has issued.
+        return sendError(
+          reply,
+          404,
+          "NOT_FOUND",
+          "No badge has been issued to this wallet for this event yet.",
+          { eventId, address },
+        );
+      }
+
+      const accept = buildAcceptOfferTxjson({
+        offerId: held.offerId,
+        attendeeAddress: address,
+        ...(deps.config.sourceTag === undefined ? {} : { sourceTag: deps.config.sourceTag }),
+      });
+      const xaman = await xamanHandles(deps, request.log, {
+        offerId: held.offerId,
+        address,
+        eventId,
+        ...(returnUrl ? { returnUrl: { web: returnUrl } } : {}),
+      });
+
+      return reply.code(200).send({
+        eventId,
+        address,
+        offerId: held.offerId,
+        ...(held.nftokenId ? { nftokenId: held.nftokenId } : {}),
+        accept,
+        ...(xaman ? { xaman } : {}),
+      });
+    },
+  );
+
+  /**
    * What happened to a claim's Xaman payload, INCLUDING the transaction hash.
    *
    * This exists because the registration sign-in route deliberately returns
@@ -803,15 +894,29 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
       );
 
       if (!outcome.verification.attended) {
-        const { status, failedCheck, reason, checks } = outcome.verification;
+        const { status, failedCheck, reason, checks, notYet } = outcome.verification;
+        // `notYet` is the difference between "ask again in a moment" and "that
+        // did not happen". Both are 422 — nothing was recorded either way —
+        // but a caller that cannot tell them apart either gives up on a real
+        // accept or retries a forged one forever.
         return sendError(
           reply,
           422,
           "VERIFICATION_FAILED",
           reason ?? `The ledger does not show ${address} accepting a badge for event ${eventId}.`,
-          { status, failedCheck, checks, txHash },
+          { status, failedCheck, checks, txHash, ...(notYet ? { notYet: true } : {}) },
         );
       }
+
+      // The desk's own record of the arrival.
+      //
+      // `attendance` is the ledger fact. `registrations.checked_in_at` is the
+      // observation that a person turned up, and it is what the admin console
+      // and the CSV export read. Confirming a badge IS that moment — the
+      // attendee accepted it standing at the desk — so writing one without the
+      // other left the console saying "not yet" for everybody, permanently.
+      // markCheckedIn() has always existed and had tests; nothing called it.
+      await markArrival(deps, eventId, address, request.log);
 
       return reply.code(200).send({
         attended: true,
@@ -821,4 +926,32 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
       });
     },
   );
+}
+
+/**
+ * Mark a registered attendee as having arrived.
+ *
+ * NEVER FAILS THE REQUEST. By the time this runs the badge is on the ledger and
+ * the attendance row is written; a check-in that does not stick is a cosmetic
+ * loss, and turning it into a 500 would send the desk back to retry a confirm
+ * that already succeeded. It is idempotent besides, so a retry cannot move the
+ * recorded time.
+ *
+ * A walk-up has no registration to mark, and that is not an error — turning up
+ * without signing up is normal.
+ */
+export async function markArrival(
+  deps: ApiDeps,
+  eventId: EventId,
+  address: string,
+  log: FastifyBaseLogger,
+): Promise<void> {
+  if (!deps.registrations) return;
+  try {
+    const registration = await deps.registrations.findByAddress(eventId, address);
+    if (!registration) return;
+    await deps.registrations.markCheckedIn(registration.id);
+  } catch (err) {
+    log.warn({ err, eventId, address }, "attendance recorded but the check-in did not stick");
+  }
 }

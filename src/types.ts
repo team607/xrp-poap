@@ -287,6 +287,22 @@ export interface VerifyClaimResult {
   sellOfferId?: string;
   /** Populated when the first failing check is known. */
   failedCheck?: keyof VerificationChecks;
+  /**
+   * The failure is TIMING, not contradiction: the accept is real, this node
+   * has just not caught up with it. A ledger closes every few seconds and
+   * Xaman reports a transaction hash the instant it is submitted, so a confirm
+   * fired off the back of a signature routinely arrives inside that window.
+   *
+   * The distinction is the whole difference between "wait another moment" and
+   * "the ledger says that did not happen" — and telling an attendee the second
+   * when the first is true sends them off to re-check a hash that was correct.
+   * Measured: a confirm 422'd at 12:03:07 and the identical one returned 200
+   * at 12:06:06.
+   *
+   * Never set on a real mismatch, so a caller may safely retry on it and only
+   * on it.
+   */
+  notYet?: boolean;
   reason?: string;
   nftokenId?: string;
   isBurned?: boolean;

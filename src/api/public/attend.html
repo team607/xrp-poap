@@ -1557,7 +1557,10 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
        two things and the button should say the one the attendee cares about. */
     pendingOpen: false,
     /* "xaman" | "index" | "lookup" | "paste". Labelling only — see section I. */
-    hashSource: null
+    hashSource: null,
+    /* Confirms that came back "the ledger has not caught up yet". Bounded, so
+       a genuinely absent transaction still stops asking. */
+    settleTries: 0
   };
 
   /* ---- storage: a phone reload mid-flow must not dead-end ----------------
@@ -1785,6 +1788,13 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
     if (offline === v) return;
     offline = v;
     show("b-offline", v);
+  }
+
+  /* "Not yet" wearing a 422. Set by the server only when the accept is real
+     and this node has not caught up — never on a genuine mismatch. */
+  function isNotYet(r) {
+    return !!(r && r.json && r.json.error && r.json.error.details &&
+              r.json.error.details.notYet === true);
   }
 
   function errorOf(r) {
@@ -2726,12 +2736,19 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
     clearError("wait-err");
     paintDock();
 
-    var body = { address: app.address };
+    /* A READ, not a mint.
+
+       Minting is behind the admin session now: it spends the issuer's XRP and
+       writes a permanent record, so nothing anonymous may trigger it. This asks
+       whether the DESK has issued a badge to this wallet yet. A 404 is the
+       ordinary "not yet", not a failure. */
+    var path = "/events/" + encodeURIComponent(String(app.eventId)) +
+               "/claims/for/" + encodeURIComponent(app.address);
     if (location.protocol === "https:" || location.protocol === "http:") {
-      body.returnUrl = { web: location.href };
+      path += "?returnUrl=" + encodeURIComponent(location.href);
     }
 
-    call("POST", "/events/" + encodeURIComponent(String(app.eventId)) + "/claims", body)
+    call("GET", path)
       .then(function (r) {
         app.busy = false;
         var wantedOpen = app.pendingOpen;
@@ -2743,7 +2760,8 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
           rememberClaim({
             offerId: String(j.offerId),
             nftokenId: j.nftokenId ? String(j.nftokenId) : null,
-            reused: j.reusedExistingOffer === true,
+            /* Always true now: the desk made this offer, never this page. */
+            reused: true,
             accept: j.accept || null,
             xaman: x ? {
               uuid: String(x.uuid || ""),
@@ -2767,20 +2785,16 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
           return;
         }
 
-        /* Already attended. The 409 carries the record, which is the answer the
-           attendee wanted arriving by a different route. */
-        if (r.status === 409 && r.json && r.json.record) {
-          var rec = r.json.record;
-          if (rec.txHash) rememberTx(String(rec.txHash));
-          showDone({ record: rec, alreadyRecorded: true });
-          return;
-        }
-        if (r.status === 409) {
+        /* NOT ISSUED YET, which is the normal state before a volunteer has done
+           anything. Not an error, and no longer "the event is missing" — the
+           guest keeps showing their code and this screen picks the badge up
+           on its own. */
+        if (r.status === 404) {
           showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
             warn: true,
-            plain: "Something else is already being done for your wallet — most likely the volunteer pressing issue at the same moment.",
-            hint: "Give it a few seconds, then try again.",
-            retryLabel: "Try again", retry: function () { requestAccept({ thenOpen: true }); }
+            plain: "Nothing has been issued to your wallet yet.",
+            hint: "Show the code above to a volunteer. They press issue, and this screen notices on its own.",
+            retryLabel: "Check again", retry: function () { requestAccept({ thenOpen: true }); }
           });
           return;
         }
@@ -2793,8 +2807,6 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
           });
           return;
         }
-        if (r.status === 404) { showClosed(r); return; }
-
         showError(app.face === "offer" ? "offer-err" : "wait-err", r, {
           hint: "Nothing is half-done, and pressing again will never give you two badges.",
           retryLabel: "Try again", retry: function () { requestAccept({ thenOpen: true }); }
@@ -3238,6 +3250,28 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
       if (r.ok && r.json) { markCall(3, "ok"); showDone(r.json); return; }
 
       markCall(3, "err");
+
+      /* THE LEDGER IS BEHIND, NOT DISAGREEING.
+         Xaman hands over the transaction hash the moment it submits; a ledger
+         takes a few seconds more to validate. A confirm sent off the back of a
+         signature lands inside that window routinely, and the copy below —
+         wrong reference, wrong wallet, never went through — is false in every
+         one of those cases. Worse, its retry threw away the correct hash and
+         asked the attendee to find another. The server now marks this one
+         `notYet`, so wait for the ledger instead of blaming them. */
+      if (r.status === 422 && isNotYet(r) && app.settleTries < 6) {
+        app.settleTries++;
+        showError("record-err", r, {
+          warn: true,
+          plain: "Your approval went through. The ledger just has not finished writing it down yet — this takes a few seconds.",
+          hint: "Nothing to do. We are still checking, and your badge is already yours.",
+          retryLabel: "Check now",
+          retry: confirmAttendance
+        });
+        setTimeout(function () { if (app.face === "record" && !app.done) confirmAttendance(); }, 4000);
+        return;
+      }
+
       if (r.status === 422) {
         showError("record-err", r, {
           plain: "We checked that against the ledger and it does not match — the wrong reference, the wrong wallet, or something that never went through.",

@@ -13,6 +13,7 @@ import { MockGateway, rippledError } from "../../test/helpers/mock-gateway.js";
 import { XrplLayerError } from "../errors.js";
 import {
   decodeNftokenId,
+  findAcceptTxHash,
   recoverNftokenId,
   unscrambleTaxon,
   verifyClaim,
@@ -438,6 +439,9 @@ describe("verifyClaim — each of the five checks fails on its own", () => {
     expect(result.failedCheck).toBe("transactionFound");
     expect(result.checks.transactionFound).toBe(false);
     expect(result.reason).toMatch(/No transaction/);
+    // A confirm fired off the back of a Xaman signature beats the ledger it is
+    // asking about. "Not found" a second after signing means wait, not no.
+    expect(result.notYet).toBe(true);
   });
 
   it("1. transactionFound: a txnNotFound error body is also a clean false", async () => {
@@ -445,6 +449,7 @@ describe("verifyClaim — each of the five checks fails on its own", () => {
     const result = await verifyClaim(gateway, claim);
     expect(result.failedCheck).toBe("transactionFound");
     expect(result.attended).toBe(false);
+    expect(result.notYet).toBe(true);
   });
 
   it("1. transactionFound: a malformed hash fails without a round trip", async () => {
@@ -453,6 +458,8 @@ describe("verifyClaim — each of the five checks fails on its own", () => {
     expect(result.failedCheck).toBe("transactionFound");
     expect(result.reason).toMatch(/64-character hex transaction hash/);
     expect(gateway.requests).toHaveLength(0);
+    // Waiting will not turn a typo into a transaction.
+    expect(result.notYet).toBeUndefined();
   });
 
   it("1. transactionFound: an unrecognised response shape fails cleanly", async () => {
@@ -501,8 +508,24 @@ describe("verifyClaim — each of the five checks fails on its own", () => {
   it("4. succeeded: an unvalidated transaction is not yet attendance", async () => {
     const gateway = gatewayWith(acceptTxV2({ validated: false }));
     const result = await verifyClaim(gateway, claim);
+    expect(result.attended).toBe(false);
     expect(result.failedCheck).toBe("succeeded");
-    expect(result.reason).toMatch(/validated false/);
+    expect(result.reason).toMatch(/not validated yet/);
+    // The accept is real and succeeded; only the ledger holding it is behind.
+    // Callers may retry on this, and this is one of only two ways to earn it.
+    expect(result.notYet).toBe(true);
+  });
+
+  it("4. succeeded: a REJECTED transaction is never 'not yet'", async () => {
+    // The line the whole flag turns on. tecNO_PERMISSION is the wrong-wallet
+    // accept, measured on testnet twice; retrying it forever would be a desk
+    // card that never resolves and an attendee told to keep waiting.
+    const gateway = gatewayWith(
+      acceptTxV2({ meta: acceptMeta({ TransactionResult: "tecNO_PERMISSION" }) }),
+    );
+    const result = await verifyClaim(gateway, claim);
+    expect(result.failedCheck).toBe("succeeded");
+    expect(result.notYet).toBeUndefined();
   });
 
   it("4. succeeded: missing metadata cannot be assumed successful", async () => {
@@ -757,5 +780,100 @@ describe("verifyClaim — faults throw, bad claims do not", () => {
     await expect(
       verifyClaim(gateway, { ...claim, eventId: 2_147_483_648 }),
     ).rejects.toMatchObject({ code: "INVALID_TAXON" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// findAcceptTxHash — the desk's ledger-side way of noticing an accept
+// ---------------------------------------------------------------------------
+
+describe("findAcceptTxHash", () => {
+  const entry = (over: Record<string, unknown> = {}): Record<string, unknown> => ({
+    tx: { TransactionType: "NFTokenAcceptOffer", NFTokenSellOffer: OFFER_ID, Account: ATTENDEE },
+    meta: { TransactionResult: "tesSUCCESS" },
+    hash: TX_HASH,
+    ...over,
+  });
+
+  const withTxs = (...transactions: Record<string, unknown>[]): MockGateway =>
+    new MockGateway({ issuerAddress: ISSUER }).onRequest("account_tx", { result: { transactions } });
+
+  it("finds the accept that consumed this offer", async () => {
+    const gw = withTxs(entry());
+    await expect(findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID })).resolves.toBe(
+      TX_HASH,
+    );
+    expect(gw.lastRequest("account_tx")?.account).toBe(ATTENDEE);
+  });
+
+  it("reads the API v2 shape, where the body is tx_json", async () => {
+    // Same account, different node. A desk that failed over mid-event must not
+    // stop being able to see accepts.
+    const gw = withTxs({
+      tx_json: { TransactionType: "NFTokenAcceptOffer", NFTokenSellOffer: OFFER_ID },
+      meta: { TransactionResult: "tesSUCCESS" },
+      hash: TX_HASH,
+    });
+    await expect(findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID })).resolves.toBe(
+      TX_HASH,
+    );
+  });
+
+  it("ignores an accept of somebody else's offer", async () => {
+    const gw = withTxs(
+      entry({
+        tx: { TransactionType: "NFTokenAcceptOffer", NFTokenSellOffer: OTHER_SELL_OFFER_ID },
+      }),
+    );
+    await expect(
+      findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("ignores a FAILED accept", async () => {
+    // The wrong-wallet case, measured on testnet: tecNO_PERMISSION burns a fee
+    // and moves nothing. Returning its hash would make the desk announce that
+    // the ledger disagreed, when the truth is they simply have not accepted.
+    const gw = withTxs(entry({ meta: { TransactionResult: "tecNO_PERMISSION" } }));
+    await expect(
+      findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("ignores transactions that are not accepts", async () => {
+    const gw = withTxs(entry({ tx: { TransactionType: "Payment" } }));
+    await expect(
+      findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("treats an account the ledger has never seen as 'no accept yet'", async () => {
+    // A wallet gets scanned before it is funded, and the desk asks about it on
+    // every poll. actNotFound is the answer to the question, not a fault.
+    const gw = new MockGateway({ issuerAddress: ISSUER }).onRequest(
+      "account_tx",
+      rippledError("actNotFound"),
+    );
+    await expect(
+      findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID }),
+    ).resolves.toBeUndefined();
+  });
+
+  it("does not swallow a real query failure", async () => {
+    const gw = new MockGateway({ issuerAddress: ISSUER }).onRequest(
+      "account_tx",
+      rippledError("noNetwork"),
+    );
+    await expect(findAcceptTxHash(gw, { address: ATTENDEE, offerId: OFFER_ID })).rejects.toBeInstanceOf(
+      XrplLayerError,
+    );
+  });
+
+  it("refuses an offer id that is not 64 hex characters, without a round trip", async () => {
+    const gw = new MockGateway({ issuerAddress: ISSUER });
+    await expect(
+      findAcceptTxHash(gw, { address: ATTENDEE, offerId: "not-an-offer" }),
+    ).rejects.toBeInstanceOf(XrplLayerError);
+    expect(gw.requests).toHaveLength(0);
   });
 });

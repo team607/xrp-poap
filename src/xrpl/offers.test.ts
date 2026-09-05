@@ -11,6 +11,7 @@ import {
   countPendingIssuerOffers,
   createClaimOffer,
   getSellOffers,
+  isClaimOfferOpen,
 } from "./offers.js";
 
 const ISSUER = "rBdhYBA2uaVYG7ia2yusmPu5qMS4hE6oQ";
@@ -296,5 +297,34 @@ describe("acceptOfferAs", () => {
     expect(tx.Account).not.toBe(ISSUER);
     expect(tx.NFTokenSellOffer).toBe(OFFER_ID);
     expect(gw.submits[0]?.options?.wallet).toBe(wallet);
+  });
+});
+
+describe("isClaimOfferOpen", () => {
+  it("is open while the NFTokenOffer object is still on the ledger", async () => {
+    const gw = gateway().onRequest("ledger_entry", {
+      result: { index: OFFER_ID, node: { LedgerEntryType: "NFTokenOffer" } },
+    });
+
+    await expect(isClaimOfferOpen(gw, OFFER_ID)).resolves.toBe(true);
+    expect(gw.lastRequest("ledger_entry")?.nft_offer).toBe(OFFER_ID);
+  });
+
+  it("is closed when the node throws entryNotFound", async () => {
+    const gw = gateway().onRequest("ledger_entry", rippledError("entryNotFound"));
+    await expect(isClaimOfferOpen(gw, OFFER_ID)).resolves.toBe(false);
+  });
+
+  it("is closed when the node reports entryNotFound in the result body", async () => {
+    // Same fact, different wire shape. A node that answers this way used to
+    // read as "still open", which is the state that leaves a desk waiting on
+    // an accept that already happened.
+    const gw = gateway().onRequest("ledger_entry", { result: { error: "entryNotFound" } });
+    await expect(isClaimOfferOpen(gw, OFFER_ID)).resolves.toBe(false);
+  });
+
+  it("does not turn a real query failure into 'closed'", async () => {
+    const gw = gateway().onRequest("ledger_entry", rippledError("noNetwork"));
+    await expect(isClaimOfferOpen(gw, OFFER_ID)).rejects.toBeInstanceOf(XrplLayerError);
   });
 });

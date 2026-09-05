@@ -367,6 +367,23 @@ interface Harness {
   gateway: MockGateway;
 }
 
+/**
+ * The injected admin check, and it ADMITS BY DEFAULT.
+ *
+ * Minting is behind the admin session, but these tests are about what minting
+ * does — the slot, the sponsorship, the offer, the reserve — not about whether
+ * the guard works. Making every one of them carry a session would be forty
+ * edits that assert nothing new; src/api/auth.ts has its own tests for that.
+ *
+ * Refusal is exercised deliberately, by `deniedHarness()` below.
+ */
+const admitAdmin: NonNullable<ApiDeps["requireAdmin"]> = () => undefined;
+
+const refuseAdmin: NonNullable<ApiDeps["requireAdmin"]> = (_request, reply) =>
+  reply
+    .code(401)
+    .send({ error: { code: "UNAUTHORIZED", message: "Not signed in. POST /admin/api/login first." } });
+
 function harness(options: { config?: Partial<AppConfig>; deps?: Partial<ApiDeps> } = {}): Harness {
   const chain = makeChainMocks();
   const attendance = new FakeAttendanceRepository();
@@ -385,6 +402,7 @@ function harness(options: { config?: Partial<AppConfig>; deps?: Partial<ApiDeps>
     chain,
     metadataUriForEvent: () => METADATA_URI,
     rateLimit: { enabled: false },
+    requireAdmin: admitAdmin,
     ...options.deps,
   };
 
@@ -979,6 +997,188 @@ describe("POST /events/:eventId/claims — per-attendee badge artwork", () => {
 // POST /events/:eventId/claims/:offerId/confirm
 // ---------------------------------------------------------------------------
 
+/**
+ * A registrations repo just complete enough for the check-in path.
+ *
+ * The main harness deliberately has none, so every confirm test above exercises
+ * the walk-up case. These two cover the other half — which is how the missing
+ * `markCheckedIn()` call went unnoticed: with no repo wired, the code that was
+ * never written was also never missed.
+ */
+class CheckInSpy {
+  rows: Array<{ id: string; address: string; checkedInAt: Date | null }> = [];
+  failFind = false;
+
+  seed(id: string, address: string): void {
+    this.rows.push({ id, address, checkedInAt: null });
+  }
+
+  async findByAddress(_eventId: number, address: string): Promise<any> {
+    if (this.failFind) throw new Error("registrations store is down");
+    return this.rows.find((r) => r.address === address) ?? null;
+  }
+  async markCheckedIn(id: string, at?: Date): Promise<void> {
+    const row = this.rows.find((r) => r.id === id);
+    if (!row) throw new Error("no such registration");
+    // Idempotent, exactly as the real one is.
+    row.checkedInAt ??= at ?? new Date();
+  }
+  async create(): Promise<any> {
+    throw new Error("not used");
+  }
+  async findById(): Promise<any> {
+    return null;
+  }
+  async listByEvent(): Promise<any[]> {
+    return [];
+  }
+  async countByEvent(): Promise<{ total: number; checkedIn: number }> {
+    return { total: this.rows.length, checkedIn: this.rows.filter((r) => r.checkedInAt).length };
+  }
+}
+
+describe("minting is behind the admin session", () => {
+  /**
+   * The route was open to the internet. Anyone who could reach the host could
+   * mint against any open event, using a fresh address each time to step past
+   * the per-address limit, spending 0.2 XRP of locked reserve and up to 1.5 XRP
+   * of sponsorship per request until the daily cap stopped them.
+   */
+  it("401s an unauthenticated mint, and spends nothing doing it", async () => {
+    const h = harness({ deps: { requireAdmin: refuseAdmin } });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims`,
+      payload: { address: ATTENDEE },
+    });
+
+    expect(res.statusCode).toBe(401);
+    expect(res.json().error.code).toBe("UNAUTHORIZED");
+    // Refused before the slot, the mint, the offer and the sponsorship.
+    expect(h.claims.rows).toHaveLength(0);
+    expect(h.chain.mint).not.toHaveBeenCalled();
+    expect(h.chain.createClaimOffer).not.toHaveBeenCalled();
+    expect(h.chain.sponsorWallet).not.toHaveBeenCalled();
+  });
+
+  it("still lets a signed-in desk through", async () => {
+    const h = harness();
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims`,
+      payload: { address: ATTENDEE },
+    });
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.mint).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("GET /events/:eventId/claims/for/:address", () => {
+  /**
+   * What the attendee's own page uses now that it may not mint. Public on
+   * purpose: a claim offer is destination-locked and already readable from the
+   * ledger, so this reveals nothing, and only the destination can accept it —
+   * with a key this server has never held.
+   */
+  it("is readable with no session at all", async () => {
+    const h = harness({ deps: { requireAdmin: refuseAdmin } });
+    h.claims.rows.push({
+      id: "c1",
+      eventId: EVENT_ID,
+      address: ATTENDEE,
+      status: "pending",
+      offerId: OFFER_ID,
+      nftokenId: NFTOKEN_ID,
+      expiresAt: new Date(Date.now() + 600_000),
+    } as never);
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: `/events/${EVENT_ID}/claims/for/${ATTENDEE}`,
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({
+      offerId: OFFER_ID,
+      nftokenId: NFTOKEN_ID,
+      accept: { TransactionType: "NFTokenAcceptOffer", NFTokenSellOffer: OFFER_ID },
+    });
+  });
+
+  it("404s before the desk has issued, and mints nothing while saying so", async () => {
+    const h = harness();
+
+    const res = await h.app.inject({
+      method: "GET",
+      url: `/events/${EVENT_ID}/claims/for/${ATTENDEE}`,
+    });
+
+    // The ordinary state of an attendee standing in a queue.
+    expect(res.statusCode).toBe(404);
+    expect(h.chain.mint).not.toHaveBeenCalled();
+    expect(h.claims.rows).toHaveLength(0);
+  });
+});
+
+describe("confirming a badge also checks the attendee in", () => {
+  it("marks a registered attendee as arrived", async () => {
+    const registrations = new CheckInSpy();
+    registrations.seed("reg-1", ATTENDEE);
+    const h = harness({ deps: { registrations: registrations as any } });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims/${OFFER_ID}/confirm`,
+      payload: { address: ATTENDEE, txHash: ACCEPT_TX },
+    });
+
+    expect(res.statusCode).toBe(200);
+    expect(h.attendance.rows).toHaveLength(1);
+    // The one that was missing: attendance alone left the console saying
+    // "not yet" for everybody, forever.
+    expect(registrations.rows[0]?.checkedInAt).toBeInstanceOf(Date);
+  });
+
+  it("does not invent an arrival for a walk-up", async () => {
+    const registrations = new CheckInSpy(); // nobody registered
+    const h = harness({ deps: { registrations: registrations as any } });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims/${OFFER_ID}/confirm`,
+      payload: { address: ATTENDEE, txHash: ACCEPT_TX },
+    });
+
+    // Turning up without signing up is normal, not an error.
+    expect(res.statusCode).toBe(200);
+    expect(h.attendance.rows).toHaveLength(1);
+    expect(registrations.rows).toHaveLength(0);
+  });
+
+  it("still confirms when the check-in itself fails", async () => {
+    const registrations = new CheckInSpy();
+    registrations.seed("reg-1", ATTENDEE);
+    registrations.failFind = true;
+    const h = harness({ deps: { registrations: registrations as any } });
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims/${OFFER_ID}/confirm`,
+      payload: { address: ATTENDEE, txHash: ACCEPT_TX },
+    });
+
+    // The badge is on the ledger and attendance is written by this point. A
+    // 500 here would send the desk back to retry a confirm that succeeded.
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ attended: true });
+    expect(h.attendance.rows).toHaveLength(1);
+    expect(registrations.rows[0]?.checkedInAt).toBeNull();
+  });
+});
+
 describe("POST /events/:eventId/claims/:offerId/confirm", () => {
   it("422s a failed verification and writes nothing", async () => {
     const h = harness();
@@ -995,6 +1195,40 @@ describe("POST /events/:eventId/claims/:offerId/confirm", () => {
     expect(body.error.code).toBe("VERIFICATION_FAILED");
     expect(body.error.details.failedCheck).toBe("submittedByAddress");
     expect(body.error.details.checks.submittedByAddress).toBe(false);
+    // A real mismatch carries no retry hint: waiting will not change it.
+    expect(body.error.details.notYet).toBeUndefined();
+    expect(h.attendance.rows).toHaveLength(0);
+  });
+
+  /**
+   * THE RACE, and it is not hypothetical: a confirm 422'd at 12:03:07 on
+   * testnet and the identical one returned 200 at 12:06:06. Xaman reports the
+   * transaction hash the instant it submits; a ledger takes a few seconds more
+   * to validate. Both pages used to read that 422 as "the ledger disagrees" —
+   * the desk stopped watching and showed a red card, and the attendee's page
+   * threw away a correct hash and asked them to find another. Neither could
+   * tell the two apart, because the response did not say.
+   */
+  it("marks a 422 that is only the ledger catching up, so a caller may retry", async () => {
+    const h = harness();
+    h.chain.verifyClaim.mockResolvedValue({
+      attended: false,
+      status: "not_attended",
+      checks: { ...ALL_CHECKS_PASS, transactionFound: false },
+      failedCheck: "transactionFound",
+      notYet: true,
+      reason: "No transaction on this ledger yet.",
+    } as VerifyClaimResult);
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims/${OFFER_ID}/confirm`,
+      payload: { address: ATTENDEE, txHash: ACCEPT_TX },
+    });
+
+    // Still a 422 and still nothing written — only the reading changes.
+    expect(res.statusCode).toBe(422);
+    expect(res.json().error.details.notYet).toBe(true);
     expect(h.attendance.rows).toHaveLength(0);
   });
 

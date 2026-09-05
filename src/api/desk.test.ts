@@ -389,6 +389,11 @@ describe("the desk is behind a session", () => {
         url: "/admin/api/desk/sponsor",
         payload: { address: ATTENDEE, eventId: CONFERENCE },
       },
+      {
+        method: "POST" as const,
+        url: "/admin/api/desk/reconcile",
+        payload: { address: ATTENDEE, eventId: CONFERENCE },
+      },
     ];
 
     for (const call of calls) {
@@ -1265,5 +1270,218 @@ describe("the desk answers exactly what /demo/lookup answered", () => {
       expect(call[1].config).toBe(h.deps.config.sponsor);
       expect(call[1].ledger).toBe(h.deps.sponsorLedger);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Reconcile — noticing an accept the browser never saw
+// ---------------------------------------------------------------------------
+
+/**
+ * THE BUG THIS ROUTE IS FOR, measured on testnet: two attendees accepted their
+ * badge in Xaman, both badges landed, and both claim rows sat `pending`
+ * forever because the desk's only way of noticing is to ask Xaman about a
+ * payload id that lives in one browser tab. Reload, hand over the desk, or
+ * press "Watch for them to accept" on a card built from a lookup, and there is
+ * no id to ask about. The ledger knew the whole time; nothing was reading it.
+ */
+describe("POST /admin/api/desk/reconcile", () => {
+  const reconcile = (h: Harness, address = ATTENDEE, eventId: number = CONFERENCE) =>
+    h.app.inject({
+      method: "POST",
+      url: "/admin/api/desk/reconcile",
+      payload: { address, eventId },
+      headers: asAdmin,
+    });
+
+  /** A verifyClaim that passes, with the chain's own view of what moved. */
+  const verifies = (over: Record<string, unknown> = {}) =>
+    vi.fn(async () => ({
+      attended: true,
+      status: "attended",
+      checks: {
+        transactionFound: true,
+        isAcceptOffer: true,
+        submittedByAddress: true,
+        succeeded: true,
+        issuerAndTaxonMatch: true,
+      },
+      nftokenId: NFTOKEN_ID,
+      sellOfferId: OFFER_ID,
+      ledgerIndex: 90_210,
+      ...over,
+    })) as unknown as ChainOps["verifyClaim"];
+
+  const offerGone = (h: Harness) =>
+    h.gateway.onRequest("ledger_entry", rippledError("entryNotFound"));
+
+  const acceptInHistory = (h: Harness, over: Record<string, unknown> = {}) =>
+    h.gateway.onRequest("account_tx", {
+      result: {
+        transactions: [
+          {
+            tx: { TransactionType: "NFTokenAcceptOffer", NFTokenSellOffer: OFFER_ID },
+            meta: { TransactionResult: "tesSUCCESS" },
+            hash: ACCEPT_TX,
+            ...over,
+          },
+        ],
+      },
+    });
+
+  it("records the attendance the desk never saw, and marks them arrived", async () => {
+    const verifyClaim = verifies();
+    const h = harness({ chain: { verifyClaim } });
+    await h.claims.seed(CONFERENCE, ATTENDEE, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    const reg = h.registrations.seed({
+      eventId: CONFERENCE,
+      address: ATTENDEE,
+      addressProof: "xaman_signin",
+      displayName: "Priya Raman",
+      email: null,
+      signinPayloadUuid: null,
+      registeredAt: new Date("2026-08-01T09:00:00.000Z"),
+      checkedInAt: null,
+    });
+    offerGone(h);
+    acceptInHistory(h);
+
+    const res = await reconcile(h);
+    const body = res.json();
+
+    expect(res.statusCode).toBe(200);
+    expect(body.reconciled).toBe(true);
+    expect(body.txHash).toBe(ACCEPT_TX);
+    expect(h.attendance.rows).toHaveLength(1);
+    expect(h.attendance.rows[0]?.txHash).toBe(ACCEPT_TX);
+
+    // Every one of the five checks still ran. This route discovers a hash; it
+    // does not get to decide what the hash means.
+    expect(verifyClaim).toHaveBeenCalledWith(
+      h.gateway,
+      expect.objectContaining({ address: ATTENDEE, eventId: CONFERENCE, txHash: ACCEPT_TX }),
+    );
+
+    // Accepting a badge at the desk IS turning up.
+    expect(h.registrations.rows.find((r) => r.id === reg.id)?.checkedInAt).toBeInstanceOf(Date);
+  });
+
+  it("says 'not yet' and reads no history while the offer is still open", async () => {
+    // The common answer during a poll. An account_tx per attendee per three
+    // seconds is what makes the cheap probe worth having.
+    const h = harness({ chain: { verifyClaim: vi.fn() as unknown as ChainOps["verifyClaim"] } });
+    await h.claims.seed(CONFERENCE, ATTENDEE, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    h.gateway.onRequest("ledger_entry", {
+      result: { index: OFFER_ID, node: { LedgerEntryType: "NFTokenOffer" } },
+    });
+
+    const body = (await reconcile(h)).json();
+
+    expect(body).toMatchObject({ reconciled: false, reason: "offer-open" });
+    expect(h.gateway.requests.filter((r) => r.command === "account_tx")).toHaveLength(0);
+    expect(h.attendance.rows).toHaveLength(0);
+  });
+
+  it("touches the ledger at all only when there is an open claim", async () => {
+    const h = harness({ chain: { verifyClaim: vi.fn() as unknown as ChainOps["verifyClaim"] } });
+
+    const body = (await reconcile(h)).json();
+
+    expect(body).toMatchObject({ reconciled: false, reason: "no-open-claim" });
+    expect(h.gateway.requests).toHaveLength(0);
+  });
+
+  it("reports an offer that is gone with no accept behind it", async () => {
+    // Cancelled, expired, or a node that has not caught up. All three are
+    // answered by asking again, and none of them is an attendance.
+    const h = harness({ chain: { verifyClaim: vi.fn() as unknown as ChainOps["verifyClaim"] } });
+    await h.claims.seed(CONFERENCE, ATTENDEE, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    offerGone(h);
+    h.gateway.onRequest("account_tx", { result: { transactions: [] } });
+
+    expect((await reconcile(h)).json()).toMatchObject({
+      reconciled: false,
+      reason: "accept-not-found",
+    });
+    expect(h.attendance.rows).toHaveLength(0);
+  });
+
+  it("does not re-record somebody who is already indexed", async () => {
+    const verifyClaim = verifies();
+    const h = harness({ chain: { verifyClaim } });
+    await h.attendance.insert({
+      eventId: CONFERENCE,
+      address: ATTENDEE,
+      nftokenId: NFTOKEN_ID,
+      offerId: OFFER_ID,
+      txHash: ACCEPT_TX,
+      ledgerIndex: 90_210,
+    });
+
+    expect((await reconcile(h)).json()).toMatchObject({
+      reconciled: false,
+      reason: "already-recorded",
+      attended: true,
+      txHash: ACCEPT_TX,
+    });
+    expect(verifyClaim).not.toHaveBeenCalled();
+    expect(h.gateway.requests).toHaveLength(0);
+    expect(h.attendance.rows).toHaveLength(1);
+  });
+
+  it("writes nothing when the ledger disagrees, and says so at 200", async () => {
+    // A 200 because "the chain says no" is a thing the desk renders, not a
+    // thing it retries.
+    const verifyClaim = verifies({
+      attended: false,
+      status: "not_attended",
+      failedCheck: "submittedByAddress",
+      reason: "someone else signed it",
+    });
+    const h = harness({ chain: { verifyClaim } });
+    await h.claims.seed(CONFERENCE, ATTENDEE, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    offerGone(h);
+    acceptInHistory(h);
+
+    const body = (await reconcile(h)).json();
+
+    expect(body.reconciled).toBe(false);
+    expect(body.reason).toBe("verification-failed");
+    expect(body.verification.failedCheck).toBe("submittedByAddress");
+    expect(h.attendance.rows).toHaveLength(0);
+  });
+
+  it("calls a node that has not caught up 'not visible yet', not a disagreement", async () => {
+    // Same 422 the confirm route returns, and the desk must read it the same
+    // way: keep waiting. A red card here would be shown to a volunteer for a
+    // badge that lands four seconds later.
+    const verifyClaim = verifies({
+      attended: false,
+      status: "not_attended",
+      failedCheck: "succeeded",
+      notYet: true,
+      reason: "succeeded but its ledger is not validated yet",
+    });
+    const h = harness({ chain: { verifyClaim } });
+    await h.claims.seed(CONFERENCE, ATTENDEE, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+    offerGone(h);
+    acceptInHistory(h);
+
+    expect((await reconcile(h)).json()).toMatchObject({
+      reconciled: false,
+      reason: "not-visible-yet",
+    });
+    expect(h.attendance.rows).toHaveLength(0);
+  });
+
+  it("will not reconcile one event's claim against another event", async () => {
+    const verifyClaim = verifies();
+    const h = harness({ chain: { verifyClaim } });
+    await h.claims.seed(CONFERENCE, ATTENDEE, { nftokenId: NFTOKEN_ID, offerId: OFFER_ID });
+
+    expect((await reconcile(h, ATTENDEE, WORKSHOP)).json()).toMatchObject({
+      reason: "no-open-claim",
+    });
+    expect(verifyClaim).not.toHaveBeenCalled();
   });
 });
