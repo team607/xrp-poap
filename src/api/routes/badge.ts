@@ -56,6 +56,34 @@ export interface BadgeRouteOptions {
   baseUrl?: string;
 }
 
+/**
+ * What this badge should call its event.
+ *
+ * THE EVENT'S OWN NAME, not a server-wide setting. `EVENT_NAME` is one string
+ * for the whole process, and a server hosting more than one event stamps all of
+ * them with it — measured on production, where a REDTAPE badge came back named
+ * after a different event entirely because that was what the variable said.
+ * The events table already knows, per taxon, and has since events became rows.
+ *
+ * `EVENT_NAME` stays as the fallback rather than being removed: a deployment
+ * with no events table configured, or a taxon minted before the row existed,
+ * still has to render something, and "Event 700012" is worse than a name the
+ * operator set on purpose.
+ *
+ * NEVER FAILS THE REQUEST. This decorates a badge; a database that is briefly
+ * unreachable must not turn the artwork into a 500, because the metadata URI is
+ * immutable and a wallet that gets an error may cache it.
+ */
+async function eventLabel(deps: ApiDeps, eventId: EventId): Promise<string | undefined> {
+  try {
+    const event = await deps.events?.find(eventId);
+    if (event?.name) return event.name;
+  } catch {
+    // Fall through to the configured name. Nothing here is worth a 500.
+  }
+  return deps.config.eventName;
+}
+
 export function badgeMetadataUrl(baseUrl: string, eventId: EventId, address: string): string {
   return `${baseUrl.replace(/\/+$/, "")}/badge/${eventId}/${address}.json`;
 }
@@ -78,10 +106,11 @@ export function registerBadgeRoutes(
     async (request, reply) => {
       const { eventId, address } = request.params;
       requireValid(eventId, address);
+      const name = await eventLabel(deps, eventId);
       const { svg } = renderBadgeArt({
         address,
         eventId,
-        ...(deps.config.eventName ? { eventName: artLabel(deps.config.eventName) } : {}),
+        ...(name ? { eventName: artLabel(name) } : {}),
       });
       return reply
         .code(200)
@@ -109,11 +138,12 @@ export function registerBadgeRoutes(
         );
       }
 
-      const label = deps.config.eventName ? artLabel(deps.config.eventName) : `Event ${eventId}`;
+      const name = await eventLabel(deps, eventId);
+      const label = name ? artLabel(name) : `Event ${eventId}`;
       const art = renderBadgeArt({
         address,
         eventId,
-        ...(deps.config.eventName ? { eventName: label } : {}),
+        ...(name ? { eventName: label } : {}),
       });
       const short = `${address.slice(0, 6)}…${address.slice(-4)}`;
 
@@ -124,7 +154,7 @@ export function registerBadgeRoutes(
           "the artwork is derived from that address and can be regenerated from it.",
         imageUri: badgeImageUrl(baseUrl, eventId, address),
         eventId,
-        ...(deps.config.eventName ? { eventName: label } : {}),
+        ...(name ? { eventName: label } : {}),
         extraAttributes: [
           { trait_type: "attendee", value: address },
           { trait_type: "art_palette", value: art.traits.palette },

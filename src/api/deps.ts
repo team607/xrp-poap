@@ -442,7 +442,10 @@ export function parseTrustProxy(raw: string | undefined): boolean | string {
  * imports this module should pay for the metadata pipeline, and a deployment
  * with no Pinata credentials should not load it at all.
  */
-async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolver | undefined> {
+async function buildBadgeUriResolver(
+  config: AppConfig,
+  events?: EventRepository,
+): Promise<BadgeUriResolver | undefined> {
   // Self-hosted needs no Pinata at all — the badge routes generate the
   // metadata and the artwork per request, so there is nothing to pin and
   // nothing to wait on. Checked first for exactly that reason.
@@ -490,6 +493,10 @@ async function buildBadgeUriResolver(config: AppConfig): Promise<BadgeUriResolve
     metadataUriMode: config.badgeMetadataUriMode === "ipfs" ? "ipfs" : "https",
     // Same source as the demo's preview label. If these two ever diverge the
     // preview a page draws stops matching the bytes on IPFS.
+    // The event's own name wins over EVENT_NAME, which is one string for the
+    // whole process and therefore wrong as soon as a server hosts a second
+    // event. The static value stays as the fallback.
+    ...(events ? { lookupEventName: async (eventId) => (await events.find(eventId))?.name } : {}),
     ...(config.eventName ? { eventName: config.eventName } : {}),
   });
 }
@@ -658,7 +665,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   // Without this, every claim request must carry its own `metadataUri`.
   const defaultMetadataUri = config.defaultMetadataUri;
 
-  const badgeUris = await buildBadgeUriResolver(config);
+  const badgeUris = await buildBadgeUriResolver(config, events);
 
   /**
    * Demo wiring, built only when the switch is on. The faucet op closes over

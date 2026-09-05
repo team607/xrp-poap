@@ -269,6 +269,20 @@ export interface PinningBadgeUriResolverOptions {
   manifestPath?: string;
   /** Printed on the badge and recorded as the `event_name` trait. */
   eventName?: string;
+  /**
+   * The event's OWN name, looked up per taxon.
+   *
+   * Preferred over `eventName` above, which is one string for the whole
+   * process and therefore wrong the moment a server hosts a second event —
+   * measured on production, where badges for one event came back named after
+   * another. This resolver bakes the name into pinned JSON, so getting it from
+   * the events table matters more here than anywhere: IPFS content cannot be
+   * corrected afterwards the way a self-hosted document can.
+   *
+   * Optional, and `eventName` stays as the fallback: a deployment with no
+   * events table still has to render something.
+   */
+  lookupEventName?: (eventId: EventId) => Promise<string | undefined>;
   eventDate?: string;
   venue?: string;
   collection?: { name: string; family?: string };
@@ -362,6 +376,16 @@ export class PinningBadgeUriResolver implements BadgeUriResolver {
     return Object.keys(manifest.entries).length;
   }
 
+  /** Never throws: a name is decoration, and this runs mid-claim. */
+  async #eventName(eventId: EventId): Promise<string | undefined> {
+    if (!this.#options.lookupEventName) return undefined;
+    try {
+      return await this.#options.lookupEventName(eventId);
+    } catch {
+      return undefined;
+    }
+  }
+
   async #resolveOne(eventId: EventId, address: string): Promise<BadgeUri> {
     const manifest = await this.#manifestFor(eventId);
 
@@ -370,7 +394,7 @@ export class PinningBadgeUriResolver implements BadgeUriResolver {
       return { metadataUri: hit.metadataUri, imageUri: hit.imageUri, pinnedOnDemand: false };
     }
 
-    const eventName = this.#options.eventName;
+    const eventName = (await this.#eventName(eventId)) ?? this.#options.eventName;
     // An empty label is worse than none: renderBadgeArt only falls back to
     // "EVENT <id>" for undefined, so a name that is entirely metacharacters
     // would leave the badge captionless.
