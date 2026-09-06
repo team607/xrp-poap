@@ -47,11 +47,16 @@ const COLUMNS =
   "registered_at, checked_in_at";
 
 /**
- * Sign-up order, with a stable tie-break on id. registered_at alone is not
- * enough: two people can register in the same millisecond, and a page boundary
- * that lands between them would repeat one and skip the other.
+ * Newest first, by id.
+ *
+ * `id` alone is both the order and the tie-break, which is the property that
+ * matters for paging: it is unique and never changes under a running query, so
+ * a page boundary cannot repeat a row or skip one. `registered_at` could do
+ * neither on its own — two people can register in the same millisecond — and
+ * ordering by it made the list run oldest-first, which puts the person who
+ * just signed up on the last page.
  */
-const ORDER_BY = "ORDER BY registered_at ASC, id ASC";
+const ORDER_BY = "ORDER BY id DESC";
 
 const PROOFS: readonly AddressProof[] = ["xaman_signin", "self_declared"];
 

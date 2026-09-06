@@ -589,11 +589,15 @@ interface StoredRegistration {
   record: RegistrationRecord;
 }
 
-/** Mirrors ORDER BY registered_at ASC, id ASC. */
-function byRegisteredAtThenId(a: StoredRegistration, b: StoredRegistration): number {
-  const delta =
-    (a.record.registeredAt?.getTime() ?? 0) - (b.record.registeredAt?.getTime() ?? 0);
-  return delta !== 0 ? delta : a.seq - b.seq;
+/**
+ * Mirrors ORDER BY id DESC.
+ *
+ * `seq` is this store's stand-in for the row id, so sorting on it descending
+ * is the same order Postgres produces. If the two ever disagree the contract
+ * test catches it, which is the only reason this function exists.
+ */
+function byIdDesc(a: StoredRegistration, b: StoredRegistration): number {
+  return b.seq - a.seq;
 }
 
 /**
@@ -678,7 +682,7 @@ export class MemoryRegistrationRepository implements RegistrationRepository {
         if (opts?.checkedIn === undefined) return true;
         return opts.checkedIn ? r.record.checkedInAt != null : r.record.checkedInAt == null;
       })
-      .sort(byRegisteredAtThenId)
+      .sort(byIdDesc)
       .slice(offset, offset + limit)
       .map((r) => cloneRegistration(r.record));
   }

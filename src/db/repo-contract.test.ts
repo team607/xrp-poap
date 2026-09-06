@@ -1224,7 +1224,7 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
       }
     });
 
-    it("pages listByEvent in sign-up order and filters on checked-in", async () => {
+    it("pages listByEvent newest-first and filters on checked-in", async () => {
       const subjects = await withEvent(await fresh());
       await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Second" }));
       const { registrations } = subjects;
@@ -1245,9 +1245,11 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
         addressProof: "xaman_signin",
       });
 
+      // NEWEST FIRST. Oldest-first put whoever just signed up on the last
+      // page, which is the wrong end for every screen that reads this.
       const all = await registrations.listByEvent(EVENT_A);
       expect(all).toHaveLength(5);
-      expect(all.map((r) => r.address)).toEqual(addresses);
+      expect(all.map((r) => r.address)).toEqual([...addresses].reverse());
 
       const page1 = await registrations.listByEvent(EVENT_A, { limit: 2, offset: 0 });
       const page2 = await registrations.listByEvent(EVENT_A, { limit: 2, offset: 2 });
@@ -1264,8 +1266,8 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
       // The desk's two questions.
       const arrived = await registrations.listByEvent(EVENT_A, { checkedIn: true });
       const expected = await registrations.listByEvent(EVENT_A, { checkedIn: false });
-      expect(arrived.map((r) => r.address)).toEqual([BOB, addr(11)]);
-      expect(expected.map((r) => r.address)).toEqual([ALICE, CAROL, addr(12)]);
+      expect(arrived.map((r) => r.address)).toEqual([addr(11), BOB]);
+      expect(expected.map((r) => r.address)).toEqual([addr(12), CAROL, ALICE]);
       expect(arrived.every((r) => r.checkedInAt instanceof Date)).toBe(true);
       expect(expected.every((r) => (r.checkedInAt ?? null) === null)).toBe(true);
 
@@ -1274,7 +1276,7 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
         (await registrations.listByEvent(EVENT_A, { checkedIn: false, limit: 1 })).map(
           (r) => r.address,
         ),
-      ).toEqual([ALICE]);
+      ).toEqual([addr(12)]);
       expect(await registrations.listByEvent(EVENT_B, { checkedIn: true })).toEqual([]);
     });
 
