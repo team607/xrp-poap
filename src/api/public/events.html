@@ -139,6 +139,21 @@ body:not(.dev) [data-dev]{display:none !important}
 }
 
 .wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:0 13px}
+/* ---- breadcrumb ----------------------------------------------------------
+   The same trail the admin console uses. It replaced a "Back to the register"
+   link that named a page called "Events" — a label that had gone stale — and
+   it says where you are as well as where back leads.
+   ------------------------------------------------------------------------- */
+.crumb{
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--ink-3);
+}
+.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
+.crumb a:hover{border-bottom-color:var(--signal)}
+.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+.crumb span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.crumb{margin:16px 0 0}
 
 /* ---- the ticket ---------------------------------------------------------- */
 .pass{
@@ -206,6 +221,10 @@ body:not(.dev) [data-dev]{display:none !important}
 </div>
 
 <div class="wrap">
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Events</span>
+  </nav>
+
   <section class="pass" id="pass">
     <div class="pass__ribbon">
       <span class="dot" aria-hidden="true"></span>

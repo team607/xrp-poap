@@ -99,13 +99,21 @@ a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radi
 
 /* ---- masthead ------------------------------------------------------------ */
 
-.back{
-  display:inline-block;
-  font-size:15px;
-  color:var(--signal);
-  margin:0 0 26px;
-  text-underline-offset:3px;
+/* ---- breadcrumb ----------------------------------------------------------
+   The same trail the admin console uses. It replaced a "Back to the register"
+   link that named a page called "Events" — a label that had gone stale — and
+   it says where you are as well as where back leads.
+   ------------------------------------------------------------------------- */
+.crumb{
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--ink-3);
 }
+.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
+.crumb a:hover{border-bottom-color:var(--signal)}
+.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+.crumb span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.crumb{margin:0 0 24px}
 .head{margin:0 0 30px}
 .head__meta{
   display:flex;
@@ -410,7 +418,9 @@ h1{
 </head>
 <body>
 <main>
-  <a class="back" href="/events">Back to the register</a>
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="/">Home</a><span aria-hidden="true">/</span><a href="/events">Events</a><span aria-hidden="true">/</span><span aria-current="page" id="crumb-here">&mdash;</span>
+  </nav>
 
   <header class="head" id="head" hidden>
     <div class="head__meta">
@@ -536,6 +546,7 @@ h1{
 
   function paintEvent(ev) {
     document.title = ev.name;
+    $("crumb-here").textContent = ev.name;
     $("taxon").textContent = "Taxon " + ev.eventId;
     var st = $("status");
     st.textContent = ev.status === "closed" ? "finished"
