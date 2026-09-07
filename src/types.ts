@@ -498,6 +498,34 @@ export interface EventRepository {
   hasBadges(eventId: EventId): Promise<boolean>;
 }
 
+/**
+ * A photograph of the event, hosted somewhere else.
+ *
+ * Links rather than files: see 010_event_photos.sql for why, and for what that
+ * trade costs.
+ */
+export interface EventPhoto {
+  id: string;
+  eventId: EventId;
+  /** http(s) only. Enforced by a CHECK, not only by whoever wrote the caller. */
+  url: string;
+  caption?: string | null;
+  position: number;
+  createdAt?: Date;
+}
+
+export interface EventPhotoRepository {
+  listByEvent(eventId: EventId): Promise<EventPhoto[]>;
+  add(input: {
+    eventId: EventId;
+    url: string;
+    caption?: string | null;
+    position?: number;
+  }): Promise<EventPhoto>;
+  /** Scoped to the event so a stray id cannot delete another event's photo. */
+  remove(eventId: EventId, id: string): Promise<boolean>;
+}
+
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------

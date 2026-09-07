@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<title>Event</title>
+<style>
+/* ==========================================================================
+   ONE EVENT — its particulars, its turnout, and every badge it minted.
+
+   THE BADGES ARE THE PAGE. Each one is a different picture, generated from
+   the wallet that holds it, so a wall of them is the only honest illustration
+   of what an event produced: not a stock photo of a crowd, the actual objects
+   the actual people are holding. Everything above the wall is caption.
+
+   The artwork is a pure function of (address, eventId), so the server sends
+   the same bytes forever and they cache hard. Two hundred of them is two
+   hundred requests, which is why they load lazily and decode off the main
+   thread — a phone should not stall on a grid it has not scrolled to yet.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+  --track:#e3dac6;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+
+  --grid:rgba(93,74,44,.09);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+    --track:#232823;
+
+    --signal:#e0a24a;
+    --signal-2:rgba(201,135,48,.56);
+    --signal-wash:rgba(224,162,74,.12);
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+
+    --grid:rgba(224,214,190,.055);
+  }
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  min-height:100svh;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:17px;
+  line-height:1.6;
+  overflow-x:hidden;
+  padding:26px 20px calc(56px + env(safe-area-inset-bottom));
+}
+body::before{
+  content:"";
+  position:fixed;
+  inset:0;
+  pointer-events:none;
+  background-image:linear-gradient(var(--grid) 1px, transparent 1px),
+                   linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:26px 26px;
+  opacity:.5;
+  z-index:0;
+}
+main{position:relative; z-index:1; width:100%; max-width:900px; margin:0 auto}
+
+a{color:inherit}
+a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+
+/* ---- masthead ------------------------------------------------------------ */
+
+.back{
+  display:inline-block;
+  font-size:15px;
+  color:var(--signal);
+  margin:0 0 26px;
+  text-underline-offset:3px;
+}
+.head{margin:0 0 30px}
+.head__meta{
+  display:flex;
+  align-items:baseline;
+  gap:14px;
+  flex-wrap:wrap;
+  margin:0 0 8px;
+}
+.taxon{font-family:var(--font-mono); font-size:12.5px; letter-spacing:.06em; color:var(--ink-3)}
+.status{font-family:var(--font-mono); font-size:11px; letter-spacing:.04em; color:var(--ink-3)}
+.status[data-status="live"]{color:var(--signal)}
+h1{
+  font-size:clamp(30px,6.4vw,46px);
+  line-height:1.06;
+  font-weight:400;
+  letter-spacing:-.014em;
+  margin:0 0 10px;
+  max-width:20ch;
+}
+.where{margin:0; color:var(--ink-3); font-size:16px}
+.note{margin:14px 0 0; color:var(--ink-2); max-width:58ch}
+
+/* ---- turnout ------------------------------------------------------------- */
+
+.turnout{margin:30px 0 0; padding:0 0 30px; border-bottom:1px solid var(--rule)}
+.turnout__ends{
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:24px;
+  margin:0 0 12px;
+}
+.turnout__end--to{text-align:right}
+.turnout__n{
+  font-family:var(--font-mono);
+  font-size:clamp(28px,6vw,38px);
+  line-height:1;
+  letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums;
+  color:var(--jade);
+}
+.turnout__end--to .turnout__n{color:var(--ink-2)}
+.turnout__lbl{margin-top:7px; font-size:15.5px; line-height:1.3; color:var(--ink-3)}
+.turnout__say{margin:12px 0 0; color:var(--ink-3); font-size:14.5px}
+
+.gauge{
+  position:relative;
+  height:22px;
+  background:var(--track);
+  border:1px solid var(--rule);
+  overflow:hidden;
+}
+.gauge__fill{
+  position:absolute;
+  inset:0 auto 0 0;
+  width:0;
+  background:var(--jade);
+  transition:width .9s cubic-bezier(.16,.84,.34,1);
+}
+.gauge__ticks{
+  position:absolute;
+  inset:auto 0 0 0;
+  height:5px;
+  background-image:linear-gradient(90deg, var(--rule-2) 1px, transparent 1px);
+  background-size:25% 100%;
+  background-position:25% 0;
+  opacity:.7;
+  pointer-events:none;
+}
+@media (prefers-reduced-motion: reduce){ .gauge__fill{transition:none} }
+
+/* ---- photographs --------------------------------------------------------
+   The day itself, when an organiser has added any. Above the badges because
+   that is the order things happened in: the event, then the objects it left
+   behind. Absent entirely when there are none — an empty gallery frame is
+   worse than no gallery.
+
+   A tall first picture and a row of the rest: one photograph is worth looking
+   at, and eight identical thumbnails is a contact sheet.
+   ------------------------------------------------------------------------- */
+
+.gallery{margin:30px 0 0}
+.gallery__lead{
+  display:block;
+  margin:0 0 10px;
+  border:1px solid var(--rule);
+  background:var(--surface-2);
+  overflow:hidden;
+}
+.gallery__lead img{
+  display:block;
+  width:100%;
+  max-height:min(58vh, 460px);
+  object-fit:cover;
+  opacity:0;
+  transition:opacity .4s ease;
+}
+.gallery__rest{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(140px, 1fr));
+  gap:10px;
+  margin:0;
+  padding:0;
+  list-style:none;
+}
+.gallery__rest a{
+  display:block;
+  aspect-ratio:4/3;
+  border:1px solid var(--rule);
+  background:var(--surface-2);
+  overflow:hidden;
+}
+.gallery__rest img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  opacity:0;
+  transition:opacity .4s ease;
+}
+.gallery img.is-in{opacity:1}
+@media (prefers-reduced-motion: reduce){ .gallery img{transition:none} }
+.gallery__cap{
+  margin:8px 0 0;
+  font-size:14.5px;
+  color:var(--ink-3);
+  max-width:60ch;
+}
+
+/* ---- the wall -----------------------------------------------------------
+   Square tiles, no gaps to speak of, no rounded corners and no shadow: a
+   sheet of stamps, not a row of app cards. The pictures do the work.
+   ------------------------------------------------------------------------- */
+
+.wall__head{
+  display:flex;
+  align-items:baseline;
+  justify-content:space-between;
+  gap:16px;
+  flex-wrap:wrap;
+  margin:30px 0 16px;
+}
+.wall__head h2{font-size:22px; font-weight:400; margin:0; letter-spacing:-.005em}
+.wall__count{font-family:var(--font-mono); font-size:13px; color:var(--ink-3)}
+
+.wall{
+  display:grid;
+  grid-template-columns:repeat(auto-fill, minmax(112px, 1fr));
+  gap:10px;
+  margin:0;
+  padding:0;
+  list-style:none;
+}
+.badge{position:relative}
+.badge a{
+  display:block;
+  position:relative;
+  aspect-ratio:1/1;
+  background:var(--surface-2);
+  border:1px solid var(--rule);
+  overflow:hidden;
+  text-decoration:none;
+}
+.badge img{
+  display:block;
+  width:100%;
+  height:100%;
+  object-fit:cover;
+  opacity:0;
+  transition:opacity .35s ease;
+}
+.badge img.is-in{opacity:1}
+@media (prefers-reduced-motion: reduce){ .badge img{transition:none} }
+
+/* The wallet, revealed on hover or focus. Not printed under every tile: two
+   hundred truncated addresses is noise, and the picture is the identifier
+   people actually recognise. */
+.badge__who{
+  position:absolute;
+  left:0; right:0; bottom:0;
+  padding:5px 6px;
+  font-family:var(--font-mono);
+  font-size:10.5px;
+  letter-spacing:.02em;
+  color:var(--ink);
+  background:var(--surface);
+  border-top:1px solid var(--rule);
+  opacity:0;
+  transform:translateY(100%);
+  transition:opacity .18s ease, transform .18s ease;
+  white-space:nowrap;
+  overflow:hidden;
+  text-overflow:ellipsis;
+}
+.badge a:hover .badge__who,
+.badge a:focus-visible .badge__who{opacity:1; transform:translateY(0)}
+@media (hover: none){
+  /* No hover on a phone, so the wallet is simply always shown. */
+  .badge__who{opacity:1; transform:none}
+}
+@media (prefers-reduced-motion: reduce){ .badge__who{transition:none} }
+
+/* ---- the lightbox -------------------------------------------------------
+   One dialog, shared by the photographs and the badges. Opening a new tab for
+   a picture loses the page you were looking at and, on a phone, buries it
+   behind whatever else is open.
+   ------------------------------------------------------------------------- */
+
+.lb{
+  position:fixed; inset:0; z-index:90;
+  display:flex; flex-direction:column; align-items:center; justify-content:center;
+  gap:14px; padding:20px;
+  /* Tinted rather than opaque: the page stays visible behind it, so it reads
+     as something laid over the register rather than a different screen. */
+  background:color-mix(in srgb, var(--ink) 82%, transparent);
+  -webkit-backdrop-filter:blur(3px);
+  backdrop-filter:blur(3px);
+  animation:lbin .18s ease both;
+}
+@keyframes lbin{from{opacity:0}to{opacity:1}}
+@media (prefers-reduced-motion: reduce){ .lb{animation:none} }
+
+.lb__fig{
+  margin:0; min-width:0; max-width:100%;
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+}
+.lb__img{
+  display:block;
+  max-width:min(92vw, 1000px);
+  max-height:78svh;
+  width:auto; height:auto;
+  border:1px solid var(--rule-2);
+  background:var(--surface-2);
+}
+.lb__cap{
+  margin:0; text-align:center; max-width:60ch;
+  color:var(--paper); font-size:15.5px;
+}
+.lb__sub{
+  display:block; margin-top:5px;
+  font-family:var(--font-mono); font-size:11.5px; letter-spacing:.04em;
+  color:color-mix(in srgb, var(--paper) 62%, transparent);
+}
+.lb__sub a{color:inherit; text-underline-offset:3px}
+
+/* Controls sit on the tint, not on the picture: a photograph is not a
+   surface to put chrome on. */
+.lb__bar{display:flex; align-items:center; gap:10px}
+.lb__btn{
+  font:inherit; font-size:14px;
+  font-family:var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+  color:var(--paper); background:transparent;
+  border:1px solid color-mix(in srgb, var(--paper) 45%, transparent);
+  border-radius:2px; padding:8px 14px; cursor:pointer; min-height:40px;
+}
+.lb__btn:hover{background:color-mix(in srgb, var(--paper) 14%, transparent)}
+.lb__btn:focus-visible{outline:2px solid var(--paper); outline-offset:2px}
+.lb__btn[disabled]{opacity:.35; cursor:default}
+.lb__count{
+  font-family:var(--font-mono); font-size:12px; letter-spacing:.08em;
+  color:color-mix(in srgb, var(--paper) 70%, transparent);
+  min-width:6ch; text-align:center;
+}
+
+.more{margin:22px 0 0; text-align:center}
+.more button{
+  font:inherit;
+  font-size:15px;
+  color:var(--signal);
+  background:none;
+  border:1px solid var(--rule-2);
+  padding:9px 20px;
+  cursor:pointer;
+}
+.more button:hover{background:var(--signal-wash)}
+
+/* ---- states -------------------------------------------------------------- */
+
+.state{
+  margin:30px 0 0;
+  padding:30px 24px;
+  border:1px solid var(--rule);
+  background:var(--surface);
+  color:var(--ink-2);
+}
+.state h2{font-size:21px; font-weight:400; margin:0 0 8px; color:var(--ink)}
+.state p{margin:0; max-width:52ch}
+
+.foot{
+  margin:44px 0 0;
+  padding-top:20px;
+  border-top:1px solid var(--rule);
+  color:var(--ink-3);
+  font-size:14.5px;
+}
+.foot a{color:var(--signal)}
+
+@media (max-width:520px){
+  .wall{grid-template-columns:repeat(auto-fill, minmax(88px, 1fr)); gap:8px}
+}
+</style>
+</head>
+<body>
+<main>
+  <a class="back" href="/events">Back to the register</a>
+
+  <header class="head" id="head" hidden>
+    <div class="head__meta">
+      <span class="taxon" id="taxon"></span>
+      <span class="status" id="status"></span>
+    </div>
+    <h1 id="name"></h1>
+    <p class="where" id="where" hidden></p>
+    <p class="note" id="note" hidden></p>
+  </header>
+
+  <section class="turnout" id="turnout" hidden aria-labelledby="turnout-h">
+    <h2 id="turnout-h" class="taxon" style="display:block;margin:0 0 14px">Turnout</h2>
+    <div class="turnout__ends">
+      <div>
+        <div class="turnout__n" id="t-held"></div>
+        <div class="turnout__lbl">hold a badge</div>
+      </div>
+      <div class="turnout__end--to">
+        <div class="turnout__n" id="t-reg"></div>
+        <div class="turnout__lbl">registered</div>
+      </div>
+    </div>
+    <div class="gauge" role="img" id="gauge">
+      <div class="gauge__fill" id="fill"></div>
+      <div class="gauge__ticks"></div>
+    </div>
+    <p class="turnout__say" id="t-say"></p>
+  </section>
+
+  <section class="gallery" id="gallery" hidden aria-label="Photographs from the day">
+    <a class="gallery__lead" id="lead" target="_blank" rel="noopener"><img id="lead-img" alt=""></a>
+    <p class="gallery__cap" id="lead-cap" hidden></p>
+    <ul class="gallery__rest" id="rest"></ul>
+  </section>
+
+  <section id="wall-wrap" hidden aria-labelledby="wall-h">
+    <div class="wall__head">
+      <h2 id="wall-h">Every badge</h2>
+      <span class="wall__count" id="wall-count"></span>
+    </div>
+    <ul class="wall" id="wall"></ul>
+    <p class="more" id="more" hidden><button type="button" id="more-btn"></button></p>
+  </section>
+
+  <div id="state" class="state">
+    <h2 id="state-h">Reading the record</h2>
+    <p id="state-p">One moment.</p>
+  </div>
+
+  <div class="lb" id="lb" role="dialog" aria-modal="true" aria-label="Picture" hidden>
+    <figure class="lb__fig">
+      <img class="lb__img" id="lb-img" alt="">
+      <figcaption class="lb__cap" id="lb-cap"></figcaption>
+    </figure>
+    <div class="lb__bar">
+      <button class="lb__btn" id="lb-prev" type="button" aria-label="Previous picture">Prev</button>
+      <span class="lb__count" id="lb-count"></span>
+      <button class="lb__btn" id="lb-next" type="button" aria-label="Next picture">Next</button>
+      <button class="lb__btn" id="lb-close" type="button">Close</button>
+    </div>
+  </div>
+
+  <footer class="foot">
+    <p>
+      Every badge above was accepted by the person who holds it, on their own
+      device, with a key this server has never seen. They are soulbound: nobody
+      can transfer one, and nobody here can take one back.
+    </p>
+  </footer>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  function $(id) { return document.getElementById(id); }
+  function el(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function num(n) { return Number(n || 0).toLocaleString("en-US"); }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function short(a) { return String(a).slice(0, 6) + "…" + String(a).slice(-4); }
+
+  /* The event date is a plain day with no timezone, so it is read and printed
+     as UTC — reading it locally moves the day back for anyone west of London. */
+  function when(iso) {
+    if (!iso) return "";
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso));
+    if (!m) return "";
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    if (isNaN(d.getTime())) return "";
+    try {
+      return d.toLocaleDateString(undefined, {
+        year: "numeric", month: "long", day: "numeric", timeZone: "UTC"
+      });
+    } catch (e) { return m[3] + "/" + m[2] + "/" + m[1]; }
+  }
+
+  /** The taxon out of the path. This page is only ever reached as /events/N. */
+  function eventIdFromPath() {
+    var m = /\/events\/(\d+)/.exec(window.location.pathname);
+    return m ? m[1] : null;
+  }
+
+  function state(heading, body) {
+    $("state-h").textContent = heading;
+    $("state-p").textContent = body;
+    $("state").hidden = false;
+  }
+
+  var eventId = eventIdFromPath();
+  var PAGE = 60;
+  var loaded = 0;
+  var total = 0;
+  /** Every badge currently on the wall, in the order it is shown. */
+  var shown = [];
+
+  /* --------------------------------------------------------------- the head */
+
+  function paintEvent(ev) {
+    document.title = ev.name;
+    $("taxon").textContent = "Taxon " + ev.eventId;
+    var st = $("status");
+    st.textContent = ev.status === "closed" ? "finished"
+      : ev.status === "live" ? "in progress" : "open for sign-ups";
+    st.setAttribute("data-status", ev.status);
+
+    $("name").textContent = ev.name;
+
+    var bits = [];
+    var d = when(ev.eventDate);
+    if (d) bits.push(d);
+    if (ev.venue) bits.push(ev.venue);
+    if (bits.length) { $("where").textContent = bits.join(" · "); $("where").hidden = false; }
+    if (ev.description) { $("note").textContent = ev.description; $("note").hidden = false; }
+    $("head").hidden = false;
+
+    var s = ev.stats || {};
+    var registered = s.registered || 0;
+    var attended = s.attended || 0;
+    total = attended;
+
+    $("t-held").textContent = num(attended);
+    $("t-reg").textContent = num(registered);
+
+    var r = registered ? Math.min(1, attended / registered) : null;
+    var pct = r === null ? 0 : Math.round(r * 100);
+    $("gauge").setAttribute("aria-label",
+      registered
+        ? num(attended) + " of " + num(registered) + " registered attendees hold a badge, " + pct + " per cent"
+        : num(attended) + " badges held; nobody registered in advance");
+
+    if (registered === 0 && attended > 0) {
+      $("t-say").textContent = num(attended) + " walked up. Nobody registered in advance.";
+    } else if (attended > registered) {
+      $("t-say").textContent = Math.round((attended / registered) * 100) + "% of sign-ups, including "
+        + num(attended - registered) + " who turned up without registering.";
+    } else if (r !== null) {
+      $("t-say").textContent = pct + "% of the people who signed up came and took their badge.";
+    } else {
+      $("t-say").textContent = "Nothing recorded yet.";
+    }
+
+    $("turnout").hidden = false;
+    requestAnimationFrame(function () {
+      $("fill").style.width = (r === null ? (attended > 0 ? 100 : 0) : r * 100) + "%";
+    });
+  }
+
+  /* -------------------------------------------------------------- lightbox
+     One dialog for both groups on the page. A group is an array of
+     {src, cap, sub} and an index, so Prev/Next walk the photographs or the
+     badges without either knowing about the other.
+     ------------------------------------------------------------------------ */
+
+  var lb = { items: [], at: 0, opener: null };
+
+  function lbShow() {
+    var item = lb.items[lb.at];
+    if (!item) return;
+    var img = $("lb-img");
+    img.src = item.src;
+    img.alt = item.cap || "";
+
+    var cap = $("lb-cap");
+    clear(cap);
+    if (item.cap) cap.appendChild(document.createTextNode(item.cap));
+    if (item.sub) {
+      var sub = el("span", "lb__sub");
+      if (item.subHref) {
+        var a = document.createElement("a");
+        a.href = item.subHref;
+        a.target = "_blank";
+        a.rel = "noopener";
+        a.textContent = item.sub;
+        sub.appendChild(a);
+      } else {
+        sub.textContent = item.sub;
+      }
+      cap.appendChild(sub);
+    }
+
+    var many = lb.items.length > 1;
+    $("lb-prev").hidden = !many;
+    $("lb-next").hidden = !many;
+    $("lb-count").hidden = !many;
+    $("lb-count").textContent = many ? (lb.at + 1) + " / " + lb.items.length : "";
+    $("lb-prev").disabled = lb.at === 0;
+    $("lb-next").disabled = lb.at === lb.items.length - 1;
+  }
+
+  function lbOpen(items, index, opener) {
+    lb.items = items;
+    lb.at = index;
+    lb.opener = opener || null;
+    lbShow();
+    $("lb").hidden = false;
+    // The page behind must not scroll under the tint, and the close button is
+    // the safe place to land: it works for a pointer and for a keyboard, and
+    // it is where Escape would take you anyway.
+    document.body.style.overflow = "hidden";
+    $("lb-close").focus();
+  }
+
+  function lbClose() {
+    $("lb").hidden = true;
+    $("lb-img").src = "";
+    document.body.style.overflow = "";
+    // Back to the tile that was clicked, or a keyboard user is dropped at the
+    // top of the document with no idea where they were.
+    if (lb.opener && document.contains(lb.opener)) lb.opener.focus();
+    lb.opener = null;
+  }
+
+  function lbStep(delta) {
+    var next = lb.at + delta;
+    if (next < 0 || next >= lb.items.length) return;
+    lb.at = next;
+    lbShow();
+  }
+
+  $("lb-close").addEventListener("click", lbClose);
+  $("lb-prev").addEventListener("click", function () { lbStep(-1); });
+  $("lb-next").addEventListener("click", function () { lbStep(1); });
+  // The tint closes; the picture and the controls do not.
+  $("lb").addEventListener("click", function (e) { if (e.target === $("lb")) lbClose(); });
+  document.addEventListener("keydown", function (e) {
+    if ($("lb").hidden) return;
+    if (e.key === "Escape") { e.preventDefault(); lbClose(); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); lbStep(-1); }
+    else if (e.key === "ArrowRight") { e.preventDefault(); lbStep(1); }
+  });
+
+  /** Turn an <a> into a lightbox trigger while keeping it a real link. */
+  function opensLightbox(anchor, group, index) {
+    anchor.addEventListener("click", function (e) {
+      // Leave the modified clicks alone: somebody asking for a new tab on
+      // purpose should get one.
+      if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey || e.button !== 0) return;
+      e.preventDefault();
+      lbOpen(group(), index(), anchor);
+    });
+  }
+
+  /* ------------------------------------------------------------ photographs */
+
+  /** Fade a photo in once it arrives, and never leave an empty frame up. */
+  function mountPhoto(img, photo, onFail) {
+    img.alt = photo.caption ? photo.caption : "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.addEventListener("load", function () { img.classList.add("is-in"); });
+    // A link can rot, and nothing on the server can tell in advance. When one
+    // does, drop the frame rather than showing a broken-image glyph in a
+    // gallery of photographs.
+    img.addEventListener("error", function () { if (onFail) onFail(); });
+    img.src = photo.url;
+  }
+
+  function paintGallery(photos) {
+    if (!photos || photos.length === 0) return;
+    // Every link can rot independently, so the section itself is hidden again
+    // if they all fail — an empty framed strip above the badges is worse than
+    // no strip at all.
+    var alive = photos.length;
+    var dropped = function () {
+      alive -= 1;
+      if (alive <= 0) $("gallery").hidden = true;
+    };
+
+    // Only the ones that actually load are walkable, so Next never lands on a
+    // dead link. Built as a live getter rather than a snapshot for the same
+    // reason: an image can fail after the dialog is already open.
+    var photoGroup = function () {
+      return photos
+        .filter(function (p) { return !p.__dead; })
+        .map(function (p) { return { src: p.url, cap: p.caption || "" }; });
+    };
+    var photoIndex = function (photo) {
+      return function () { return photoGroup().findIndex(function (g) { return g.src === photo.url; }); };
+    };
+
+    var lead = photos[0];
+    var leadLink = $("lead");
+    leadLink.href = lead.url;
+    opensLightbox(leadLink, photoGroup, photoIndex(lead));
+    mountPhoto($("lead-img"), lead, function () {
+      // The caption goes with the picture. Leaving it behind describes
+      // something the reader cannot see.
+      leadLink.hidden = true;
+      $("lead-cap").hidden = true;
+      lead.__dead = true;
+      dropped();
+    });
+    if (lead.caption) { $("lead-cap").textContent = lead.caption; $("lead-cap").hidden = false; }
+
+    var rest = $("rest");
+    for (var i = 1; i < photos.length; i++) {
+      (function (photo) {
+        var li = document.createElement("li");
+        var a = document.createElement("a");
+        a.href = photo.url;
+        a.target = "_blank";
+        a.rel = "noopener";
+        if (photo.caption) a.title = photo.caption;
+        var img = document.createElement("img");
+        mountPhoto(img, photo, function () { li.hidden = true; photo.__dead = true; dropped(); });
+        opensLightbox(a, photoGroup, photoIndex(photo));
+        a.appendChild(img);
+        li.appendChild(a);
+        rest.appendChild(li);
+      })(photos[i]);
+    }
+
+    $("gallery").hidden = false;
+  }
+
+  /* --------------------------------------------------------------- the wall */
+
+  function tile(b) {
+    var li = el("li", "badge");
+    var base = "/badge/" + encodeURIComponent(eventId) + "/" + encodeURIComponent(b.address);
+    var a = document.createElement("a");
+    // Click through to the PNG — that is the artifact a wallet shows, and it
+    // is what somebody wants when they open one badge on purpose.
+    a.href = base + ".png";
+    a.target = "_blank";
+    a.rel = "noopener";
+    a.setAttribute("aria-label", "Badge held by " + b.address);
+
+    var img = document.createElement("img");
+    // The TILE is vector: 12 KB against 290 KB, so a wall of two hundred is a
+    // couple of megabytes rather than sixty, and stays sharp on a retina
+    // screen at any tile size.
+    img.src = base + ".svg";
+    img.alt = "";               // decorative: the link already names the holder
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.width = 320; img.height = 320;
+    // Fade in per tile rather than as one orchestrated sweep: they arrive over
+    // the network at their own pace and pretending otherwise looks worse.
+    img.addEventListener("load", function () { img.classList.add("is-in"); });
+    img.addEventListener("error", function () { img.classList.add("is-in"); });
+
+    a.appendChild(img);
+    a.appendChild(el("span", "badge__who", short(b.address)));
+    li.appendChild(a);
+
+    /* The badges are their own group, so Next walks the wall rather than
+       jumping into the photographs. The vector is what is shown — it is
+       sharper full-screen than the raster and a fraction of the weight — with
+       the PNG a click away for anybody who wants the file a wallet holds. */
+    opensLightbox(
+      a,
+      function () {
+        return shown.map(function (x) {
+          return {
+            src: "/badge/" + encodeURIComponent(eventId) + "/" + encodeURIComponent(x.address) + ".svg",
+            cap: "Badge held by " + short(x.address),
+            sub: x.address,
+            subHref: "/badge/" + encodeURIComponent(eventId) + "/" + encodeURIComponent(x.address) + ".png",
+          };
+        });
+      },
+      function () {
+        return shown.findIndex(function (x) { return x.address === b.address; });
+      },
+    );
+    return li;
+  }
+
+  function paintCount() {
+    $("wall-count").textContent = loaded >= total
+      ? num(total) + (total === 1 ? " badge" : " badges")
+      : num(loaded) + " of " + num(total);
+  }
+
+  function loadBadges() {
+    var btn = $("more-btn");
+    btn.disabled = true;
+    btn.textContent = "Loading…";
+
+    return fetch("/api/events/" + encodeURIComponent(eventId) + "/badges?limit=" + PAGE + "&offset=" + loaded,
+      { headers: { accept: "application/json" } })
+      .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
+      .then(function (body) {
+        var badges = (body && body.badges) || [];
+        if (typeof body.total === "number") total = body.total;
+
+        var wall = $("wall");
+        for (var i = 0; i < badges.length; i++) {
+          shown.push(badges[i]);
+          wall.appendChild(tile(badges[i]));
+        }
+        loaded += badges.length;
+
+        $("wall-wrap").hidden = false;
+        paintCount();
+
+        var remaining = total - loaded;
+        if (remaining > 0 && badges.length > 0) {
+          btn.disabled = false;
+          btn.textContent = "Show " + num(Math.min(remaining, PAGE)) + " more";
+          $("more").hidden = false;
+        } else {
+          $("more").hidden = true;
+        }
+      });
+  }
+
+  /* --------------------------------------------------------------- kick off */
+
+  if (!eventId) {
+    state("No event in the address",
+      "This page is reached as /events/ followed by the event number. Pick one from the register.");
+  } else {
+    fetch("/api/events/" + encodeURIComponent(eventId) + "/summary",
+      { headers: { accept: "application/json" } })
+      .then(function (r) {
+        if (r.status === 404) {
+          state("No such event",
+            "Nothing is published under that number. It may have been a draft, or the address may be mistyped.");
+          return null;
+        }
+        if (!r.ok) throw new Error("HTTP " + r.status);
+        return r.json();
+      })
+      .then(function (ev) {
+        if (!ev) return;
+        paintEvent(ev);
+        $("state").hidden = true;
+
+        // Separate request, and deliberately not awaited: photographs are the
+        // nicest part of the page and the least important. A gallery that is
+        // slow, or a store that is not configured at all, must not hold up the
+        // badges.
+        fetch("/api/events/" + encodeURIComponent(eventId) + "/photos",
+          { headers: { accept: "application/json" } })
+          .then(function (r) { return r.ok ? r.json() : null; })
+          .then(function (body) { if (body) paintGallery(body.photos); })
+          .catch(function () { /* no gallery, and the page is fine without one */ });
+
+        if (total === 0) {
+          state("No badges yet",
+            "Nobody has accepted a badge for this event so far. They appear here as people take them.");
+          return;
+        }
+        $("more-btn").addEventListener("click", function () { loadBadges(); });
+        return loadBadges();
+      })
+      .catch(function () {
+        state("The record is not answering",
+          "This page is served by the same process that holds the records, so it is either restarting or down. Nothing is lost — the badges live on the ledger.");
+      });
+  }
+})();
+</script>
+</body>
+</html>

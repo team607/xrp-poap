@@ -60,6 +60,18 @@ export {
 export { PgRegistrationRepository } from "./registration-repo.js";
 
 /**
+ * Event photographs. `assertUsablePhotoUrl` is exported beside the repository
+ * because the rule it encodes — http(s) only — is enforced in three places
+ * (here, the route schema, and a CHECK) and all three have to agree.
+ */
+export {
+  MemoryEventPhotoRepository,
+  PgEventPhotoRepository,
+  assertUsablePhotoUrl,
+  normalizeCaption,
+} from "./event-photo-repo.js";
+
+/**
  * `hashSessionId` is exported because the rule it encodes is a cross-module
  * contract, not an implementation detail: the raw session id belongs in the
  * cookie and only its digest belongs in a store. Anything that persists a

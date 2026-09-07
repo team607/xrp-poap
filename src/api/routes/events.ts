@@ -32,6 +32,14 @@ const eventStatusSchema = z.enum(EVENT_STATUSES);
 const LISTABLE_STATUSES: readonly EventStatus[] = ["open", "live"];
 
 /**
+ * Everything the public record shows. Wider than LISTABLE_STATUSES, which is
+ * for the "sign up now" landing and must not advertise an event that has
+ * finished — a record of what happened is exactly where a finished event
+ * belongs.
+ */
+const PUBLIC_STATUSES: readonly EventStatus[] = ["open", "live", "closed"];
+
+/**
  * What a public detail read may resolve.
  *
  * Wider than the list on purpose: a closed event is not advertised, but an
@@ -82,6 +90,23 @@ const pagingQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(MAX_LIMIT).default(DEFAULT_LIMIT),
   offset: z.coerce.number().int().min(0).default(0),
 });
+
+/**
+ * A photo link, checked at the edge as well as in the repository and in a
+ * CHECK constraint. Three places on purpose: this one produces the message the
+ * organiser reads, the repository is what any other caller goes through, and
+ * the constraint is the one nothing can bypass.
+ */
+const photoBodySchema = z.object({
+  url: z.string().trim().min(1).max(2000).url(),
+  caption: z.string().trim().max(200).optional(),
+});
+type PhotoBody = z.infer<typeof photoBodySchema>;
+
+const photoIdParamsSchema = eventIdParamsSchema.extend({
+  photoId: z.string().min(1).max(64),
+});
+type PhotoIdParams = z.infer<typeof photoIdParamsSchema>;
 
 const adminListQuerySchema = pagingQuerySchema.extend({
   status: eventStatusSchema.optional(),
@@ -234,6 +259,243 @@ export function registerEventRoutes(app: FastifyInstance, deps: ApiDeps): void {
         limit,
         offset,
         events: merged.map(toPublicEvent),
+      });
+    },
+  );
+
+  /**
+   * GET /api/events/summary?limit=&offset= — the public record of what happened.
+   *
+   * Every event that is not a draft, newest first, each with the three numbers
+   * that describe a door: how many signed up, how many the desk marked as
+   * arrived, and how many actually hold a badge.
+   *
+   * THE THIRD NUMBER IS THE ONE THAT MEANS ANYTHING. `registered` is an
+   * intention and `checkedIn` is a volunteer's observation; `attended` is
+   * counted from the attendance index, one row per accept transaction that
+   * passed all five checks against the ledger. It is the only one of the three
+   * that a stranger can verify without trusting this server, and the only one
+   * that survives the badge being burned.
+   *
+   * It can EXCEED `registered`, and that is not a bug: somebody who turns up
+   * without signing up is a walk-up, gets a badge at the desk, and has
+   * attendance with no registration behind it.
+   *
+   * Public and countable-only. No names, no addresses, nothing about a person
+   * — the numbers here are the same ones anyone could derive by reading the
+   * issuer's transactions off the chain.
+   *
+   * 200 with the page
+   */
+  app.get<{ Querystring: PagingQuery }>(
+    "/api/events/summary",
+    { schema: { querystring: pagingQuerySchema } },
+    async (request, reply) => {
+      const { limit, offset } = request.query;
+
+      // Drafts are unpublished by definition, and the repository filters on one
+      // status at a time, so the public statuses are asked for and merged. Each
+      // page is fetched to `offset + limit` so the merged slice is the page a
+      // single query would have produced.
+      const pages = await Promise.all(
+        PUBLIC_STATUSES.map((status) =>
+          events.list({ status, limit: offset + limit, offset: 0 }),
+        ),
+      );
+
+      // Most recent first: this page is a record of what has happened, and the
+      // thing somebody wants is the event they were just at. Undated events
+      // sort last rather than first — an absent date is unknown, not ancient.
+      const merged = pages
+        .flat()
+        .sort(
+          (a, b) =>
+            (b.eventDate ?? "").localeCompare(a.eventDate ?? "") || b.eventId - a.eventId,
+        )
+        .slice(offset, offset + limit);
+
+      const summaries = await Promise.all(
+        merged.map(async (event) => {
+          const [registrations, attended] = await Promise.all([
+            deps.registrations
+              ? deps.registrations.countByEvent(event.eventId)
+              : Promise.resolve({ total: 0, checkedIn: 0 }),
+            deps.attendance.countByEvent(event.eventId),
+          ]);
+          return {
+            ...toPublicEvent(event),
+            stats: {
+              registered: registrations.total,
+              checkedIn: registrations.checkedIn,
+              attended,
+            },
+          };
+        }),
+      );
+
+      return reply.code(200).send({ limit, offset, events: summaries });
+    },
+  );
+
+  /**
+   * GET /api/events/:eventId/badges?limit=&offset= — who holds a badge.
+   *
+   * WHAT THE GRID ON AN EVENT'S PAGE IS DRAWN FROM. Read from the attendance
+   * index rather than the ledger: the roster route asks the chain and pages
+   * through Clio, which is the right answer for auditing an event and the
+   * wrong one for a page that wants two hundred thumbnails at once. Every row
+   * here was written by verifyThenRecord after all five checks passed, so the
+   * two agree — this one is just already in a database.
+   *
+   * THE ADDRESSES ARE ALREADY PUBLIC. Each is the owner of a badge anyone can
+   * read off the ledger with the event's taxon, and /events/:eventId/roster
+   * has published exactly this since before this route existed. No name, no
+   * email, nothing the chain does not already carry.
+   *
+   * Sorted oldest first, so the grid reads in the order people arrived.
+   *
+   * 200 | 400 bad params | 404 unknown or draft event
+   */
+  app.get<{ Params: EventIdParams; Querystring: PagingQuery }>(
+    "/api/events/:eventId/badges",
+    { schema: { params: eventIdParamsSchema, querystring: pagingQuerySchema } },
+    async (request, reply) => {
+      const { eventId } = request.params;
+      const { limit, offset } = request.query;
+
+      const event = await events.find(eventId);
+      if (!event || !isPubliclyVisible(event)) {
+        return sendError(reply, 404, "NOT_FOUND", `No event ${eventId}.`, { eventId });
+      }
+
+      const [rows, total] = await Promise.all([
+        deps.attendance.listByEvent(eventId, { limit, offset }),
+        deps.attendance.countByEvent(eventId),
+      ]);
+
+      return reply.code(200).send({
+        eventId,
+        limit,
+        offset,
+        total,
+        badges: rows.map((row) => ({
+          address: row.address,
+          nftokenId: row.nftokenId,
+          txHash: row.txHash,
+          claimedAt: row.claimedAt ? row.claimedAt.toISOString() : null,
+        })),
+      });
+    },
+  );
+
+  /**
+   * Photographs of an event.
+   *
+   *   GET    /api/events/:eventId/photos             public, ordered
+   *   POST   /admin/api/events/:eventId/photos       add a link
+   *   DELETE /admin/api/events/:eventId/photos/:id   remove one
+   *
+   * Registered only when a photo store is configured, the same way the event
+   * routes themselves are: a route that 500s on every call is worse than one
+   * that is not there.
+   */
+  const photos = deps.eventPhotos;
+  if (photos) {
+    app.get<{ Params: EventIdParams }>(
+      "/api/events/:eventId/photos",
+      { schema: { params: eventIdParamsSchema } },
+      async (request, reply) => {
+        const { eventId } = request.params;
+        const event = await events.find(eventId);
+        if (!event || !isPubliclyVisible(event)) {
+          return sendError(reply, 404, "NOT_FOUND", `No event ${eventId}.`, { eventId });
+        }
+        const rows = await photos.listByEvent(eventId);
+        return reply.code(200).send({
+          eventId,
+          photos: rows.map((p) => ({ id: p.id, url: p.url, caption: p.caption ?? null })),
+        });
+      },
+    );
+
+    app.post<{ Params: EventIdParams; Body: PhotoBody }>(
+      "/admin/api/events/:eventId/photos",
+      {
+        schema: { params: eventIdParamsSchema, body: photoBodySchema },
+        preHandler: requireAdmin,
+      },
+      async (request, reply) => {
+        const { eventId } = request.params;
+        // A draft can have photos: an organiser sets the page up before it is
+        // published. What it cannot do is show them, and the public read above
+        // is what enforces that.
+        const event = await events.find(eventId);
+        if (!event) {
+          return sendError(reply, 404, "NOT_FOUND", `No event ${eventId}.`, { eventId });
+        }
+        const photo = await photos.add({
+          eventId,
+          url: request.body.url,
+          ...(request.body.caption === undefined ? {} : { caption: request.body.caption }),
+        });
+        return reply.code(201).send({
+          id: photo.id,
+          url: photo.url,
+          caption: photo.caption ?? null,
+        });
+      },
+    );
+
+    app.delete<{ Params: PhotoIdParams }>(
+      "/admin/api/events/:eventId/photos/:photoId",
+      { schema: { params: photoIdParamsSchema }, preHandler: requireAdmin },
+      async (request, reply) => {
+        const { eventId, photoId } = request.params;
+        const removed = await photos.remove(eventId, photoId);
+        if (!removed) {
+          return sendError(reply, 404, "NOT_FOUND", "No such photo on this event.", {
+            eventId,
+            photoId,
+          });
+        }
+        return reply.code(200).send({ removed: true, id: photoId });
+      },
+    );
+  }
+
+  /**
+   * GET /api/events/:eventId/summary — one event and its three numbers.
+   *
+   * The single-event twin of /api/events/summary, so an event's own page does
+   * not have to fetch every event and find itself in the list.
+   *
+   * 200 | 404 unknown or draft event
+   */
+  app.get<{ Params: EventIdParams }>(
+    "/api/events/:eventId/summary",
+    { schema: { params: eventIdParamsSchema } },
+    async (request, reply) => {
+      const { eventId } = request.params;
+
+      const event = await events.find(eventId);
+      if (!event || !isPubliclyVisible(event)) {
+        return sendError(reply, 404, "NOT_FOUND", `No event ${eventId}.`, { eventId });
+      }
+
+      const [registrations, attended] = await Promise.all([
+        deps.registrations
+          ? deps.registrations.countByEvent(eventId)
+          : Promise.resolve({ total: 0, checkedIn: 0 }),
+        deps.attendance.countByEvent(eventId),
+      ]);
+
+      return reply.code(200).send({
+        ...toPublicEvent(event),
+        stats: {
+          registered: registrations.total,
+          checkedIn: registrations.checkedIn,
+          attended,
+        },
       });
     },
   );

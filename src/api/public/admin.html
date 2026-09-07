@@ -859,6 +859,44 @@ tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%
       <div class="card" style="margin-top:clamp(13px,1.8vw,20px)">
         <div class="card__hd">
           <span class="card__n">2</span>
+          <span class="label">Photographs</span>
+          <span class="label" id="photos-src" style="margin-left:auto">GET /api/events/&hellip;/photos</span>
+        </div>
+        <div class="card__body">
+          <p class="help" style="margin-top:0">
+            Pictures of the day, shown on the public event page <b>above the badges</b>. Paste the
+            address of an image you already host &mdash; nothing is uploaded here. The first one is
+            shown large. If a link stops working the picture is dropped from the page rather than
+            shown broken, and nothing here can tell you when that happens.
+          </p>
+
+          <form class="form" id="photo-form" novalidate style="gap:10px">
+            <div class="field" id="f-photoUrl">
+              <label for="in-photoUrl">Image address</label>
+              <input class="in" id="in-photoUrl" name="url" type="url" maxlength="2000"
+                     spellcheck="false" autocomplete="off" placeholder="https://&hellip;/finish-line.jpg">
+              <div class="bad" id="e-photoUrl" hidden></div>
+            </div>
+            <div class="field" id="f-photoCaption">
+              <label for="in-photoCaption">Caption <span class="help">optional</span></label>
+              <input class="in" id="in-photoCaption" name="caption" type="text" maxlength="200"
+                     placeholder="The finish line, just after nine">
+              <div class="bad" id="e-photoCaption" hidden></div>
+            </div>
+            <div style="display:flex; gap:9px; align-items:center">
+              <button class="btn btn--go" id="btn-photo-add" type="submit">Add picture</button>
+              <span class="label" id="photo-hint"></span>
+            </div>
+          </form>
+
+          <div id="photo-err"></div>
+          <div id="photo-list" style="margin-top:14px"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:clamp(13px,1.8vw,20px)">
+        <div class="card__hd">
+          <span class="card__n">3</span>
           <span class="label">Registrations</span>
           <span class="label" id="regs-src" style="margin-left:auto">GET /admin/api/events/&hellip;/registrations</span>
         </div>
@@ -1783,10 +1821,155 @@ tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%
       }
       current = ev;
       paintDetailHead(ev);
+      loadPhotos();
       loadRegs(0);
       loadAttendance();
       loadChain();
     });
+  }
+
+  /* =====================================================================
+     Photographs
+
+     Links, not uploads. The organiser hosts the image wherever they already
+     host images and pastes the address; this stores an ordered list. See
+     010_event_photos.sql for why, and for what that costs.
+     ===================================================================== */
+
+  var photos = [];
+
+  function photoRow(p, index) {
+    var row = node("div", "photo");
+    row.style.cssText =
+      "display:flex; gap:12px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--rule)";
+
+    var thumb = node("span");
+    thumb.style.cssText =
+      "flex:0 0 84px; width:84px; height:63px; border:1px solid var(--rule); background:var(--surface-2); overflow:hidden; display:block";
+    var img = document.createElement("img");
+    img.src = p.url;
+    img.alt = "";
+    img.loading = "lazy";
+    img.decoding = "async";
+    img.style.cssText = "width:100%; height:100%; object-fit:cover; display:block";
+    // Say so here rather than in the public page's silence: this is the screen
+    // where somebody can actually fix a dead link.
+    img.addEventListener("error", function () {
+      thumb.style.background = "var(--surface-2)";
+      clear(thumb);
+      var x = node("span", "label", "not loading");
+      x.style.cssText = "display:block; padding:6px; color:var(--signal)";
+      thumb.appendChild(x);
+    });
+    thumb.appendChild(img);
+    row.appendChild(thumb);
+
+    var mid = node("div");
+    mid.style.cssText = "min-width:0; flex:1 1 auto";
+    if (index === 0) {
+      var lead = node("span", "label", "shown large");
+      lead.style.cssText = "color:var(--signal); display:block; margin-bottom:3px";
+      mid.appendChild(lead);
+    }
+    if (p.caption) {
+      var cap = node("div", null, p.caption);
+      cap.style.cssText = "margin-bottom:3px";
+      mid.appendChild(cap);
+    }
+    var link = node("a", "mono", p.url);
+    link.href = p.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.style.cssText =
+      "font-size:12px; color:var(--ink-3); word-break:break-all; display:block";
+    mid.appendChild(link);
+    row.appendChild(mid);
+
+    var del = node("button", "btn btn--tiny", "Remove");
+    del.type = "button";
+    del.style.flex = "0 0 auto";
+    del.addEventListener("click", function () {
+      if (!current) return;
+      del.disabled = true;
+      del.textContent = "Removing…";
+      api("DELETE", "/admin/api/events/" + encodeURIComponent(current.eventId) +
+          "/photos/" + encodeURIComponent(p.id))
+        .then(function (r) {
+          if (!r.ok) {
+            del.disabled = false;
+            del.textContent = "Remove";
+            flash("detail-flash", "bad", codeOf(r), "The picture was not removed.");
+            return;
+          }
+          loadPhotos();
+        });
+    });
+    row.appendChild(del);
+    return row;
+  }
+
+  function paintPhotos() {
+    var host = $("photo-list");
+    clear(host);
+    if (photos.length === 0) {
+      var empty = node("p", "help", "No pictures yet. The public page shows the badges on their own until you add one.");
+      empty.style.margin = "0";
+      host.appendChild(empty);
+      setText("photo-hint", "");
+      return;
+    }
+    for (var i = 0; i < photos.length; i++) host.appendChild(photoRow(photos[i], i));
+    setText("photo-hint", photos.length + (photos.length === 1 ? " picture" : " pictures"));
+  }
+
+  function loadPhotos() {
+    if (!current) return Promise.resolve();
+    photos = [];
+    paintPhotos();
+    return api("GET", "/api/events/" + encodeURIComponent(current.eventId) + "/photos")
+      .then(function (r) {
+        if (!r.ok) return;
+        photos = (r.json && r.json.photos) || [];
+        paintPhotos();
+      });
+  }
+
+  function submitPhoto(e) {
+    if (e) e.preventDefault();
+    if (!current) return;
+    clear($("photo-err"));
+    fieldError("photoUrl", "");
+    fieldError("photoCaption", "");
+
+    var url = ($("in-photoUrl").value || "").trim();
+    var caption = ($("in-photoCaption").value || "").trim();
+
+    if (!url) { fieldError("photoUrl", "Paste the address of an image."); $("in-photoUrl").focus(); return; }
+    if (!/^https?:\/\//i.test(url)) {
+      fieldError("photoUrl", "It has to start with http:// or https://");
+      $("in-photoUrl").focus();
+      return;
+    }
+
+    var btn = $("btn-photo-add");
+    btn.disabled = true;
+    btn.textContent = "Adding…";
+
+    api("POST", "/admin/api/events/" + encodeURIComponent(current.eventId) + "/photos",
+        caption ? { url: url, caption: caption } : { url: url })
+      .then(function (r) {
+        btn.disabled = false;
+        btn.textContent = "Add picture";
+        if (!r.ok) {
+          var msg = (r.json && r.json.error && r.json.error.message) || "The picture was not added.";
+          fieldError("photoUrl", msg);
+          return;
+        }
+        $("in-photoUrl").value = "";
+        $("in-photoCaption").value = "";
+        loadPhotos();
+        $("in-photoUrl").focus();
+      });
   }
 
   function paintDetailHead(ev) {
@@ -2221,6 +2404,7 @@ tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%
     });
     $("btn-chain").addEventListener("click", function () { if (current) loadChain(); });
     $("event-form").addEventListener("submit", submitForm);
+    $("photo-form").addEventListener("submit", submitPhoto);
     $("in-status").addEventListener("change", paintStatusHelp);
     $("btn-prev").addEventListener("click", function () {
       loadRegs(Math.max(0, regs.offset - regs.limit));

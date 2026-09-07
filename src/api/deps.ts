@@ -15,6 +15,7 @@ import type {
   ClaimRepository,
   CreateClaimOfferInput,
   EventId,
+  EventPhotoRepository,
   EventRepository,
   MintBadgeInput,
   MintResult,
@@ -304,6 +305,13 @@ export interface ApiDeps {
    * on every call. buildDeps() always supplies both.
    */
   events?: EventRepository;
+  /**
+   * Photographs of an event, shown above the badges on its public page.
+   *
+   * Optional like `events`: a deployment without it simply has no gallery, and
+   * the routes that read it are not registered rather than 500ing.
+   */
+  eventPhotos?: EventPhotoRepository;
   registrations?: RegistrationRepository;
   /**
    * Xaman SignIn — how an attendee proves the wallet they are registering.
@@ -600,6 +608,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   let claims: ClaimRepository;
   let sessions: SessionStore;
   let events: EventRepository;
+  let eventPhotos: EventPhotoRepository;
   let registrations: RegistrationRepository;
   let disposeStores: (() => Promise<void>) | undefined;
 
@@ -611,6 +620,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     sessions = new db.PgSessionStore(pool);
     events = new db.PgEventRepository(pool);
     registrations = new db.PgRegistrationRepository(pool);
+    eventPhotos = new db.PgEventPhotoRepository(pool);
     disposeStores = () => db.closePool(pool);
   } else {
     attendance = new db.MemoryAttendanceRepository();
@@ -628,6 +638,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     // Postgres both are foreign keys and a COUNT.
     events = new db.MemoryEventRepository(attendance);
     registrations = new db.MemoryRegistrationRepository(events);
+    eventPhotos = new db.MemoryEventPhotoRepository();
     // One line, once, at startup. Losing the index does not lose attendance —
     // the ledger still has it — but it does lose every cheap read until the
     // rows are re-derived. Losing the claim slots is worse than that: an
@@ -705,6 +716,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     sponsorLedger,
     sessions,
     events,
+    eventPhotos,
     registrations,
     signIn,
     xaman,

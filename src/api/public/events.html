@@ -1,0 +1,346 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<title>Events</title>
+<style>
+/* ==========================================================================
+   THE EVENT LIST — the same ticket as /attend, listing what has happened.
+
+   DELIBERATELY THE SAME PAGE FURNITURE. /attend already asks "which event are
+   you at" and answers it with a stack of pick rows inside a ticket; this asks
+   "which event do you want to look at" and the answer has the same shape. Two
+   treatments for one question would be two things to maintain and one more
+   idiom for a guest to learn, so the strip, the ticket, the ribbon, the face
+   and the .pick rows below are lifted from that page unchanged.
+
+   NO TOTALS HERE. An aggregate across every event is a number for whoever
+   runs the events, not for the person looking for the one they went to. Each
+   row carries its own count; the event's own page carries the rest.
+   ========================================================================== */
+
+:root{
+  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
+  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#f0ebe1;
+  --surface:#f8f5ef;
+  --surface-2:#ece5d8;
+  --sunk:#e4dccc;
+  --ink:#1d1a16;
+  --ink-2:#4d453a;
+  --ink-3:#6b6153;
+  --rule:#d6cbb6;
+  --rule-2:#c0b39a;
+
+  --signal:#8d5310;
+  --signal-2:#b9812c;
+  --signal-wash:rgba(185,129,44,.13);
+  --on-signal:#fffaf2;
+  --jade:#186a4c;
+  --jade-wash:rgba(24,106,76,.12);
+  --vermilion:#a8331a;
+  --vermilion-wash:rgba(168,51,26,.11);
+
+  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
+  --grid:rgba(93,74,44,.09);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --paper:#0e100f;
+    --surface:#161917;
+    --surface-2:#1c201d;
+    --sunk:#101312;
+    --ink:#ece6da;
+    --ink-2:#b3aa9a;
+    --ink-3:#8d8778;
+    --rule:#2b302c;
+    --rule-2:#3c433d;
+
+    --signal:#e0a24a;
+    --signal-2:rgba(201,135,48,.56);
+    --signal-wash:rgba(224,162,74,.12);
+    --on-signal:#17130c;
+    --jade:#5cbc93;
+    --jade-wash:rgba(92,188,147,.12);
+    --vermilion:#e8724f;
+    --vermilion-wash:rgba(232,114,79,.12);
+
+    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
+    --grid:rgba(224,214,190,.055);
+  }
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:17px;
+  line-height:1.6;
+  overflow-x:hidden;
+  -webkit-tap-highlight-color:var(--signal-wash);
+  padding-bottom:calc(40px + env(safe-area-inset-bottom));
+}
+body::before{
+  content:"";
+  position:fixed; inset:0; pointer-events:none; z-index:0;
+  background-image:linear-gradient(var(--grid) 1px, transparent 1px),
+                   linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+  background-size:26px 26px;
+  opacity:.5;
+}
+
+h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.018em; line-height:1.12}
+p{margin:0 0 .8em}
+p:last-child{margin-bottom:0}
+a{color:var(--signal)}
+code,.mono{font-family:var(--font-mono)}
+.label{
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
+  color:var(--ink-3); font-weight:600;
+}
+.prose{color:var(--ink-2); font-size:15.5px}
+.prose strong{color:var(--ink); font-weight:600}
+/* The same developer gate the pass uses: ledger details stay in the DOM and
+   out of a guest's way. Shift+D reveals them. */
+body:not(.dev) [data-dev]{display:none !important}
+
+/* ---- the letterhead ------------------------------------------------------ */
+.strip{
+  position:sticky; top:0; z-index:40;
+  background:color-mix(in srgb, var(--paper) 90%, transparent);
+  -webkit-backdrop-filter:saturate(150%) blur(9px);
+  backdrop-filter:saturate(150%) blur(9px);
+  border-bottom:1px solid var(--rule);
+}
+.strip__in{display:flex; align-items:center; gap:11px; padding:9px 13px; max-width:640px; margin:0 auto}
+.mark{
+  font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; font-weight:700;
+  color:var(--on-signal); background:var(--signal); padding:4px 6px; border-radius:2px; flex:none;
+  align-self:flex-start; margin-top:2px;
+}
+.head{min-width:0; flex:1}
+.head__n{
+  display:block; font-size:16px; font-weight:600; letter-spacing:-.02em; line-height:1.25; color:var(--ink);
+  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+.head__w{
+  display:block; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--ink-3); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+}
+
+.wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:0 13px}
+
+/* ---- the ticket ---------------------------------------------------------- */
+.pass{
+  position:relative; margin:18px 0 0;
+  border:1.5px solid var(--ink); border-radius:3px;
+  background:var(--surface); box-shadow:var(--shadow);
+}
+.pass__ribbon{
+  display:flex; align-items:center; gap:10px;
+  padding:9px 14px; border-radius:2px 2px 0 0;
+  background:var(--ink); color:var(--paper);
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; font-weight:700;
+}
+.pass__ribbon .grow{margin-left:auto; font-weight:600; letter-spacing:.13em; opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+.dot{
+  width:7px; height:7px; border-radius:50%; flex:none;
+  background:currentColor; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+}
+
+.face{padding:24px 17px 22px; animation:rise .42s cubic-bezier(.2,.75,.3,1) both}
+@keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
+@media (prefers-reduced-motion: reduce){ .face{animation:none} }
+.face__eyebrow{display:flex; align-items:center; gap:11px; margin-bottom:13px}
+.face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
+.face h1{font-size:clamp(1.82rem,8vw,2.4rem); letter-spacing:-.032em; text-wrap:balance}
+.face h1 em{font-style:italic; color:var(--signal)}
+.face h1 + .prose{margin-top:14px}
+
+/* ---- the picker ---------------------------------------------------------- */
+.picks{display:grid; gap:11px; margin-top:14px}
+.pick{
+  display:block; text-decoration:none; color:inherit;
+  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  padding:13px 14px; transition:border-color .16s ease, background .16s ease;
+}
+.pick:hover{border-color:var(--signal); background:var(--signal-wash)}
+.pick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
+.pick__top{display:flex; align-items:baseline; gap:10px}
+.pick__n{font-family:var(--font-display); font-size:1.14rem; font-weight:600; color:var(--ink); letter-spacing:-.02em; min-width:0}
+.pick__go{margin-left:auto; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); flex:none}
+.pick__meta{font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:6px 0 0}
+.pick__meta b{color:var(--jade); font-weight:700}
+.pick__desc{font-size:14px; color:var(--ink-2); margin:7px 0 0}
+.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:2px; padding:16px; text-align:center; margin-top:14px}
+
+.foot{max-width:640px; margin:22px auto 0; padding:0 13px; color:var(--ink-3); font-size:13.5px}
+
+@media (min-width:560px){
+  .wrap{padding:0 20px}
+  .face{padding:30px 26px 28px}
+  .foot{padding:0 20px}
+}
+</style>
+</head>
+<body>
+
+<div class="strip">
+  <div class="strip__in">
+    <span class="mark">LOG</span>
+    <span class="head">
+      <span class="head__n">Events</span>
+      <span class="head__w">what has happened so far</span>
+    </span>
+  </div>
+</div>
+
+<div class="wrap">
+  <section class="pass" id="pass">
+    <div class="pass__ribbon">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="ribbon">the events</span>
+      <span class="grow">on the ledger</span>
+    </div>
+
+    <div class="face" data-face="boot" id="face-boot">
+      <p class="prose">Reading the events…</p>
+    </div>
+
+    <div class="face" data-face="list" id="face-list" hidden>
+      <div class="face__eyebrow"><span class="label">Every event</span></div>
+      <h1>Which event do you want to <em>look</em> at?</h1>
+      <p class="prose">Open one to see the day itself and every badge it handed out.</p>
+      <div class="picks" id="picks"></div>
+    </div>
+
+    <div class="face" data-face="none" id="face-none" hidden>
+      <div class="face__eyebrow"><span class="label">Nothing yet</span></div>
+      <h1>No events on <em>record</em>.</h1>
+      <p class="prose">The first event to open for registration appears here as it happens.</p>
+    </div>
+
+    <div class="face" data-face="err" id="face-err" hidden>
+      <div class="face__eyebrow"><span class="label">Not answering</span></div>
+      <h1>This list is <em>offline</em>.</h1>
+      <p class="prose">
+        This page is served by the same desk that holds the records, so it is either restarting or
+        down. Nothing is lost — the badges live on the ledger either way.
+      </p>
+    </div>
+  </section>
+
+  <p class="foot">Badges are soulbound: nobody can transfer one, and nobody here can take one back.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  function $(id) { return document.getElementById(id); }
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function num(n) { return Number(n || 0).toLocaleString("en-US"); }
+
+  function showFace(which) {
+    var faces = ["boot", "list", "none", "err"];
+    for (var i = 0; i < faces.length; i++) $("face-" + faces[i]).hidden = faces[i] !== which;
+  }
+
+  /* An ISO day carries no timezone, so it is read and printed as UTC —
+     reading it locally moves the day backwards for anybody west of Greenwich.
+     The same treatment the pass gives it. */
+  function fmtDate(iso) {
+    var m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(iso || ""));
+    if (!m) return "";
+    var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3]));
+    if (isNaN(d.getTime())) return "";
+    try {
+      return d.toLocaleDateString(undefined, {
+        day: "numeric", month: "long", year: "numeric", timeZone: "UTC"
+      });
+    } catch (e) { return m[3] + "/" + m[2] + "/" + m[1]; }
+  }
+
+  function pickCard(e) {
+    var a = node("a", "pick");
+    a.href = "/events/" + encodeURIComponent(String(e.eventId));
+
+    var top = node("div", "pick__top");
+    top.appendChild(node("span", "pick__n", e.name || ("Event " + e.eventId)));
+    top.appendChild(node("span", "pick__go",
+      e.status === "closed" ? "finished" : e.status === "live" ? "happening now" : "open"));
+    a.appendChild(top);
+
+    var bits = [];
+    var d = fmtDate(e.eventDate);
+    if (d) bits.push(d);
+    if (e.venue) bits.push(String(e.venue));
+    if (bits.length) a.appendChild(node("p", "pick__meta", bits.join("  ·  ")));
+
+    /* The badge count is why this list exists, so it gets its own line in the
+       same voice rather than being crushed into the meta above. Zero is stated
+       rather than hidden: an event that has handed out nothing yet is a fact
+       about the event, not missing data. */
+    var held = (e.stats && e.stats.attended) || 0;
+    var count = node("p", "pick__meta");
+    if (held > 0) {
+      count.appendChild(node("b", null, num(held)));
+      count.appendChild(document.createTextNode(held === 1 ? "  badge collected" : "  badges collected"));
+    } else {
+      count.appendChild(document.createTextNode("no badges yet"));
+    }
+    a.appendChild(count);
+
+    /* The event NUMBER is a ledger detail, not how anyone picks an event —
+       people recognise the name, the date and the room. Kept in the DOM for a
+       diagnostics pass, the same way the pass keeps it. */
+    var id = node("p", "pick__meta", "#" + e.eventId);
+    id.setAttribute("data-dev", "");
+    a.appendChild(id);
+
+    if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
+    return a;
+  }
+
+  fetch("/api/events/summary?limit=50", { headers: { accept: "application/json" } })
+    .then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    })
+    .then(function (body) {
+      var list = (body && body.events) || [];
+      if (list.length === 0) { showFace("none"); return; }
+      var box = $("picks");
+      clear(box);
+      for (var i = 0; i < list.length; i++) box.appendChild(pickCard(list[i]));
+      showFace("list");
+    })
+    .catch(function () { showFace("err"); });
+
+  // Shift+D, exactly as on the pass, so the taxon is one keystroke away for
+  // whoever is debugging and invisible to everybody else.
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "D" && e.shiftKey && !e.metaKey && !e.ctrlKey && !e.altKey) {
+      document.body.classList.toggle("dev");
+    }
+  });
+})();
+</script>
+</body>
+</html>

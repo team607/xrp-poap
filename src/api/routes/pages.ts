@@ -93,4 +93,17 @@ export function registerPageRoutes(
   // with a Xaman sign-in and approves the badge in Xaman.
   servePage(app, "/attend", "attend.html", dir);
   servePage(app, "/attend/:eventId", "attend.html", dir);
+
+  // The public record: every event that is not a draft, with its turnout.
+  //
+  // `/events` and not `/events/:something` — the parametric routes under this
+  // prefix belong to the API (claims, roster, attendance), and a page route
+  // that took a parameter here would sit alongside them confusingly.
+  servePage(app, "/events", "events.html", dir);
+  servePage(app, "/events/", "events.html", dir);
+
+  // One event: its particulars, its turnout, and every badge it minted. The
+  // parametric API routes under this prefix are all deeper — /roster, /claims,
+  // /attendance — so a page at exactly two segments does not shadow them.
+  servePage(app, "/events/:eventId", "event.html", dir);
 }

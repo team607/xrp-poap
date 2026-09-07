@@ -121,6 +121,50 @@ export function registerBadgeRoutes(
     },
   );
 
+  /**
+   * The same artwork as vector.
+   *
+   * WHY BOTH. The PNG exists because Xaman renders an SVG badge as a blank
+   * tile, and NFTokenMint's URI cannot be edited afterwards — so the thing a
+   * wallet is pointed at has to be raster. But it is 1024x1024 and about
+   * 290 KB, and an event page showing two hundred of them at 112 px each would
+   * pull sixty megabytes to draw postage stamps.
+   *
+   * The SVG is the source those PNGs are rendered from: a few kilobytes,
+   * sharp at any size, and no rasterising for the server to do per request.
+   * It is for our own pages, which are browsers. Nothing on the ledger points
+   * here.
+   *
+   * Safe in an <img>: the document is generated here, and the one piece of
+   * operator input in it — the event name — goes through artLabel(), which
+   * strips the characters that could close a text node.
+   */
+  app.get<{ Params: { eventId: number; address: string } }>(
+    "/badge/:eventId/:address.svg",
+    { schema: { params: paramsSchema } },
+    async (request, reply) => {
+      const { eventId, address } = request.params;
+      requireValid(eventId, address);
+      const name = await eventLabel(deps, eventId);
+      const { svg } = renderBadgeArt({
+        address,
+        eventId,
+        ...(name ? { eventName: artLabel(name) } : {}),
+      });
+      return reply
+        .code(200)
+        .type("image/svg+xml; charset=utf-8")
+        .header("cache-control", IMMUTABLE)
+        .header("x-content-type-options", "nosniff")
+        // NO `sandbox` CSP HERE, however tempting. It gives the response a
+        // unique origin, and Chrome then refuses to paint it in an <img> at
+        // all — 200 on the wire, blank tile on the page. It buys nothing
+        // either: a browser already disables scripting for SVG loaded as an
+        // image, which is the only way this route is used.
+        .send(svg);
+    },
+  );
+
   /** The metadata. This is what goes in NFTokenMint's URI. */
   app.get<{ Params: { eventId: number; address: string } }>(
     "/badge/:eventId/:address.json",

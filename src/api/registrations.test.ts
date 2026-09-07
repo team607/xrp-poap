@@ -316,6 +316,7 @@ interface Harness {
   events: FakeEventRepository;
   registrations: FakeRegistrationRepository;
   signIn: FakeSignInService;
+  attendanceCounts: Map<EventId, number>;
 }
 
 function makeDeps(options: { deps?: Partial<ApiDeps>; config?: Partial<AppConfig> } = {}): {
@@ -323,10 +324,19 @@ function makeDeps(options: { deps?: Partial<ApiDeps>; config?: Partial<AppConfig
   events: FakeEventRepository;
   registrations: FakeRegistrationRepository;
   signIn: FakeSignInService;
+  attendanceCounts: Map<EventId, number>;
 } {
   const events = new FakeEventRepository();
   const registrations = new FakeRegistrationRepository();
   const signIn = new FakeSignInService();
+
+  /* Only countByEvent is reachable from these routes. Everything else stays
+     `unused` so a route that starts touching the ledger index has to say so. */
+  const attendanceCounts = new Map<EventId, number>();
+  const attendance = {
+    ...unused<ApiDeps["attendance"]>("attendance"),
+    countByEvent: async (eventId: EventId) => attendanceCounts.get(eventId) ?? 0,
+  } as ApiDeps["attendance"];
 
   events.seed(OPEN_EVENT, "open", { name: "XRPL Meetup" });
   events.seed(DRAFT_EVENT, "draft", { name: "Secret Offsite" });
@@ -336,7 +346,7 @@ function makeDeps(options: { deps?: Partial<ApiDeps>; config?: Partial<AppConfig
   const deps: ApiDeps = {
     config: testConfig(options.config),
     gateway: new MockGateway({ issuerAddress: ISSUER }),
-    attendance: unused("attendance"),
+    attendance,
     claims: unused("claims"),
     sponsorLedger: unused("sponsorLedger"),
     chain: unused<ChainOps>("chain"),
@@ -348,7 +358,7 @@ function makeDeps(options: { deps?: Partial<ApiDeps>; config?: Partial<AppConfig
     ...options.deps,
   };
 
-  return { deps, events, registrations, signIn };
+  return { deps, events, registrations, signIn, attendanceCounts };
 }
 
 /**
@@ -361,7 +371,7 @@ function makeDeps(options: { deps?: Partial<ApiDeps>; config?: Partial<AppConfig
  * the bottom, which is where the two layers meeting is the subject.
  */
 function harness(options: Parameters<typeof makeDeps>[0] = {}): Harness {
-  const { deps, events, registrations, signIn } = makeDeps(options);
+  const { deps, events, registrations, signIn, attendanceCounts } = makeDeps(options);
 
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(({ schema }) => (data) => {
@@ -372,12 +382,107 @@ function harness(options: Parameters<typeof makeDeps>[0] = {}): Harness {
   registerEventRoutes(app, deps);
   registerRegistrationRoutes(app, deps);
 
-  return { app, deps, events, registrations, signIn };
+  return { app, deps, events, registrations, signIn, attendanceCounts };
 }
 
 // ---------------------------------------------------------------------------
 // Public event reads
 // ---------------------------------------------------------------------------
+
+/**
+ * The public record at /events.
+ *
+ * Three numbers describe a door, and only one of them is a fact about the
+ * world: `attended` is counted from the attendance index, one row per accept
+ * that passed all five checks against the ledger. `registered` is an intention
+ * and `checkedIn` is a volunteer's observation.
+ */
+describe("GET /api/events/summary", () => {
+  const summary = async (h: Harness) =>
+    (await h.app.inject({ method: "GET", url: "/api/events/summary" })).json();
+
+  it("includes finished events, which the sign-up list deliberately hides", async () => {
+    // The whole point of the page: /api/events must not advertise an event
+    // that is over, and a record of what happened is exactly where it belongs.
+    const h = harness();
+
+    const ids = (await summary(h)).events.map((e: { eventId: number }) => e.eventId);
+
+    expect(ids).toContain(CLOSED_EVENT);
+    expect(
+      (await h.app.inject({ method: "GET", url: "/api/events" })).json().events.map(
+        (e: { eventId: number }) => e.eventId,
+      ),
+    ).not.toContain(CLOSED_EVENT);
+  });
+
+  it("still never publishes a draft", async () => {
+    const h = harness();
+    const body = await summary(h);
+    expect(JSON.stringify(body)).not.toContain("Secret Offsite");
+    expect(body.events.some((e: { status: string }) => e.status === "draft")).toBe(false);
+  });
+
+  it("reports the three numbers per event", async () => {
+    const h = harness();
+    await h.registrations.create({
+      eventId: LIVE_EVENT,
+      address: ATTENDEE,
+      addressProof: "xaman_signin",
+      displayName: "Priya Raman",
+    });
+    h.attendanceCounts.set(LIVE_EVENT, 1);
+
+    const live = (await summary(h)).events.find(
+      (e: { eventId: number }) => e.eventId === LIVE_EVENT,
+    );
+
+    expect(live.stats).toEqual({ registered: 1, checkedIn: 0, attended: 1 });
+  });
+
+  it("lets attendance exceed registrations, because walk-ups exist", async () => {
+    // Turning up without signing up is normal at a door. Clamping this to the
+    // registration count would quietly under-report the only number that is
+    // backed by the ledger.
+    const h = harness();
+    h.attendanceCounts.set(LIVE_EVENT, 12);
+
+    const live = (await summary(h)).events.find(
+      (e: { eventId: number }) => e.eventId === LIVE_EVENT,
+    );
+
+    expect(live.stats).toEqual({ registered: 0, checkedIn: 0, attended: 12 });
+  });
+
+  it("carries nothing about a person", async () => {
+    // Countable-only. These are the same figures anyone could derive by
+    // reading the issuer's transactions off the chain.
+    const h = harness();
+    await h.registrations.create({
+      eventId: LIVE_EVENT,
+      address: ATTENDEE,
+      addressProof: "xaman_signin",
+      displayName: "Priya Raman",
+      email: "priya@example.test",
+    });
+
+    const body = JSON.stringify(await summary(h));
+
+    expect(body).not.toContain("Priya");
+    expect(body).not.toContain("priya@example.test");
+    expect(body).not.toContain(ATTENDEE);
+  });
+
+  it("puts the most recent event first", async () => {
+    const h = harness();
+    h.events.seed(4246, "closed", { name: "Older", eventDate: "2020-01-01" });
+    h.events.seed(4247, "closed", { name: "Newer", eventDate: "2026-01-01" });
+
+    const names = (await summary(h)).events.map((e: { name: string }) => e.name);
+
+    expect(names.indexOf("Newer")).toBeLessThan(names.indexOf("Older"));
+  });
+});
 
 describe("GET /api/events", () => {
   it("lists open and live events", async () => {
