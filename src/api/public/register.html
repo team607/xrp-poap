@@ -667,6 +667,22 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
 }
+
+/* ---- breadcrumb ----------------------------------------------------------
+   Every page in the product carries the same trail, so "where am I and how do
+   I get out" has one answer everywhere. Before this, these pages had no link
+   to the front door at all — arriving on one from a QR code left the only way
+   back through the browser's own history.
+   ------------------------------------------------------------------------- */
+.crumb{
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  color:var(--ink-3); margin:14px 0 0;
+}
+.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
+.crumb a:hover{border-bottom-color:var(--signal)}
+.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+.crumb span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 </style>
 </head>
 <body>
@@ -687,6 +703,10 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
 </header>
 
 <main class="wrap">
+
+  <nav class="crumb" aria-label="Breadcrumb">
+    <a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Register</span>
+  </nav>
 
   <noscript>
     <div class="banner">

@@ -608,6 +608,10 @@ tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%
 
   <!-- ============ EVENTS LIST ============ -->
   <section id="view-events" hidden>
+    <nav class="crumb" aria-label="Breadcrumb">
+      <a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Organiser</span>
+    </nav>
+
     <div class="head">
       <div>
         <h1 class="head__t" tabindex="-1" id="events-h">Events</h1>
@@ -657,7 +661,7 @@ tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%
   <!-- ============ CREATE / EDIT ============ -->
   <section id="view-form" hidden>
     <nav class="crumb" aria-label="Breadcrumb">
-      <a href="#/">Events</a><span aria-hidden="true">/</span><span aria-current="page" id="form-crumb">New event</span>
+      <a href="/">Home</a><span aria-hidden="true">/</span><a href="#/">Organiser</a><span aria-hidden="true">/</span><span aria-current="page" id="form-crumb">New event</span>
     </nav>
 
     <div class="head">
@@ -777,7 +781,7 @@ tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%
   <!-- ============ EVENT DETAIL ============ -->
   <section id="view-detail" hidden>
     <nav class="crumb" aria-label="Breadcrumb">
-      <a href="#/">Events</a><span aria-hidden="true">/</span><span aria-current="page" id="detail-crumb">&mdash;</span>
+      <a href="/">Home</a><span aria-hidden="true">/</span><a href="#/">Organiser</a><span aria-hidden="true">/</span><span aria-current="page" id="detail-crumb">&mdash;</span>
     </nav>
 
     <div class="head">
