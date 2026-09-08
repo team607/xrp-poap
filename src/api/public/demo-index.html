@@ -2,24 +2,27 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>XRPL POAP · pick a role</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 :root{
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
-  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
-  --paper:#f0ebe1; --surface:#f8f5ef; --surface-2:#ece5d8; --sunk:#e4dccc;
-  --ink:#1d1a16; --ink-2:#4d453a; --ink-3:#6b6153;
-  --rule:#d6cbb6; --rule-2:#c0b39a;
-  --signal:#8d5310; --signal-2:#b9812c; --signal-wash:rgba(185,129,44,.13); --on-signal:#fffaf2;
-  --jade:#186a4c; --grid:rgba(93,74,44,.09);
-  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --paper:#faf9f7; --surface:#ffffff; --surface-2:#f4f2ef; --sunk:#f1efec;
+  --ink:#1c1b1a; --ink-2:#57544f; --ink-3:#8a8681;
+  --rule:#eceae6; --rule-2:#ddd9d3;
+  --signal:#b4552d; --signal-2:#e2c3b1; --signal-wash:rgba(180,85,45,.09); --on-signal:#ffffff;
+  --jade:#16794f; --grid:transparent;
+  --shadow:0 1px 2px rgba(28,27,26,.04), 0 12px 30px -22px rgba(28,27,26,.26);
 }
 @media (prefers-color-scheme:dark){:root{
-  --paper:#0e100f; --surface:#161917; --surface-2:#1c201d; --sunk:#101312;
-  --ink:#ece6da; --ink-2:#b3aa9a; --ink-3:#8d8778;
-  --rule:#2b302c; --rule-2:#3c433d;
-  --signal:#e0a24a; --signal-2:rgba(201,135,48,.56); --signal-wash:rgba(224,162,74,.12); --on-signal:#17130c;
-  --jade:#5cbc93; --grid:rgba(200,180,140,.05);
-  --shadow:0 1px 0 rgba(255,255,255,.04) inset, 0 22px 40px -28px rgba(0,0,0,.8);
+  --paper:#141413; --surface:#1c1c1b; --surface-2:#232322; --sunk:#191918;
+  --ink:#f2f0ed; --ink-2:#b3afa8; --ink-3:#8a8681;
+  --rule:#2c2b29; --rule-2:#3b3a37;
+  --signal:#e08b5f; --signal-2:#5c4030; --signal-wash:rgba(224,139,95,.13); --on-signal:#1c1310;
+  --jade:#4fbd8b; --grid:rgba(200,180,140,.05);
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
 }}
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -34,14 +37,14 @@ body{
 .tag{
   display:inline-block;font-family:var(--font-mono);font-size:.66rem;letter-spacing:.16em;
   text-transform:uppercase;color:var(--on-signal);background:var(--signal);
-  padding:.32rem .6rem;border-radius:3px;
+  padding:.32rem .6rem;border-radius:16px;
 }
 h1{font-size:clamp(2.1rem,6vw,3.4rem);line-height:1.06;margin:1.4rem 0 .6rem;letter-spacing:-.02em;font-weight:600}
 h1 em{font-style:italic;color:var(--signal)}
 .lede{color:var(--ink-2);max-width:44rem;margin:0 0 .6rem}
 .net{
   font-family:var(--font-mono);font-size:.72rem;letter-spacing:.08em;text-transform:uppercase;
-  color:var(--ink-3);border:1px solid var(--rule);border-radius:3px;padding:.4rem .7rem;
+  color:var(--ink-3);border:1px solid var(--rule);border-radius:16px;padding:.4rem .7rem;
   display:inline-flex;gap:.6rem;flex-wrap:wrap;margin:1rem 0 0;background:var(--surface)
 }
 .net b{color:var(--jade);font-weight:600}
@@ -67,7 +70,7 @@ a.card:focus-visible{outline:2px solid var(--signal);outline-offset:3px}
 ol{margin:0;padding-left:1.3rem;color:var(--ink-2);max-width:46rem}
 ol li{margin:.35rem 0}
 ol b{color:var(--ink);font-weight:600}
-code{font-family:var(--font-mono);font-size:.86em;background:var(--sunk);padding:.1rem .32rem;border-radius:3px;color:var(--ink)}
+code{font-family:var(--font-mono);font-size:.86em;background:var(--sunk);padding:.1rem .32rem;border-radius:16px;color:var(--ink)}
 footer{margin-top:2.6rem;border-top:1px solid var(--rule);padding-top:1.2rem;color:var(--ink-3);font-size:.86rem;max-width:46rem}
 </style>
 

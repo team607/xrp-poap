@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <title>Your attendance pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* ==========================================================================
    THE PASS — the REAL attendee page, on the attendee's own phone.
@@ -50,31 +53,30 @@
    ========================================================================== */
 
 :root{
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
-  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
 
-  --paper:#f0ebe1;
-  --surface:#f8f5ef;
-  --surface-2:#ece5d8;
-  --sunk:#e4dccc;
-  --ink:#1d1a16;
-  --ink-2:#4d453a;
-  --ink-3:#6b6153;
-  --rule:#d6cbb6;
-  --rule-2:#c0b39a;
+  --paper:#faf9f7;
+  --surface:#ffffff;
+  --surface-2:#f4f2ef;
+  --sunk:#f1efec;
+  --ink:#1c1b1a;
+  --ink-2:#57544f;
+  --ink-3:#8a8681;
+  --rule:#eceae6;
+  --rule-2:#ddd9d3;
 
-  --signal:#8d5310;
-  --signal-2:#b9812c;
-  --signal-wash:rgba(185,129,44,.13);
-  --on-signal:#fffaf2;
-  --jade:#186a4c;
-  --jade-wash:rgba(24,106,76,.12);
-  --vermilion:#a8331a;
-  --vermilion-wash:rgba(168,51,26,.11);
+  --signal:#b4552d;
+  --signal-2:#e2c3b1;
+  --signal-wash:rgba(180,85,45,.09);
+  --on-signal:#ffffff;
+  --jade:#16794f; --jade-2:#a8cfbc;
+  --jade-wash:rgba(22,121,79,.09);
+  --vermilion:#b0342a;
+  --vermilion-wash:rgba(176,52,42,.09);
 
-  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
-  --grid:rgba(93,74,44,.09);
-  --grain-opacity:.055;
+  --shadow:0 1px 2px rgba(28,27,26,.04), 0 12px 30px -22px rgba(28,27,26,.26);
+  --grid:transparent;
 
   /* Both QR plates are deliberately NOT theme-aware. Scanners want dark on
      light; inverting a QR code for dark mode is how a badge handover dies at
@@ -88,28 +90,27 @@
 
 @media (prefers-color-scheme: dark){
   :root{
-    --paper:#0e100f;
-    --surface:#161917;
-    --surface-2:#1c201d;
-    --sunk:#101312;
-    --ink:#ece6da;
-    --ink-2:#b3aa9a;
-    --ink-3:#8d8778;
-    --rule:#2b302c;
-    --rule-2:#3c433d;
+    --paper:#141413;
+    --surface:#1c1c1b;
+    --surface-2:#232322;
+    --sunk:#191918;
+    --ink:#f2f0ed;
+    --ink-2:#b3afa8;
+    --ink-3:#8a8681;
+    --rule:#2c2b29;
+    --rule-2:#3b3a37;
 
-    --signal:#e0a24a;
-    --signal-2:rgba(201,135,48,.56);
-    --signal-wash:rgba(224,162,74,.12);
-    --on-signal:#17130c;
-    --jade:#5cbc93;
-    --jade-wash:rgba(92,188,147,.12);
-    --vermilion:#e8724f;
-    --vermilion-wash:rgba(232,114,79,.12);
+    --signal:#e08b5f;
+    --signal-2:#5c4030;
+    --signal-wash:rgba(224,139,95,.13);
+    --on-signal:#1c1310;
+    --jade:#4fbd8b; --jade-2:#2f6a52;
+    --jade-wash:rgba(79,189,139,.13);
+    --vermilion:#e0736a;
+    --vermilion-wash:rgba(224,115,106,.13);
 
-    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
-    --grid:rgba(224,214,190,.055);
-    --grain-opacity:.04;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
+    --grid:transparent;
   }
 }
 
@@ -134,28 +135,14 @@ body.is-docked{padding-bottom:126px}
    simply not painted unless the footer link (or Shift+D) says otherwise. */
 body:not(.dev) [data-dev]{display:none !important}
 
-/* Atmosphere: the plate grid and paper grain of the other two pages, so all
-   three read as one product rather than three skins. */
-body::before{
-  content:"";
-  position:fixed; inset:0; z-index:0; pointer-events:none;
-  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
-  background-size:34px 34px;
-  -webkit-mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
-  mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
-}
-.grain{
-  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
+/* Base type. Shared with the other two guest pages so all three read as one
+   product rather than three skins. */
 h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.018em; line-height:1.12}
 p{margin:0 0 .8em}
 p:last-child{margin-bottom:0}
-a{color:var(--signal)}
+a{color:var(--jade)}
 code,.mono{font-family:var(--font-mono)}
-.label{
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
+.label{ font-size:13px;
   color:var(--ink-3); font-weight:600;
 }
 .prose{color:var(--ink-2); font-size:15.5px}
@@ -175,9 +162,9 @@ code,.mono{font-family:var(--font-mono)}
 }
 .strip__in{display:flex; align-items:center; gap:11px; padding:9px 13px; max-width:640px; margin:0 auto}
 .mark{
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; font-weight:700;
-  color:var(--on-signal); background:var(--signal); padding:4px 6px; border-radius:2px; flex:none;
-  align-self:flex-start; margin-top:2px;
+  font-size:12.5px; font-weight:600;
+  color:var(--ink-2); background:var(--surface-2); padding:3px 11px; border-radius:999px; flex:none;
+  align-self:flex-start; margin-top:3px;
 }
 .head{min-width:0; flex:1}
 .head__n{
@@ -185,7 +172,7 @@ code,.mono{font-family:var(--font-mono)}
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 .head__w{
-  display:block; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
+  font-weight:600; display:block; font-size:13px;
   color:var(--ink-3); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
 }
 
@@ -197,7 +184,7 @@ code,.mono{font-family:var(--font-mono)}
 }
 .facts::-webkit-scrollbar{display:none}
 .fact{display:flex; align-items:baseline; gap:6px; flex:none; padding-top:6px}
-.fact__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.fact__k{ font-size:12.5px; color:var(--ink-3); font-weight:600}
 .fact__v{font-family:var(--font-mono); font-size:11.5px; color:var(--ink); white-space:nowrap}
 .fact__v.ok{color:var(--jade)}
 .fact__v.warn{color:var(--signal)}
@@ -208,35 +195,35 @@ code,.mono{font-family:var(--font-mono)}
 .banner{
   display:flex; gap:11px; align-items:flex-start; margin:14px 0 0;
   border:1px solid var(--vermilion); border-left-width:3px; background:var(--vermilion-wash);
-  padding:11px 13px; border-radius:2px;
+  padding:11px 13px; border-radius:10px;
 }
 .banner--warn{border-color:var(--signal); background:var(--signal-wash)}
 .banner--quiet{border-color:var(--rule-2); background:var(--sunk)}
-.banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
+.banner__t{ font-size:13.5px; color:var(--ink); font-weight:600}
 .banner p{font-size:14px; color:var(--ink-2); margin:.3em 0 0}
 
 /* ---- the ticket ---------------------------------------------------------- */
 .pass{
   position:relative; margin:18px 0 0;
-  border:1.5px solid var(--ink); border-radius:3px;
+  border:1px solid var(--rule); border-radius:16px;
   background:var(--surface); box-shadow:var(--shadow);
 }
 .pass__ribbon{
   display:flex; align-items:center; gap:10px;
-  padding:9px 14px; border-radius:2px 2px 0 0;
-  background:var(--ink); color:var(--paper);
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; font-weight:700;
+  padding:11px 18px; border-radius:15px 15px 0 0;
+  border-bottom:1px solid var(--rule);
+  background:var(--surface-2); color:var(--ink-2); font-size:13.5px; font-weight:600;
 }
-.pass__ribbon .grow{margin-left:auto; font-weight:600; letter-spacing:.13em; opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
+.pass__ribbon .grow{margin-left:auto; font-weight:500; color:var(--ink-3); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
 .dot{
   width:7px; height:7px; border-radius:50%; flex:none;
   background:currentColor; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
 }
 .pass[data-tone="live"]{border-color:var(--signal-2)}
-.pass[data-tone="live"] .pass__ribbon{background:var(--signal); color:var(--on-signal)}
+.pass[data-tone="live"] .pass__ribbon{background:var(--signal-wash); color:var(--signal); border-bottom-color:var(--signal-2)}
 .pass[data-tone="live"] .dot{animation:blink 1.7s ease-in-out infinite}
 .pass[data-tone="good"]{border-color:var(--jade)}
-.pass[data-tone="good"] .pass__ribbon{background:var(--jade); color:#fbfaf6}
+.pass[data-tone="good"] .pass__ribbon{background:var(--jade-wash); color:var(--jade); border-bottom-color:var(--jade-2)}
 .pass[data-tone="warn"]{border-color:var(--signal-2)}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
 
@@ -246,7 +233,7 @@ code,.mono{font-family:var(--font-mono)}
 .face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
 .face__eyebrow--mid{margin-top:26px}
 .face h1{font-size:clamp(1.82rem,8vw,2.4rem); letter-spacing:-.032em; text-wrap:balance}
-.face h1 em{font-style:italic; color:var(--signal)}
+.face h1 em{font-style:normal; color:inherit}
 .face h1 + .prose{margin-top:14px}
 .face .prose{font-size:16px; line-height:1.62}
 
@@ -264,8 +251,7 @@ code,.mono{font-family:var(--font-mono)}
   letter-spacing:-.03em; font-weight:600; color:var(--ink); overflow-wrap:anywhere;
 }
 .plate-name__e{
-  display:block; margin-top:7px; font-family:var(--font-mono); font-size:10.5px;
-  letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; display:block; margin-top:7px; font-size:13.5px; color:var(--ink-3);
 }
 
 /* ---- perforation + stub -------------------------------------------------- */
@@ -280,7 +266,7 @@ code,.mono{font-family:var(--font-mono)}
 .stub__addr{
   display:block; width:100%; text-align:left; cursor:pointer;
   font-family:var(--font-mono); font-size:12.5px; line-height:1.5; color:var(--ink);
-  background:var(--sunk); border:1px solid var(--rule); border-radius:2px;
+  background:var(--sunk); border:1px solid var(--rule); border-radius:10px;
   padding:10px 11px; overflow-wrap:anywhere; min-height:44px;
 }
 .stub__addr:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
@@ -289,9 +275,8 @@ code,.mono{font-family:var(--font-mono)}
 /* Selectable so the clipboard fallback (and a plain long-press) both work. */
 #stub-addr-v{-webkit-user-select:text; user-select:text}
 .stub__row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
-.pill{
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:700;
-  padding:3px 7px; border-radius:2px; flex:none;
+.pill{ font-size:13px; font-weight:600;
+  padding:3px 7px; border-radius:10px; flex:none;
 }
 .pill--no{color:var(--signal); background:var(--signal-wash); border:1px solid var(--signal-2)}
 .pill--yes{color:var(--jade); background:var(--jade-wash); border:1px solid color-mix(in srgb, var(--jade) 45%, transparent)}
@@ -313,7 +298,7 @@ code,.mono{font-family:var(--font-mono)}
 .scan__cap{font-size:13.5px; color:var(--ink-3); margin:14px 0 0}
 .plate{
   position:relative; width:min(320px,100%); margin:0 auto;
-  aspect-ratio:1/1; padding:9px; border-radius:3px;
+  aspect-ratio:1/1; padding:9px; border-radius:16px;
   background:var(--qr-plate); border:1px solid var(--rule-2);
   box-shadow:0 14px 30px -22px rgba(30,20,6,.8);
 }
@@ -321,10 +306,10 @@ code,.mono{font-family:var(--font-mono)}
 .plate img{display:block; width:100%; height:100%; object-fit:contain}
 .plate--png{background:var(--qr-png); width:min(272px,100%)}
 .bracket{position:absolute; width:19px; height:19px; border:2.5px solid var(--signal); pointer-events:none}
-.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:3px 0 0 0}
-.bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
-.bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 3px}
-.bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 3px 0}
+.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:16px 0 0 0}
+.bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 16px 0 0}
+.bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 16px}
+.bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 16px 0}
 .plate.is-live .bracket{animation:hunt 2.2s ease-in-out infinite}
 @keyframes hunt{0%,100%{opacity:1; transform:translate(0,0)}50%{opacity:.4; transform:translate(var(--bx,0),var(--by,0))}}
 .bracket--tl{--bx:-3px; --by:-3px}
@@ -338,10 +323,9 @@ code,.mono{font-family:var(--font-mono)}
 
 /* On a coarse pointer a QR the holder cannot scan folds away behind a
    disclosure — still one tap from a second device. */
-.fold{margin-top:18px; border:1px dashed var(--rule-2); border-radius:2px; background:var(--sunk)}
+.fold{margin-top:18px; border:1px dashed var(--rule-2); border-radius:10px; background:var(--sunk)}
 .fold>summary{
-  cursor:pointer; list-style:none; padding:11px 12px; min-height:44px; display:flex; align-items:center; gap:9px;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; cursor:pointer; list-style:none; padding:11px 12px; min-height:44px; display:flex; align-items:center; gap:9px; font-size:13px; color:var(--ink-3);
 }
 .fold>summary::-webkit-details-marker{display:none}
 .fold>summary::before{content:"▸"; color:var(--signal)}
@@ -351,23 +335,22 @@ code,.mono{font-family:var(--font-mono)}
 /* ---- the live ticker ------------------------------------------------------ */
 .ticker{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px}
 .watching{
-  display:inline-flex; align-items:center; gap:8px;
-  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:2px; padding:6px 10px;
+  font-weight:600; display:inline-flex; align-items:center; gap:8px; font-size:13.5px;
+  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:10px; padding:6px 10px;
 }
 .watching .dot{color:var(--signal); animation:blink 1.7s ease-in-out infinite}
 .watching[data-paused="1"] .dot{color:var(--ink-3); animation:none}
-.clock{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin-left:auto}
+.clock{ font-weight:600; font-size:13.5px; color:var(--ink-3); margin-left:auto}
 .clock b{color:var(--ink-2); font-weight:700}
 
 /* ---- something landed ----------------------------------------------------- */
 .landed{
-  margin:0 0 18px; border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  margin:0 0 18px; border:1px solid var(--jade); border-left-width:3px; border-radius:10px;
   background:var(--jade-wash); padding:12px 13px; text-align:left;
   animation:land .55s cubic-bezier(.2,.85,.25,1) both;
 }
 @keyframes land{from{opacity:0; transform:scale(.96) translateY(-8px)}to{opacity:1; transform:none}}
-.landed__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--jade); font-weight:700}
+.landed__t{ font-size:13.5px; color:var(--jade); font-weight:600}
 .landed p{font-size:14px; color:var(--ink-2); margin:.35em 0 0}
 
 /* ---- THE NETWORK WARNING --------------------------------------------------
@@ -376,13 +359,12 @@ code,.mono{font-family:var(--font-mono)}
    fails, and the failure looks like "the badge is broken" rather than "the
    app is pointed at the wrong ledger". */
 .netwarn{
-  margin:0 0 18px; border:1.5px solid var(--signal); border-radius:2px;
+  margin:0 0 18px; border:1.5px solid var(--signal); border-radius:10px;
   background:var(--signal-wash); padding:13px 14px;
 }
 .netwarn__t{
-  display:flex; align-items:center; gap:9px;
-  font-family:var(--font-mono); font-size:11px; letter-spacing:.16em; text-transform:uppercase;
-  color:var(--ink); font-weight:700;
+  display:flex; align-items:center; gap:9px; font-size:13.5px;
+  color:var(--ink); font-weight:600;
 }
 .netwarn__t::before{
   content:"!"; flex:none; width:19px; height:19px; border-radius:50%;
@@ -399,9 +381,8 @@ code,.mono{font-family:var(--font-mono)}
 
 /* ---- explorer links -------------------------------------------------------- */
 .links{display:flex; flex-wrap:wrap; gap:8px; margin-top:7px}
-.link{
-  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
-  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:2px;
+.link{ font-size:13.5px;
+  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:10px;
   padding:7px 12px; min-height:40px; display:inline-flex; align-items:center;
 }
 .link::after{content:" ↗"; opacity:.6}
@@ -462,13 +443,13 @@ code,.mono{font-family:var(--font-mono)}
 /* ---- notes, errors, fields ------------------------------------------------ */
 .note{
   margin-top:16px; font-size:14px; color:var(--ink-2);
-  border-left:2px solid var(--rule-2); background:var(--sunk); padding:10px 12px; border-radius:0 2px 2px 0;
+  border-left:2px solid var(--rule-2); background:var(--sunk); padding:10px 12px; border-radius:0 10px 10px 0;
 }
 .note b{color:var(--ink); font-weight:600}
 .note--key{border-left-color:var(--jade); background:var(--jade-wash)}
 .err{
   margin-top:18px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
-  padding:13px 15px; border-radius:0 2px 2px 0;
+  padding:13px 15px; border-radius:0 10px 10px 0;
 }
 /* The machine code is a developer's word. It stays in the DOM, marked, and
    the sentence underneath it becomes the thing a person reads. */
@@ -492,22 +473,21 @@ code,.mono{font-family:var(--font-mono)}
    which here scrolls the dock button out of reach. */
 .field input{
   display:block; width:100%; font-family:var(--font-mono); font-size:16px; line-height:1.4;
-  padding:13px 13px; border:1px solid var(--rule-2); border-radius:2px;
+  padding:13px 13px; border:1px solid var(--rule-2); border-radius:10px;
   background:var(--sunk); color:var(--ink);
 }
-.field input:focus{outline:2px solid var(--signal); outline-offset:1px}
+.field input:focus{outline:none; border-color:var(--jade); box-shadow:0 0 0 3px var(--jade-wash)}
 .field input::placeholder{font-family:var(--font-display); color:var(--ink-3); opacity:.75}
 .field__why{font-size:13.5px; color:var(--ink-3); margin:8px 0 0}
 .field__why b{color:var(--ink-2); font-weight:600}
 
 /* ---- buttons -------------------------------------------------------------- */
-.btn{
-  font-family:var(--font-mono); letter-spacing:.14em; text-transform:uppercase; font-weight:700;
-  border-radius:2px; cursor:pointer; position:relative; overflow:hidden; text-decoration:none;
+.btn{ font-weight:600;
+  border-radius:10px; cursor:pointer; position:relative; overflow:hidden; text-decoration:none;
   transition:transform .12s ease, filter .16s ease, background .16s ease;
 }
 .btn:active:not(:disabled){transform:translateY(1px)}
-.btn:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+.btn:focus-visible{outline:2px solid var(--jade); outline-offset:3px}
 .btn:disabled{opacity:.45; cursor:not-allowed}
 .btn[aria-busy="true"]::after{
   content:""; position:absolute; left:0; bottom:0; height:3px; width:100%;
@@ -517,13 +497,13 @@ code,.mono{font-family:var(--font-mono)}
 @keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .btn--act{
   display:flex; align-items:center; justify-content:center; width:100%; min-height:58px; font-size:14px;
-  background:var(--signal); color:var(--on-signal); border:0;
+  background:var(--ink); color:var(--paper); border:0;
   box-shadow:0 1px 0 rgba(255,255,255,.22) inset, 0 12px 24px -16px rgba(0,0,0,.9);
 }
 .btn--act:hover:not(:disabled){filter:brightness(1.07)}
 .btn--quiet{
   background:transparent; color:var(--ink-2); border:1px solid var(--rule-2);
-  font-size:11px; padding:11px 14px; min-height:44px;
+  font-size:15px; font-weight:600; padding:11px 18px; min-height:44px;
   display:inline-flex; align-items:center; justify-content:center;
 }
 .btn--quiet:hover:not(:disabled){color:var(--ink); border-color:var(--ink-3)}
@@ -541,8 +521,7 @@ code,.mono{font-family:var(--font-mono)}
 /* The same box model as `.wrap`, so the action lines up with the ticket edge
    at every width instead of overhanging it by the gutter. */
 .dock__in{max-width:640px; margin:0 auto; padding:0 13px}
-.dock__note{
-  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+.dock__note{ font-weight:600; font-size:13px;
   color:var(--ink-3); text-align:center; margin:8px 0 0;
 }
 /* A small offset and no opacity: this bar carries the primary tap target, and
@@ -553,35 +532,43 @@ code,.mono{font-family:var(--font-mono)}
 .picks{display:grid; gap:11px; margin-top:14px}
 .pick{
   display:block; text-decoration:none; color:inherit;
-  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  border:1px solid var(--rule-2); border-radius:10px; background:var(--sunk);
   padding:13px 14px; transition:border-color .16s ease, background .16s ease;
 }
 .pick:hover{border-color:var(--signal); background:var(--signal-wash)}
 .pick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
 .pick__top{display:flex; align-items:baseline; gap:10px}
 .pick__n{font-family:var(--font-display); font-size:1.14rem; font-weight:600; color:var(--ink); letter-spacing:-.02em; min-width:0}
-.pick__go{margin-left:auto; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); flex:none}
-.pick__meta{font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:6px 0 0}
+.pick__go{margin-left:auto; font-size:13px; color:var(--signal); flex:none}
+.pick__meta{ font-weight:600; font-size:13px; color:var(--ink-3); margin:6px 0 0}
 .pick__desc{font-size:14px; color:var(--ink-2); margin:7px 0 0}
-.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:2px; padding:16px; text-align:center; margin-top:14px}
+.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:10px; padding:16px; text-align:center; margin-top:14px}
 
-/* ---- the stamp: the payoff ------------------------------------------------ */
-.stampwrap{display:flex; justify-content:center; margin:20px 0 6px}
+/* ---- the confirmation: the payoff ----------------------------------------
+   A jade check and one word. This used to be a rubber stamp, rotated and
+   double-ruled — a good joke on paper, and the wrong register for the moment a
+   guest finds out it worked. What they want here is certainty, not whimsy. */
+.stampwrap{display:flex; justify-content:center; margin:24px 0 8px}
 .stamp{
-  position:relative; color:var(--jade); border:2px solid currentColor; border-radius:3px;
-  padding:10px 18px 11px; transform:rotate(-1.6deg); text-align:center; max-width:100%;
-  animation:press .5s cubic-bezier(.2,.9,.3,1) both;
+  color:var(--jade); text-align:center; max-width:100%;
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+  animation:press .45s cubic-bezier(.2,.9,.3,1) both;
 }
-.stamp::before{content:""; position:absolute; inset:3px; border:1px solid currentColor; border-radius:2px; opacity:.5}
-.stamp__t{font-family:var(--font-mono); font-size:15px; letter-spacing:.26em; text-transform:uppercase; font-weight:700; display:block}
-.stamp__d{font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; display:block; margin-top:3px}
-@keyframes press{from{opacity:0; transform:rotate(-7deg) scale(1.3)}to{opacity:1; transform:rotate(-1.6deg) scale(1)}}
+.stamp::before{
+  content:"";
+  width:52px; height:52px; border-radius:50%; flex:none;
+  background:var(--jade-wash);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2316794f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:center; background-size:24px 24px;
+}
+.stamp__t{font-size:19px; letter-spacing:-.03em; font-weight:700; display:block; color:var(--ink)}
+.stamp__d{font-size:14px; display:block; margin-top:3px; color:var(--ink-3)}
+@keyframes press{from{opacity:0; transform:scale(.9)}to{opacity:1; transform:none}}
 
 /* ---- wire log + footer ---------------------------------------------------- */
-.wire{margin-top:22px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk)}
+.wire{margin-top:22px; border:1px solid var(--rule); border-radius:10px; background:var(--sunk)}
 .wire>summary{
-  cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px; font-size:13px; color:var(--ink-3);
 }
 .wire>summary::-webkit-details-marker{display:none}
 .wire>summary::before{content:"▸"; color:var(--signal)}
@@ -605,9 +592,8 @@ code,.mono{font-family:var(--font-mono)}
 
 /* The single deliberate developer affordance. A hairline, not a button. */
 .devline{
-  display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
-  margin-top:14px; font-family:var(--font-mono); font-size:9.5px;
-  letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; display:flex; align-items:baseline; gap:8px; flex-wrap:wrap;
+  margin-top:14px; font-size:13px; color:var(--ink-3);
 }
 .devtoggle{
   font:inherit; letter-spacing:inherit; text-transform:inherit;
@@ -641,7 +627,7 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
 }
 .art{margin:0}
 .art__mount{
-  position:relative; padding:9px; border-radius:3px;
+  position:relative; padding:9px; border-radius:16px;
   background:var(--art-mount); border:1px solid var(--art-edge);
   box-shadow:var(--art-shadow);
 }
@@ -653,7 +639,7 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
   display:grid; grid-template-columns:96px minmax(0,1fr); gap:15px; align-items:center;
   margin-top:22px; padding-top:20px; border-top:1px dashed var(--rule-2); text-align:left;
 }
-.art--preview .art__mount{padding:5px; border-radius:2px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
+.art--preview .art__mount{padding:5px; border-radius:10px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
 .art--preview .art__cap .label{display:block; margin-bottom:5px}
 .art--big{margin:22px auto; max-width:min(380px,100%)}
 /* Crop marks: eight hairlines in one pseudo-element. A print artefact, not the
@@ -697,29 +683,39 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
    back through the browser's own history.
    ------------------------------------------------------------------------- */
 .trail{
-  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  font-weight:600; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;
   /* A bottom margin as well as a top one. Adjacent margins collapse, so the
      gap is max(16px, whatever the next element already asks for) — never
      doubled, and never zero. Without it the trail sat flush against the
      invitation's frame on /register, whose card has no top margin. */
   color:var(--ink-3); margin:14px 0 16px;
 }
-.trail a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
-.trail a:hover{border-bottom-color:var(--signal)}
-.trail a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+.trail a{color:var(--jade); text-decoration:none; border-bottom:1px solid var(--jade-2)}
+.trail a:hover{border-bottom-color:var(--jade)}
+.trail a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:10px}
 .trail span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+/* ---- Ledger --------------------------------------------------------------
+   The last word on type and accent. Plus Jakarta Sans carries less colour on
+   the page than the serif it replaced, so headings take more weight and tighter
+   tracking to hold the same authority. Links are jade — the colour this app
+   uses for "confirmed on the ledger" — while clay stays reserved for waiting.
+   Kept at the end of the sheet deliberately: it must win over the page rules
+   above it.
+   -------------------------------------------------------------------------- */
+h1,h2,h3,h4{font-weight:700; letter-spacing:-.026em; line-height:1.16}
+h1{font-weight:800; line-height:1.1}
+a{color:var(--jade)}
 </style>
 </head>
 <body>
-<div class="grain" aria-hidden="true"></div>
 
 <header class="strip">
   <div class="strip__in">
-    <span class="mark">PASS</span>
+    <span class="mark">Pass</span>
     <span class="head">
       <span class="head__n" id="head-name">Your attendance pass</span>
-      <span class="head__w" id="head-when">admit one</span>
+      <span class="head__w" id="head-when">Your pass</span>
     </span>
   </div>
   <div class="facts" data-dev>
@@ -761,8 +757,8 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
   <section class="pass" id="pass" data-tone="neutral">
     <div class="pass__ribbon">
       <span class="dot" aria-hidden="true"></span>
-      <span id="ribbon">opening your pass</span>
-      <span class="grow" id="ribbon-side">admit one</span>
+      <span id="ribbon">Opening your pass</span>
+      <span class="grow" id="ribbon-side">Your pass</span>
     </div>
 
     <!-- ============ boot ============ -->
@@ -1980,15 +1976,15 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
      ====================================================================== */
 
   var RIBBONS = {
-    boot:        ["opening your pass", "neutral"],
-    picker:      ["choose your event", "neutral"],
-    closed:      ["not open", "warn"],
-    unavailable: ["not ready", "warn"],
-    prove:       ["step one", "live"],
-    wait:        ["waiting for the desk", "live"],
-    offer:       ["step two", "live"],
-    record:      ["collecting", "live"],
-    done:        ["collected", "good"]
+    boot:        ["Opening your pass", "neutral"],
+    picker:      ["Choose your event", "neutral"],
+    closed:      ["Not open", "warn"],
+    unavailable: ["Not ready", "warn"],
+    prove:       ["Step one", "live"],
+    wait:        ["Waiting for the desk", "live"],
+    offer:       ["Step two", "live"],
+    record:      ["Collecting your badge", "live"],
+    done:        ["Badge collected", "good"]
   };
 
   function showFace(name) {
@@ -2095,7 +2091,7 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
     var name = e.name ? String(e.name) : ("Event " + app.eventId);
     /* The letterhead answers "which event is this" and nothing else. */
     setText("head-name", name);
-    setText("head-when", bits.length ? bits.join("  ·  ") : "admit one");
+    setText("head-when", bits.length ? bits.join("  ·  ") : "Your pass");
     setText("nameplate-e", name + (bits.length ? "  ·  " + bits.join("  ·  ") : ""));
     document.title = (e.name ? e.name + " — " : "") + "your pass";
   }
@@ -3393,7 +3389,7 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
 
   function loadPicker() {
     showFace("picker");
-    setText("ribbon-side", "admit one");
+    setText("ribbon-side", "Your pass");
     call("GET", "/api/events").then(function (r) {
       if (!r.ok) {
         showError("picker-err", r, {

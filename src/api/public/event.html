@@ -4,10 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex">
 <title>Event</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* ==========================================================================
    ONE EVENT — its particulars, its turnout, and every badge it minted.
@@ -24,46 +27,46 @@
    ========================================================================== */
 
 :root{
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
-  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
 
-  --paper:#f0ebe1;
-  --surface:#f8f5ef;
-  --surface-2:#ece5d8;
-  --ink:#1d1a16;
-  --ink-2:#4d453a;
-  --ink-3:#6b6153;
-  --rule:#d6cbb6;
-  --rule-2:#c0b39a;
-  --track:#e3dac6;
+  --paper:#faf9f7;
+  --surface:#ffffff;
+  --surface-2:#f4f2ef;
+  --ink:#1c1b1a;
+  --ink-2:#57544f;
+  --ink-3:#8a8681;
+  --rule:#eceae6;
+  --rule-2:#ddd9d3;
+  --track:#eceae6;
 
-  --signal:#8d5310;
-  --signal-2:#b9812c;
-  --signal-wash:rgba(185,129,44,.13);
-  --jade:#186a4c;
-  --jade-wash:rgba(24,106,76,.12);
+  --signal:#b4552d;
+  --signal-2:#e2c3b1;
+  --signal-wash:rgba(180,85,45,.09);
+  --jade:#16794f; --jade-2:#a8cfbc;
+  --jade-wash:rgba(22,121,79,.09);
 
-  --grid:rgba(93,74,44,.09);
+  --grid:transparent;
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --paper:#0e100f;
-    --surface:#161917;
-    --surface-2:#1c201d;
-    --ink:#ece6da;
-    --ink-2:#b3aa9a;
-    --ink-3:#8d8778;
-    --rule:#2b302c;
-    --rule-2:#3c433d;
+    --paper:#141413;
+    --surface:#1c1c1b;
+    --surface-2:#232322;
+    --ink:#f2f0ed;
+    --ink-2:#b3afa8;
+    --ink-3:#8a8681;
+    --rule:#2c2b29;
+    --rule-2:#3b3a37;
     --track:#232823;
 
-    --signal:#e0a24a;
-    --signal-2:rgba(201,135,48,.56);
-    --signal-wash:rgba(224,162,74,.12);
-    --jade:#5cbc93;
-    --jade-wash:rgba(92,188,147,.12);
+    --signal:#e08b5f;
+    --signal-2:#5c4030;
+    --signal-wash:rgba(224,139,95,.13);
+    --jade:#4fbd8b; --jade-2:#2f6a52;
+    --jade-wash:rgba(79,189,139,.13);
 
-    --grid:rgba(224,214,190,.055);
+    --grid:transparent;
   }
 }
 
@@ -81,21 +84,10 @@ body{
   overflow-x:hidden;
   padding:26px 20px calc(56px + env(safe-area-inset-bottom));
 }
-body::before{
-  content:"";
-  position:fixed;
-  inset:0;
-  pointer-events:none;
-  background-image:linear-gradient(var(--grid) 1px, transparent 1px),
-                   linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size:26px 26px;
-  opacity:.5;
-  z-index:0;
-}
 main{position:relative; z-index:1; width:100%; max-width:900px; margin:0 auto}
 
 a{color:inherit}
-a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:10px}
 
 /* ---- masthead ------------------------------------------------------------ */
 
@@ -106,13 +98,13 @@ a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radi
    ------------------------------------------------------------------------- */
 .crumb{
   display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  font-size:14px;
   color:var(--ink-3);
 }
-.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
-.crumb a:hover{border-bottom-color:var(--signal)}
-.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
-.crumb span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.crumb a{color:var(--jade); text-decoration:none; font-weight:600}
+.crumb a:hover{text-decoration:underline}
+.crumb a:focus-visible{outline:2px solid var(--jade); outline-offset:3px; border-radius:4px}
+.crumb span[aria-current]{color:var(--ink-2); font-weight:600; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
 .crumb{margin:0 0 24px}
 .head{margin:0 0 30px}
 .head__meta{
@@ -122,14 +114,21 @@ a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radi
   flex-wrap:wrap;
   margin:0 0 8px;
 }
-.taxon{font-family:var(--font-mono); font-size:12.5px; letter-spacing:.06em; color:var(--ink-3)}
-.status{font-family:var(--font-mono); font-size:11px; letter-spacing:.04em; color:var(--ink-3)}
-.status[data-status="live"]{color:var(--signal)}
+.taxon{font-family:var(--font-mono); font-size:12.5px; letter-spacing:.02em; color:var(--ink-3)}
+/* Status is a pill in sentence case. Mono is reserved on this page for things
+   that came off the ledger, and "finished" is not one of them. */
+.status{
+  background:var(--surface-2); color:var(--ink-2);
+  border-radius:999px; padding:3px 11px;
+  font-size:12.5px; font-weight:600;
+}
+.status[data-status="live"]{background:var(--signal-wash); color:var(--signal)}
+.status[data-status="open"]{background:var(--jade-wash); color:var(--jade)}
 h1{
   font-size:clamp(30px,6.4vw,46px);
   line-height:1.06;
-  font-weight:400;
-  letter-spacing:-.014em;
+  font-weight:800;
+  letter-spacing:-.04em;
   margin:0 0 10px;
   max-width:20ch;
 }
@@ -139,6 +138,7 @@ h1{
 /* ---- turnout ------------------------------------------------------------- */
 
 .turnout{margin:30px 0 0; padding:0 0 30px; border-bottom:1px solid var(--rule)}
+.sect{margin:0 0 14px; font-size:14px; font-weight:600; color:var(--ink-3); letter-spacing:0}
 .turnout__ends{
   display:flex;
   align-items:flex-end;
@@ -161,9 +161,9 @@ h1{
 
 .gauge{
   position:relative;
-  height:22px;
-  background:var(--track);
-  border:1px solid var(--rule);
+  height:10px;
+  background:var(--surface-2);
+  border-radius:999px;
   overflow:hidden;
 }
 .gauge__fill{
@@ -171,17 +171,8 @@ h1{
   inset:0 auto 0 0;
   width:0;
   background:var(--jade);
+  border-radius:999px;
   transition:width .9s cubic-bezier(.16,.84,.34,1);
-}
-.gauge__ticks{
-  position:absolute;
-  inset:auto 0 0 0;
-  height:5px;
-  background-image:linear-gradient(90deg, var(--rule-2) 1px, transparent 1px);
-  background-size:25% 100%;
-  background-position:25% 0;
-  opacity:.7;
-  pointer-events:none;
 }
 @media (prefers-reduced-motion: reduce){ .gauge__fill{transition:none} }
 
@@ -256,8 +247,8 @@ h1{
   flex-wrap:wrap;
   margin:30px 0 16px;
 }
-.wall__head h2{font-size:22px; font-weight:400; margin:0; letter-spacing:-.005em}
-.wall__count{font-family:var(--font-mono); font-size:13px; color:var(--ink-3)}
+.wall__head h2{font-size:22px; font-weight:700; margin:0; letter-spacing:-.03em}
+.wall__count{font-size:14px; color:var(--ink-3)}
 
 .wall{
   display:grid;
@@ -363,11 +354,10 @@ h1{
    surface to put chrome on. */
 .lb__bar{display:flex; align-items:center; gap:10px}
 .lb__btn{
-  font:inherit; font-size:14px;
-  font-family:var(--font-mono); letter-spacing:.1em; text-transform:uppercase;
+  font:inherit; font-size:14px; font-weight:600;
   color:var(--paper); background:transparent;
   border:1px solid color-mix(in srgb, var(--paper) 45%, transparent);
-  border-radius:2px; padding:8px 14px; cursor:pointer; min-height:40px;
+  border-radius:10px; padding:8px 14px; cursor:pointer; min-height:40px;
 }
 .lb__btn:hover{background:color-mix(in srgb, var(--paper) 14%, transparent)}
 .lb__btn:focus-visible{outline:2px solid var(--paper); outline-offset:2px}
@@ -399,7 +389,7 @@ h1{
   background:var(--surface);
   color:var(--ink-2);
 }
-.state h2{font-size:21px; font-weight:400; margin:0 0 8px; color:var(--ink)}
+.state h2{font-size:21px; font-weight:700; letter-spacing:-.03em; margin:0 0 8px; color:var(--ink)}
 .state p{margin:0; max-width:52ch}
 
 .foot{
@@ -409,11 +399,23 @@ h1{
   color:var(--ink-3);
   font-size:14.5px;
 }
-.foot a{color:var(--signal)}
+.foot a{color:var(--jade)}
 
 @media (max-width:520px){
   .wall{grid-template-columns:repeat(auto-fill, minmax(88px, 1fr)); gap:8px}
 }
+
+/* ---- Ledger --------------------------------------------------------------
+   The last word on type and accent. Plus Jakarta Sans carries less colour on
+   the page than the serif it replaced, so headings take more weight and tighter
+   tracking to hold the same authority. Links are jade — the colour this app
+   uses for "confirmed on the ledger" — while clay stays reserved for waiting.
+   Kept at the end of the sheet deliberately: it must win over the page rules
+   above it.
+   -------------------------------------------------------------------------- */
+h1,h2,h3,h4{font-weight:700; letter-spacing:-.026em; line-height:1.16}
+h1{font-weight:800; line-height:1.1}
+a{color:var(--jade)}
 </style>
 </head>
 <body>
@@ -433,7 +435,7 @@ h1{
   </header>
 
   <section class="turnout" id="turnout" hidden aria-labelledby="turnout-h">
-    <h2 id="turnout-h" class="taxon" style="display:block;margin:0 0 14px">Turnout</h2>
+    <h2 id="turnout-h" class="sect">Turnout</h2>
     <div class="turnout__ends">
       <div>
         <div class="turnout__n" id="t-held"></div>
@@ -446,7 +448,6 @@ h1{
     </div>
     <div class="gauge" role="img" id="gauge">
       <div class="gauge__fill" id="fill"></div>
-      <div class="gauge__ticks"></div>
     </div>
     <p class="turnout__say" id="t-say"></p>
   </section>
@@ -549,8 +550,8 @@ h1{
     $("crumb-here").textContent = ev.name;
     $("taxon").textContent = "Taxon " + ev.eventId;
     var st = $("status");
-    st.textContent = ev.status === "closed" ? "finished"
-      : ev.status === "live" ? "in progress" : "open for sign-ups";
+    st.textContent = ev.status === "closed" ? "Finished"
+      : ev.status === "live" ? "Happening now" : "Open for sign-ups";
     st.setAttribute("data-status", ev.status);
 
     $("name").textContent = ev.name;

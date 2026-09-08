@@ -4,75 +4,75 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
-<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <meta name="robots" content="noindex">
 <title>Events</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* ==========================================================================
-   THE EVENT LIST — the same ticket as /attend, listing what has happened.
+   THE EVENT LIST — the public record of what has happened.
 
-   DELIBERATELY THE SAME PAGE FURNITURE. /attend already asks "which event are
-   you at" and answers it with a stack of pick rows inside a ticket; this asks
-   "which event do you want to look at" and the answer has the same shape. Two
-   treatments for one question would be two things to maintain and one more
-   idiom for a guest to learn, so the strip, the ticket, the ribbon, the face
-   and the .pick rows below are lifted from that page unchanged.
+   ONE ROW PER EVENT, and each row answers the only two questions a visitor
+   actually has: what was it, and how many people came. The turnout bar is the
+   row's whole argument — a number beside a number means nothing at a glance,
+   whereas a bar that is nearly full does.
 
-   NO TOTALS HERE. An aggregate across every event is a number for whoever
-   runs the events, not for the person looking for the one they went to. Each
-   row carries its own count; the event's own page carries the rest.
+   NO TOTALS ACROSS EVENTS. An aggregate is a number for whoever runs the
+   events, not for the person looking for the one they went to.
+
+   TWO KINDS OF NUMBER, NEVER MERGED. "Registered" is a row in our database;
+   "came" is a transaction on a public ledger. The row keeps them apart because
+   the difference between them is the interesting part.
    ========================================================================== */
 
 :root{
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
-  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
 
-  --paper:#f0ebe1;
-  --surface:#f8f5ef;
-  --surface-2:#ece5d8;
-  --sunk:#e4dccc;
-  --ink:#1d1a16;
-  --ink-2:#4d453a;
-  --ink-3:#6b6153;
-  --rule:#d6cbb6;
-  --rule-2:#c0b39a;
+  --paper:#faf9f7;
+  --surface:#ffffff;
+  --surface-2:#f4f2ef;
+  --sunk:#f1efec;
+  --ink:#1c1b1a;
+  --ink-2:#57544f;
+  --ink-3:#8a8681;
+  --rule:#eceae6;
+  --rule-2:#ddd9d3;
 
-  --signal:#8d5310;
-  --signal-2:#b9812c;
-  --signal-wash:rgba(185,129,44,.13);
-  --on-signal:#fffaf2;
-  --jade:#186a4c;
-  --jade-wash:rgba(24,106,76,.12);
-  --vermilion:#a8331a;
-  --vermilion-wash:rgba(168,51,26,.11);
+  --signal:#b4552d;
+  --signal-2:#e2c3b1;
+  --signal-wash:rgba(180,85,45,.09);
+  --on-signal:#ffffff;
+  --jade:#16794f; --jade-2:#a8cfbc;
+  --jade-wash:rgba(22,121,79,.09);
 
-  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
-  --grid:rgba(93,74,44,.09);
+  --shadow:0 1px 2px rgba(28,27,26,.04), 0 12px 30px -22px rgba(28,27,26,.26);
+  --lift:0 1px 2px rgba(28,27,26,.05), 0 22px 44px -26px rgba(28,27,26,.34);
 }
 @media (prefers-color-scheme: dark){
   :root{
-    --paper:#0e100f;
-    --surface:#161917;
-    --surface-2:#1c201d;
-    --sunk:#101312;
-    --ink:#ece6da;
-    --ink-2:#b3aa9a;
-    --ink-3:#8d8778;
-    --rule:#2b302c;
-    --rule-2:#3c433d;
+    --paper:#141413;
+    --surface:#1c1c1b;
+    --surface-2:#232322;
+    --sunk:#191918;
+    --ink:#f2f0ed;
+    --ink-2:#b3afa8;
+    --ink-3:#8a8681;
+    --rule:#2c2b29;
+    --rule-2:#3b3a37;
 
-    --signal:#e0a24a;
-    --signal-2:rgba(201,135,48,.56);
-    --signal-wash:rgba(224,162,74,.12);
-    --on-signal:#17130c;
-    --jade:#5cbc93;
-    --jade-wash:rgba(92,188,147,.12);
-    --vermilion:#e8724f;
-    --vermilion-wash:rgba(232,114,79,.12);
+    --signal:#e08b5f;
+    --signal-2:#5c4030;
+    --signal-wash:rgba(224,139,95,.13);
+    --on-signal:#1c1310;
+    --jade:#4fbd8b; --jade-2:#2f6a52;
+    --jade-wash:rgba(79,189,139,.13);
 
-    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
-    --grid:rgba(224,214,190,.055);
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
+    --lift:0 1px 2px rgba(0,0,0,.5), 0 22px 44px -26px rgba(0,0,0,.9);
   }
 }
 
@@ -81,183 +81,184 @@
 html{-webkit-text-size-adjust:100%}
 body{
   margin:0;
+  min-height:100svh;
   background:var(--paper);
   color:var(--ink);
   font-family:var(--font-display);
-  font-size:17px;
+  font-size:16px;
   line-height:1.6;
-  overflow-x:hidden;
-  -webkit-tap-highlight-color:var(--signal-wash);
-  padding-bottom:calc(40px + env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color:var(--jade-wash);
 }
-body::before{
-  content:"";
-  position:fixed; inset:0; pointer-events:none; z-index:0;
-  background-image:linear-gradient(var(--grid) 1px, transparent 1px),
-                   linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-  background-size:26px 26px;
-  opacity:.5;
-}
-
-h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.018em; line-height:1.12}
-p{margin:0 0 .8em}
-p:last-child{margin-bottom:0}
-a{color:var(--signal)}
-code,.mono{font-family:var(--font-mono)}
-.label{
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
-  color:var(--ink-3); font-weight:600;
-}
-.prose{color:var(--ink-2); font-size:15.5px}
-.prose strong{color:var(--ink); font-weight:600}
-/* The same developer gate the pass uses: ledger details stay in the DOM and
-   out of a guest's way. Shift+D reveals them. */
 body:not(.dev) [data-dev]{display:none !important}
 
-/* ---- the letterhead ------------------------------------------------------ */
-.strip{
-  position:sticky; top:0; z-index:40;
-  background:color-mix(in srgb, var(--paper) 90%, transparent);
-  -webkit-backdrop-filter:saturate(150%) blur(9px);
-  backdrop-filter:saturate(150%) blur(9px);
-  border-bottom:1px solid var(--rule);
-}
-.strip__in{display:flex; align-items:center; gap:11px; padding:9px 13px; max-width:640px; margin:0 auto}
-.mark{
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.2em; font-weight:700;
-  color:var(--on-signal); background:var(--signal); padding:4px 6px; border-radius:2px; flex:none;
-  align-self:flex-start; margin-top:2px;
-}
-.head{min-width:0; flex:1}
-.head__n{
-  display:block; font-size:16px; font-weight:600; letter-spacing:-.02em; line-height:1.25; color:var(--ink);
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
-.head__w{
-  display:block; font-family:var(--font-mono); font-size:9.5px; letter-spacing:.15em; text-transform:uppercase;
-  color:var(--ink-3); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-}
+h1{margin:0; font-weight:800; letter-spacing:-.04em; line-height:1.08; font-size:clamp(2rem, 5.6vw, 2.7rem)}
+p{margin:0}
+a{color:var(--jade)}
 
-.wrap{position:relative; z-index:1; max-width:640px; margin:0 auto; padding:0 13px}
-/* ---- breadcrumb ----------------------------------------------------------
-   The same trail the admin console uses. It replaced a "Back to the register"
-   link that named a page called "Events" — a label that had gone stale — and
-   it says where you are as well as where back leads.
-   ------------------------------------------------------------------------- */
+.wrap{max-width:820px; margin:0 auto; padding:0 clamp(16px,4vw,24px) 64px}
+
+/* ---- breadcrumb ---------------------------------------------------------- */
+
 .crumb{
-  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  display:flex;
+  align-items:center;
+  gap:8px;
+  padding:22px 0 0;
+  font-size:14px;
   color:var(--ink-3);
 }
-.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
-.crumb a:hover{border-bottom-color:var(--signal)}
-.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
-.crumb span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
-.crumb{margin:16px 0 16px}
+.crumb a{color:var(--jade); text-decoration:none; font-weight:600}
+.crumb a:hover{text-decoration:underline}
+.crumb a:focus-visible{outline:2px solid var(--jade); outline-offset:3px; border-radius:4px}
+.crumb span[aria-current]{color:var(--ink-2); font-weight:600}
 
-/* ---- the ticket ---------------------------------------------------------- */
-.pass{
-  position:relative; margin:18px 0 0;
-  border:1.5px solid var(--ink); border-radius:3px;
-  background:var(--surface); box-shadow:var(--shadow);
+/* ---- masthead ------------------------------------------------------------ */
+
+.head{padding:30px 0 0}
+.lede{margin:12px 0 0; font-size:17px; color:var(--ink-2); max-width:52ch; text-wrap:pretty}
+
+/* ---- the rows ------------------------------------------------------------
+   The whole row is the link. A row is a card rather than a table line because
+   it carries four different kinds of thing — a name, a place, a measurement
+   and a sentence — and a table would make them all look like the same kind. */
+
+.picks{display:grid; gap:12px; margin:30px 0 0}
+
+a.pick{
+  display:block;
+  text-decoration:none;
+  color:inherit;
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:22px 24px;
+  transition:box-shadow .18s ease, border-color .18s ease, transform .18s ease;
 }
-.pass__ribbon{
-  display:flex; align-items:center; gap:10px;
-  padding:9px 14px; border-radius:2px 2px 0 0;
-  background:var(--ink); color:var(--paper);
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; font-weight:700;
+a.pick:hover{border-color:var(--rule-2); box-shadow:var(--lift); transform:translateY(-1px)}
+a.pick:focus-visible{outline:2px solid var(--jade); outline-offset:3px}
+a.pick:active{transform:translateY(0)}
+
+.pick__top{display:flex; align-items:flex-start; gap:16px}
+.pick__n{
+  flex:1 1 auto;
+  min-width:0;
+  font-size:19px;
+  font-weight:700;
+  letter-spacing:-.025em;
+  line-height:1.25;
 }
-.pass__ribbon .grow{margin-left:auto; font-weight:600; letter-spacing:.13em; opacity:.7; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; min-width:0}
-.dot{
-  width:7px; height:7px; border-radius:50%; flex:none;
-  background:currentColor; box-shadow:0 0 0 3px color-mix(in srgb, currentColor 22%, transparent);
+.pick__meta{margin:6px 0 0; font-size:14.5px; color:var(--ink-3)}
+.pick__desc{margin:14px 0 0; font-size:15px; color:var(--ink-2); text-wrap:pretty}
+
+/* Status is a pill, in sentence case. A tracked-out capital "FINISHED" shouts
+   at somebody who is only scanning for the name of their own event. */
+.tag{
+  flex:none;
+  border-radius:999px;
+  padding:4px 12px;
+  font-size:13px;
+  font-weight:600;
+  background:var(--surface-2);
+  color:var(--ink-2);
+  white-space:nowrap;
+}
+.tag--live{background:var(--signal-wash); color:var(--signal)}
+.tag--open{background:var(--jade-wash); color:var(--jade)}
+
+/* ---- turnout -------------------------------------------------------------
+   How full the bar is IS the story of the event. The figure beside it says
+   which two numbers made it, because a bar alone can be read as anything. */
+
+.turn{margin:16px 0 0}
+.turn__bar{
+  height:8px;
+  border-radius:999px;
+  background:var(--sunk);
+  overflow:hidden;
+}
+.turn__fill{
+  display:block;
+  height:100%;
+  border-radius:999px;
+  background:var(--jade);
+  min-width:8px;
+}
+.turn__say{
+  margin:9px 0 0;
+  font-size:14px;
+  color:var(--ink-2);
+}
+.turn__say b{font-weight:700; color:var(--ink)}
+.turn__none{margin:16px 0 0; font-size:14px; color:var(--ink-3)}
+
+/* ---- other faces --------------------------------------------------------- */
+
+.face{padding:30px 0 0}
+.card{
+  background:var(--surface);
+  border:1px solid var(--rule);
+  border-radius:16px;
+  box-shadow:var(--shadow);
+  padding:30px 26px;
+}
+.card h1{font-size:clamp(1.6rem,4.4vw,2.05rem)}
+.card p{margin:12px 0 0; font-size:16px; color:var(--ink-2); max-width:52ch; text-wrap:pretty}
+.boot{padding:36px 0 0; font-size:16px; color:var(--ink-3)}
+
+.foot{
+  margin:34px 0 0;
+  font-size:14px;
+  color:var(--ink-3);
+  text-wrap:pretty;
 }
 
-.face{padding:24px 17px 22px; animation:rise .42s cubic-bezier(.2,.75,.3,1) both}
-@keyframes rise{from{opacity:0; transform:translateY(10px)}to{opacity:1; transform:none}}
-@media (prefers-reduced-motion: reduce){ .face{animation:none} }
-.face__eyebrow{display:flex; align-items:center; gap:11px; margin-bottom:13px}
-.face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
-.face h1{font-size:clamp(1.82rem,8vw,2.4rem); letter-spacing:-.032em; text-wrap:balance}
-.face h1 em{font-style:italic; color:var(--signal)}
-.face h1 + .prose{margin-top:14px}
-
-/* ---- the picker ---------------------------------------------------------- */
-.picks{display:grid; gap:11px; margin-top:14px}
-.pick{
-  display:block; text-decoration:none; color:inherit;
-  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
-  padding:13px 14px; transition:border-color .16s ease, background .16s ease;
+@media (max-width:520px){
+  a.pick{padding:19px 18px}
+  .pick__top{flex-direction:column; gap:10px}
+  .tag{align-self:flex-start}
 }
-.pick:hover{border-color:var(--signal); background:var(--signal-wash)}
-.pick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
-.pick__top{display:flex; align-items:baseline; gap:10px}
-.pick__n{font-family:var(--font-display); font-size:1.14rem; font-weight:600; color:var(--ink); letter-spacing:-.02em; min-width:0}
-.pick__go{margin-left:auto; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); flex:none}
-.pick__meta{font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:6px 0 0}
-.pick__meta b{color:var(--jade); font-weight:700}
-.pick__desc{font-size:14px; color:var(--ink-2); margin:7px 0 0}
-.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:2px; padding:16px; text-align:center; margin-top:14px}
-
-.foot{max-width:640px; margin:22px auto 0; padding:0 13px; color:var(--ink-3); font-size:13.5px}
-
-@media (min-width:560px){
-  .wrap{padding:0 20px}
-  .face{padding:30px 26px 28px}
-  .foot{padding:0 20px}
+@media (prefers-reduced-motion: reduce){
+  a.pick{transition:none}
+  a.pick:hover{transform:none}
 }
 </style>
 </head>
 <body>
-
-<div class="strip">
-  <div class="strip__in">
-    <span class="mark">LOG</span>
-    <span class="head">
-      <span class="head__n">Events</span>
-      <span class="head__w">what has happened so far</span>
-    </span>
-  </div>
-</div>
 
 <div class="wrap">
   <nav class="crumb" aria-label="Breadcrumb">
     <a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Events</span>
   </nav>
 
-  <section class="pass" id="pass">
-    <div class="pass__ribbon">
-      <span class="dot" aria-hidden="true"></span>
-      <span id="ribbon">the events</span>
-      <span class="grow">on the ledger</span>
-    </div>
+  <div class="face" data-face="boot" id="face-boot">
+    <p class="boot">Reading the events…</p>
+  </div>
 
-    <div class="face" data-face="boot" id="face-boot">
-      <p class="prose">Reading the events…</p>
+  <div class="face" data-face="list" id="face-list" hidden>
+    <div class="head">
+      <h1>Every event so far</h1>
+      <p class="lede">Open one to see the day itself and every badge it handed out.</p>
     </div>
+    <div class="picks" id="picks"></div>
+  </div>
 
-    <div class="face" data-face="list" id="face-list" hidden>
-      <div class="face__eyebrow"><span class="label">Every event</span></div>
-      <h1>Which event do you want to <em>look</em> at?</h1>
-      <p class="prose">Open one to see the day itself and every badge it handed out.</p>
-      <div class="picks" id="picks"></div>
+  <div class="face" data-face="none" id="face-none" hidden>
+    <div class="card">
+      <h1>No events on record yet</h1>
+      <p>The first event to open for registration appears here as it happens.</p>
     </div>
+  </div>
 
-    <div class="face" data-face="none" id="face-none" hidden>
-      <div class="face__eyebrow"><span class="label">Nothing yet</span></div>
-      <h1>No events on <em>record</em>.</h1>
-      <p class="prose">The first event to open for registration appears here as it happens.</p>
-    </div>
-
-    <div class="face" data-face="err" id="face-err" hidden>
-      <div class="face__eyebrow"><span class="label">Not answering</span></div>
-      <h1>This list is <em>offline</em>.</h1>
-      <p class="prose">
+  <div class="face" data-face="err" id="face-err" hidden>
+    <div class="card">
+      <h1>This list is offline</h1>
+      <p>
         This page is served by the same desk that holds the records, so it is either restarting or
         down. Nothing is lost — the badges live on the ledger either way.
       </p>
     </div>
-  </section>
+  </div>
 
   <p class="foot">Badges are soulbound: nobody can transfer one, and nobody here can take one back.</p>
 </div>
@@ -296,44 +297,78 @@ body:not(.dev) [data-dev]{display:none !important}
     } catch (e) { return m[3] + "/" + m[2] + "/" + m[1]; }
   }
 
+  function statusTag(status) {
+    if (status === "live") return { cls: "tag tag--live", text: "Happening now" };
+    if (status === "open") return { cls: "tag tag--open", text: "Open" };
+    return { cls: "tag", text: "Finished" };
+  }
+
+  /* Turnout. Registered is a row in our database and attended is a transaction
+     on a public ledger, so the sentence names both rather than printing a
+     percentage that hides which is which. An event with nobody registered has
+     no ratio to draw and says so. */
+  function turnout(e) {
+    var stats = e.stats || {};
+    var came = Number(stats.attended || 0);
+    var signed = Number(stats.registered || 0);
+
+    if (came === 0) {
+      var pending = signed > 0
+        ? num(signed) + (signed === 1 ? " person signed up" : " people signed up") +
+          " · badges are handed out on the day"
+        : "No badges yet";
+      return node("p", "turn__none", pending);
+    }
+
+    var box = node("div", "turn");
+    var bar = node("div", "turn__bar");
+    var fill = node("span", "turn__fill");
+    /* Never over 100%: somebody can turn up and take a badge without having
+       registered, and a bar wider than its track is a rendering bug, not news. */
+    var pct = signed > 0 ? Math.min(100, Math.round((came / signed) * 100)) : 100;
+    fill.style.width = pct + "%";
+    bar.appendChild(fill);
+    box.appendChild(bar);
+
+    var say = node("p", "turn__say");
+    say.appendChild(node("b", null, num(came)));
+    say.appendChild(document.createTextNode(
+      signed > 0
+        ? " of " + num(signed) + (came === 1 ? " came and took a badge" : " came and took badges")
+        : (came === 1 ? " badge collected" : " badges collected")
+    ));
+    box.appendChild(say);
+    return box;
+  }
+
   function pickCard(e) {
     var a = node("a", "pick");
     a.href = "/events/" + encodeURIComponent(String(e.eventId));
 
     var top = node("div", "pick__top");
-    top.appendChild(node("span", "pick__n", e.name || ("Event " + e.eventId)));
-    top.appendChild(node("span", "pick__go",
-      e.status === "closed" ? "finished" : e.status === "live" ? "happening now" : "open"));
+    var name = node("span", "pick__n", e.name || ("Event " + e.eventId));
+    top.appendChild(name);
+    var tag = statusTag(e.status);
+    top.appendChild(node("span", tag.cls, tag.text));
     a.appendChild(top);
 
     var bits = [];
     var d = fmtDate(e.eventDate);
     if (d) bits.push(d);
     if (e.venue) bits.push(String(e.venue));
-    if (bits.length) a.appendChild(node("p", "pick__meta", bits.join("  ·  ")));
+    if (bits.length) a.appendChild(node("p", "pick__meta", bits.join(" · ")));
 
-    /* The badge count is why this list exists, so it gets its own line in the
-       same voice rather than being crushed into the meta above. Zero is stated
-       rather than hidden: an event that has handed out nothing yet is a fact
-       about the event, not missing data. */
-    var held = (e.stats && e.stats.attended) || 0;
-    var count = node("p", "pick__meta");
-    if (held > 0) {
-      count.appendChild(node("b", null, num(held)));
-      count.appendChild(document.createTextNode(held === 1 ? "  badge collected" : "  badges collected"));
-    } else {
-      count.appendChild(document.createTextNode("no badges yet"));
-    }
-    a.appendChild(count);
+    a.appendChild(turnout(e));
+
+    if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
 
     /* The event NUMBER is a ledger detail, not how anyone picks an event —
        people recognise the name, the date and the room. Kept in the DOM for a
        diagnostics pass, the same way the pass keeps it. */
-    var id = node("p", "pick__meta", "#" + e.eventId);
+    var id = node("p", "pick__meta", "Taxon " + e.eventId);
     id.setAttribute("data-dev", "");
     a.appendChild(id);
 
-    if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
     return a;
   }
 

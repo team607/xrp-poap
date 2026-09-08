@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <title>Registration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* ==========================================================================
    THE INVITATION — the public registration page.
@@ -38,31 +41,30 @@
    ========================================================================== */
 
 :root{
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
-  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
 
-  --paper:#f0ebe1;
-  --surface:#f8f5ef;
-  --surface-2:#ece5d8;
-  --sunk:#e4dccc;
-  --ink:#1d1a16;
-  --ink-2:#4d453a;
-  --ink-3:#6b6153;
-  --rule:#d6cbb6;
-  --rule-2:#c0b39a;
+  --paper:#faf9f7;
+  --surface:#ffffff;
+  --surface-2:#f4f2ef;
+  --sunk:#f1efec;
+  --ink:#1c1b1a;
+  --ink-2:#57544f;
+  --ink-3:#8a8681;
+  --rule:#eceae6;
+  --rule-2:#ddd9d3;
 
-  --signal:#8d5310;
-  --signal-2:#b9812c;
-  --signal-wash:rgba(185,129,44,.13);
-  --on-signal:#fffaf2;
-  --jade:#186a4c;
-  --jade-wash:rgba(24,106,76,.12);
-  --vermilion:#a8331a;
-  --vermilion-wash:rgba(168,51,26,.11);
+  --signal:#b4552d;
+  --signal-2:#e2c3b1;
+  --signal-wash:rgba(180,85,45,.09);
+  --on-signal:#ffffff;
+  --jade:#16794f; --jade-2:#a8cfbc;
+  --jade-wash:rgba(22,121,79,.09);
+  --vermilion:#b0342a;
+  --vermilion-wash:rgba(176,52,42,.09);
 
-  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
-  --grid:rgba(93,74,44,.09);
-  --grain-opacity:.055;
+  --shadow:0 1px 2px rgba(28,27,26,.04), 0 12px 30px -22px rgba(28,27,26,.26);
+  --grid:transparent;
 
   /* Xaman's QR arrives as a PNG with a white ground. The plate is therefore
      white rather than bone, and — like the ticket's plate — it is deliberately
@@ -73,28 +75,27 @@
 
 @media (prefers-color-scheme: dark){
   :root{
-    --paper:#0e100f;
-    --surface:#161917;
-    --surface-2:#1c201d;
-    --sunk:#101312;
-    --ink:#ece6da;
-    --ink-2:#b3aa9a;
-    --ink-3:#8d8778;
-    --rule:#2b302c;
-    --rule-2:#3c433d;
+    --paper:#141413;
+    --surface:#1c1c1b;
+    --surface-2:#232322;
+    --sunk:#191918;
+    --ink:#f2f0ed;
+    --ink-2:#b3afa8;
+    --ink-3:#8a8681;
+    --rule:#2c2b29;
+    --rule-2:#3b3a37;
 
-    --signal:#e0a24a;
-    --signal-2:rgba(201,135,48,.56);
-    --signal-wash:rgba(224,162,74,.12);
-    --on-signal:#17130c;
-    --jade:#5cbc93;
-    --jade-wash:rgba(92,188,147,.12);
-    --vermilion:#e8724f;
-    --vermilion-wash:rgba(232,114,79,.12);
+    --signal:#e08b5f;
+    --signal-2:#5c4030;
+    --signal-wash:rgba(224,139,95,.13);
+    --on-signal:#1c1310;
+    --jade:#4fbd8b; --jade-2:#2f6a52;
+    --jade-wash:rgba(79,189,139,.13);
+    --vermilion:#e0736a;
+    --vermilion-wash:rgba(224,115,106,.13);
 
-    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
-    --grid:rgba(224,214,190,.055);
-    --grain-opacity:.04;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
+    --grid:transparent;
   }
 }
 
@@ -120,28 +121,14 @@ body.is-docked{padding-bottom:124px}
    row of links, grid for a wire row — with no per-element bookkeeping. */
 html:not(.dev) .devonly{display:none !important}
 
-/* Atmosphere: the plate grid and paper grain of the ticket, unchanged, so the
-   two pages read as one product rather than two skins. */
-body::before{
-  content:"";
-  position:fixed; inset:0; z-index:0; pointer-events:none;
-  background-image:linear-gradient(var(--grid) 1px,transparent 1px),linear-gradient(90deg,var(--grid) 1px,transparent 1px);
-  background-size:34px 34px;
-  -webkit-mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
-  mask-image:radial-gradient(130% 70% at 50% -6%,#000 0%,rgba(0,0,0,.4) 46%,transparent 76%);
-}
-.grain{
-  position:fixed; inset:0; z-index:0; pointer-events:none; opacity:var(--grain-opacity);
-  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='140' height='140' filter='url(%23n)'/%3E%3C/svg%3E");
-}
-
+/* Base type. Shared with the ticket so the two pages read as one product
+   rather than two skins. */
 h1,h2,h3{margin:0; font-weight:600; letter-spacing:-.018em; line-height:1.12}
 p{margin:0 0 .8em}
 p:last-child{margin-bottom:0}
-a{color:var(--signal)}
+a{color:var(--jade)}
 code,.mono{font-family:var(--font-mono)}
-.label{
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.19em; text-transform:uppercase;
+.label{ font-size:13px;
   color:var(--ink-3); font-weight:600;
 }
 .prose{color:var(--ink-2); font-size:16px; text-wrap:pretty}
@@ -159,7 +146,7 @@ code,.mono{font-family:var(--font-mono)}
 .strip__in{display:flex; align-items:center; gap:12px; padding:7px 13px; max-width:640px; margin:0 auto}
 .mark{
   font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; font-weight:700;
-  color:var(--on-signal); background:var(--signal); padding:3px 6px; border-radius:2px; flex:none;
+  color:var(--on-signal); background:var(--signal); padding:3px 6px; border-radius:10px; flex:none;
 }
 .facts{
   display:flex; align-items:baseline; gap:0 16px; flex:1; min-width:0;
@@ -167,7 +154,7 @@ code,.mono{font-family:var(--font-mono)}
 }
 .facts::-webkit-scrollbar{display:none}
 .fact{display:flex; align-items:baseline; gap:6px; flex:none}
-.fact__k{font-family:var(--font-mono); font-size:9px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600}
+.fact__k{ font-size:12.5px; color:var(--ink-3); font-weight:600}
 .fact__v{font-family:var(--font-mono); font-size:11.5px; color:var(--ink); white-space:nowrap}
 .fact__v.ok{color:var(--jade)}
 .fact__v.warn{color:var(--signal)}
@@ -181,7 +168,7 @@ html.dev .wrap{padding-top:12px}
 .banner{
   display:flex; gap:11px; align-items:flex-start; margin:14px 0 0;
   border:1px solid var(--vermilion); border-left-width:3px; background:var(--vermilion-wash);
-  padding:11px 13px; border-radius:2px;
+  padding:11px 13px; border-radius:10px;
 }
 .banner--warn{border-color:var(--signal); background:var(--signal-wash)}
 .banner__t{font-family:var(--font-display); font-size:15.5px; color:var(--ink); font-weight:600; letter-spacing:-.012em}
@@ -193,7 +180,7 @@ html.dev .wrap{padding-top:12px}
    pseudo-element and no extra DOM. */
 .invite{
   position:relative; margin:0;
-  border:1.5px solid var(--ink); border-radius:3px;
+  border:1.5px solid var(--ink); border-radius:16px;
   background:
     linear-gradient(180deg, color-mix(in srgb, var(--signal-wash) 34%, transparent) 0%, transparent 190px),
     var(--surface);
@@ -203,15 +190,13 @@ html.dev .wrap{padding-top:12px}
    break the inner rule rather than have a hairline ruled across its numerals. */
 .invite::before{
   content:""; position:absolute; inset:5px; pointer-events:none; z-index:0;
-  border:1px solid var(--rule-2); border-radius:2px;
+  border:1px solid var(--rule-2); border-radius:10px;
 }
 /* A hairline of the current tone laid along the top edge: the sheet picks up
    amber while something is live and jade once it is done, without a badge or a
    chip anywhere on the page saying so. */
 .invite::after{
-  content:""; position:absolute; left:0; right:0; top:0; height:2px; z-index:2;
-  pointer-events:none; opacity:0; transition:opacity .4s ease;
-  background:linear-gradient(90deg,transparent,var(--signal),transparent);
+  content:""; display:none;
 }
 .invite > *{position:relative; z-index:1}
 .invite[data-tone="live"]{border-color:var(--signal-2)}
@@ -226,7 +211,7 @@ html.dev .wrap{padding-top:12px}
 /* ---- letterhead -----------------------------------------------------------
    The one place on the page allowed to be generous. Staggered on load, because
    an invitation should arrive rather than appear. */
-.head{padding:30px 20px 20px; text-align:center}
+.head{padding:30px 22px 20px}
 /* Staggered, but kept inside the same ~0.6s window the faces already use:
    `both` means each line is transparent until its delay elapses, so the delay
    ladder is also how long the letterhead could be blank. Short on purpose —
@@ -240,22 +225,15 @@ html.dev .wrap{padding-top:12px}
 .head > *:nth-child(3){animation-delay:.12s}
 .head > *:nth-child(4){animation-delay:.17s}
 .head > *:nth-child(5){animation-delay:.22s}
-.head .label{display:block; margin-bottom:13px; color:var(--signal); letter-spacing:.26em}
+.head .label{display:block; margin-bottom:12px; color:var(--ink-3)}
 .head h1{font-size:clamp(1.8rem,7.8vw,2.55rem); letter-spacing:-.034em; text-wrap:balance; line-height:1.08}
 .head__meta{
-  margin:13px 0 0; font-family:var(--font-mono); font-size:11px; letter-spacing:.15em;
-  text-transform:uppercase; color:var(--ink-2);
-  display:flex; justify-content:center; align-items:center; gap:9px; flex-wrap:wrap;
+  font-weight:600; margin:13px 0 0; font-size:13.5px; color:var(--ink-2);
+  display:flex; align-items:center; gap:9px; flex-wrap:wrap;
 }
-.head__meta .sep{color:var(--signal); font-size:8px}
-.head__desc{margin:14px auto 0; max-width:46ch; font-size:15.5px; color:var(--ink-2); text-wrap:pretty}
+.head__meta .sep{color:var(--rule-2)}
+.head__desc{margin:14px 0 0; max-width:46ch; font-size:15.5px; color:var(--ink-2); text-wrap:pretty}
 
-/* The lozenge divider: a hairline broken by a rotated square, flanked by two
-   fainter satellites. Pure invitation stationery, and the one ornament here. */
-.orn{display:flex; align-items:center; justify-content:center; gap:9px; margin:18px 0 0}
-.orn::before,.orn::after{content:""; flex:1; height:1px; background:linear-gradient(90deg,transparent,var(--rule) 22%,var(--rule) 78%,transparent)}
-.orn__d{width:6px; height:6px; background:var(--signal); transform:rotate(45deg); flex:none}
-.orn__s{width:3px; height:3px; background:var(--rule-2); transform:rotate(45deg); flex:none}
 
 /* ---- the programme: three steps ------------------------------------------
    Three fixed columns, mono labels, ellipsis on every one of them: at 375px
@@ -268,11 +246,10 @@ html.dev .wrap{padding-top:12px}
 .step:last-child{border-right:0}
 .step__n{
   flex:none; width:19px; height:19px; border-radius:50%; display:grid; place-items:center;
-  font-family:var(--font-mono); font-size:10px; font-weight:700; line-height:1;
+  font-size:11.5px; font-weight:700; line-height:1;
   border:1px solid var(--rule-2); color:var(--ink-3); background:var(--surface);
 }
-.step__t{
-  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.13em; text-transform:uppercase;
+.step__t{ font-weight:600; font-size:13px;
   color:var(--ink-3); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; min-width:0;
 }
 .step[data-s="now"]{background:var(--signal-wash)}
@@ -292,7 +269,7 @@ html.dev .wrap{padding-top:12px}
 .face__eyebrow::after{content:""; flex:1; height:1px; background:var(--rule)}
 .face__eyebrow--mid{margin-top:26px}
 .face h2{font-size:clamp(1.46rem,6.1vw,1.82rem); letter-spacing:-.028em; text-wrap:balance}
-.face h2 em{font-style:italic; color:var(--signal)}
+.face h2 em{font-style:normal; color:inherit}
 .face h2 + .prose{margin-top:13px}
 
 /* ---- the two promises -----------------------------------------------------
@@ -300,27 +277,27 @@ html.dev .wrap{padding-top:12px}
    move them along, so it is set as an engraved list and not as fine print. */
 .promises{
   list-style:none; margin:20px 0 0; padding:15px 15px 15px 14px;
-  border:1px solid var(--rule); border-left:2px solid var(--signal);
-  border-radius:0 2px 2px 0; background:var(--sunk);
+  border:1px solid var(--rule); border-left:2px solid var(--jade);
+  border-radius:0 10px 10px 0; background:var(--sunk);
   display:grid; gap:12px;
 }
 .promise{display:grid; grid-template-columns:auto minmax(0,1fr); gap:11px; align-items:start; font-size:14.5px; color:var(--ink-2); line-height:1.5}
-.promise__d{width:6px; height:6px; margin-top:.5em; background:var(--signal); transform:rotate(45deg); flex:none}
+.promise__d{width:6px; height:6px; margin-top:.55em; background:var(--jade); border-radius:50%; flex:none}
 .promise b{color:var(--ink); font-weight:600; font-size:15px}
 
 /* ---- the QR plate --------------------------------------------------------- */
 .plate{
   position:relative; width:min(272px,100%); margin:0 auto;
-  aspect-ratio:1/1; padding:9px; border-radius:3px;
+  aspect-ratio:1/1; padding:9px; border-radius:16px;
   background:var(--qr-plate); border:1px solid var(--rule-2);
   box-shadow:0 14px 30px -22px rgba(30,20,6,.8);
 }
 .plate img{display:block; width:100%; height:100%; object-fit:contain}
 .bracket{position:absolute; width:19px; height:19px; border:2.5px solid var(--signal); pointer-events:none}
-.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:3px 0 0 0}
-.bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
-.bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 3px}
-.bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 3px 0}
+.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:16px 0 0 0}
+.bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 16px 0 0}
+.bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 16px}
+.bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 16px 0}
 .plate.is-live .bracket{animation:hunt 2.2s ease-in-out infinite}
 @keyframes hunt{0%,100%{opacity:1; transform:translate(0,0)}50%{opacity:.4; transform:translate(var(--bx,0),var(--by,0))}}
 .bracket--tl{--bx:-3px; --by:-3px}
@@ -332,10 +309,9 @@ html.dev .wrap{padding-top:12px}
 
 /* On a coarse pointer the QR is useless to the person holding the screen, so it
    folds away behind a disclosure — still one tap from a second device. */
-.fold{margin-top:18px; border:1px dashed var(--rule-2); border-radius:2px; background:var(--sunk)}
+.fold{margin-top:18px; border:1px dashed var(--rule-2); border-radius:10px; background:var(--sunk)}
 .fold>summary{
-  cursor:pointer; list-style:none; padding:11px 12px; min-height:44px; display:flex; align-items:center; gap:9px;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; cursor:pointer; list-style:none; padding:11px 12px; min-height:44px; display:flex; align-items:center; gap:9px; font-size:13px; color:var(--ink-3);
 }
 .fold>summary::-webkit-details-marker{display:none}
 .fold>summary::before{content:"▸"; color:var(--signal)}
@@ -346,9 +322,8 @@ html.dev .wrap{padding-top:12px}
 /* ---- the live ticker ------------------------------------------------------ */
 .ticker{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin-top:16px}
 .watching{
-  display:inline-flex; align-items:center; gap:8px;
-  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:2px; padding:6px 10px;
+  font-weight:600; display:inline-flex; align-items:center; gap:8px; font-size:13.5px;
+  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:10px; padding:6px 10px;
 }
 .dot{
   width:7px; height:7px; border-radius:50%; flex:none;
@@ -357,13 +332,13 @@ html.dev .wrap{padding-top:12px}
 .watching .dot{color:var(--signal); animation:blink 1.7s ease-in-out infinite}
 .watching[data-paused="1"] .dot{color:var(--ink-3); animation:none}
 @keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
-.clock{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin-left:auto}
+.clock{ font-weight:600; font-size:13.5px; color:var(--ink-3); margin-left:auto}
 .clock b{color:var(--ink-2); font-weight:700}
 
 /* ---- the proved wallet ---------------------------------------------------- */
 .proved{
   display:grid; gap:11px; margin-top:16px;
-  border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  border:1px solid var(--jade); border-left-width:3px; border-radius:10px;
   background:var(--jade-wash); padding:12px 13px;
   animation:land .55s cubic-bezier(.2,.85,.25,1) both;
 }
@@ -371,9 +346,8 @@ html.dev .wrap{padding-top:12px}
 .proved__k{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
 .proved__k .label{color:var(--jade)}
 .proved__v{font-family:var(--font-mono); font-size:12.5px; line-height:1.5; color:var(--ink); overflow-wrap:anywhere; -webkit-user-select:text; user-select:text}
-.pill{
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:700;
-  padding:3px 7px; border-radius:2px; flex:none;
+.pill{ font-size:13px; font-weight:600;
+  padding:3px 7px; border-radius:10px; flex:none;
 }
 .pill--yes{color:var(--jade); background:var(--jade-wash); border:1px solid color-mix(in srgb, var(--jade) 45%, transparent)}
 .pill--no{color:var(--signal); background:var(--signal-wash); border:1px solid var(--signal-2)}
@@ -384,19 +358,20 @@ html.dev .wrap{padding-top:12px}
 /* Marks a field a guest may skip. Only the email has one; a form where every
    label carries a badge tells you nothing. */
 .field .opt{
-  font-family:var(--font-mono); font-size:9px; letter-spacing:.14em; color:var(--signal);
-  border:1px solid var(--signal-2); border-radius:2px; padding:1px 5px; font-weight:700;
+  font-size:12.5px; color:var(--ink-3); font-weight:600;
+  background:var(--surface-2); border-radius:999px; padding:2px 9px;
 }
 /* 16px is not a taste decision: anything smaller and iOS Safari zooms the page
    on focus, which on this form means the dock button scrolls out of reach. */
 .field input{
-  display:block; width:100%; font-family:var(--font-display); font-size:16px; line-height:1.4;
-  padding:12px 12px; border:1px solid var(--rule-2); border-radius:2px;
-  background:var(--sunk); color:var(--ink);
+  display:block; width:100%; font-family:var(--font-display); font-size:16.5px; line-height:1.4;
+  padding:14px 15px; border:1px solid var(--rule-2); border-radius:12px;
+  background:var(--surface); color:var(--ink); min-height:52px;
+  transition:border-color .15s ease, box-shadow .15s ease;
 }
-.field input:focus{outline:2px solid var(--signal); outline-offset:1px}
+.field input:focus{outline:none; border-color:var(--jade); box-shadow:0 0 0 3px var(--jade-wash)}
 .field input::placeholder{color:var(--ink-3); opacity:.7}
-.field input[type="email"]{font-family:var(--font-mono); font-size:16px}
+.field input[type="email"]{font-size:16.5px}
 .field__why{font-size:13.5px; color:var(--ink-3); margin:7px 0 0}
 .field__why b{color:var(--ink-2); font-weight:600}
 .field__count{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.12em; color:var(--ink-3); margin-left:auto}
@@ -405,12 +380,12 @@ html.dev .wrap{padding-top:12px}
 /* ---- notes, rows, links, errors — the ticket's vocabulary ----------------- */
 .note{
   margin-top:16px; font-size:14px; color:var(--ink-2);
-  border-left:2px solid var(--rule-2); background:var(--sunk); padding:10px 12px; border-radius:0 2px 2px 0;
+  border-left:2px solid var(--rule-2); background:var(--sunk); padding:10px 12px; border-radius:0 10px 10px 0;
 }
 .note b{color:var(--ink); font-weight:600}
 .rows{margin-top:14px; border-top:1px solid var(--rule)}
 .row{padding:10px 0; border-bottom:1px dotted var(--rule)}
-.row__k{font-family:var(--font-mono); font-size:9.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink-3); font-weight:600; display:block; margin-bottom:4px}
+.row__k{ font-size:13px; color:var(--ink-3); font-weight:600; display:block; margin-bottom:4px}
 /* `anywhere`, not `break-all`: an address must break mid-token, prose must not. */
 .row__v{font-family:var(--font-mono); font-size:12.5px; color:var(--ink); overflow-wrap:anywhere; line-height:1.5}
 .row__v.ok{color:var(--jade)}
@@ -418,7 +393,7 @@ html.dev .wrap{padding-top:12px}
 /* The keepsake: a bordered slip inside the confirmation, so the thing worth
    screenshotting looks like a thing worth screenshotting. */
 .rows--quiet{
-  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  border:1px solid var(--rule-2); border-radius:10px; background:var(--sunk);
   padding:2px 13px; margin-top:12px;
 }
 .rows--quiet .row:last-child{border-bottom:0}
@@ -427,9 +402,8 @@ html.dev .wrap{padding-top:12px}
 .rows--quiet .row__v.ok{color:var(--jade)}
 .rows--quiet .row__v.prose-v{font-size:15px; color:var(--ink)}
 .links{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px}
-.link{
-  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
-  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:2px;
+.link{ font-size:13.5px;
+  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:10px;
   padding:7px 12px; min-height:40px; display:inline-flex; align-items:center;
 }
 .link::after{content:" ↗"; opacity:.6}
@@ -439,7 +413,7 @@ html.dev .wrap{padding-top:12px}
    the server actually said are still rendered, one `.devonly` line below. */
 .err{
   margin-top:18px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
-  padding:13px 14px; border-radius:0 2px 2px 0;
+  padding:13px 14px; border-radius:0 10px 10px 0;
 }
 .err__t{font-size:15.5px; font-weight:600; color:var(--ink); letter-spacing:-.014em; line-height:1.3}
 .err__msg{font-size:14.5px; color:var(--ink-2); margin-top:6px; overflow-wrap:anywhere}
@@ -454,13 +428,12 @@ html.dev .wrap{padding-top:12px}
 .retry{margin-top:14px; display:flex; gap:9px; flex-wrap:wrap}
 
 /* ---- buttons -------------------------------------------------------------- */
-.btn{
-  font-family:var(--font-mono); letter-spacing:.14em; text-transform:uppercase; font-weight:700;
-  border-radius:2px; cursor:pointer; position:relative; overflow:hidden; text-decoration:none;
+.btn{ font-weight:600;
+  border-radius:10px; cursor:pointer; position:relative; overflow:hidden; text-decoration:none;
   transition:transform .12s ease, filter .16s ease, background .16s ease;
 }
 .btn:active:not(:disabled){transform:translateY(1px)}
-.btn:focus-visible{outline:2px solid var(--signal); outline-offset:3px}
+.btn:focus-visible{outline:2px solid var(--jade); outline-offset:3px}
 .btn:disabled{opacity:.45; cursor:not-allowed}
 .btn[aria-busy="true"]::after{
   content:""; position:absolute; left:0; bottom:0; height:3px; width:100%;
@@ -469,14 +442,14 @@ html.dev .wrap{padding-top:12px}
 }
 @keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
 .btn--act{
-  display:flex; align-items:center; justify-content:center; width:100%; min-height:60px; font-size:14px;
-  background:var(--signal); color:var(--on-signal); border:0; letter-spacing:.16em;
-  box-shadow:0 1px 0 rgba(255,255,255,.22) inset, 0 12px 24px -16px rgba(0,0,0,.9);
+  display:flex; align-items:center; justify-content:center; width:100%; min-height:58px;
+  font-size:16.5px; font-weight:700; letter-spacing:-.01em;
+  background:var(--ink); color:var(--paper); border:0; border-radius:12px;
 }
 .btn--act:hover:not(:disabled){filter:brightness(1.07)}
 .btn--quiet{
   background:transparent; color:var(--ink-2); border:1px solid var(--rule-2);
-  font-size:11px; padding:11px 14px; min-height:44px;
+  font-size:15px; font-weight:600; padding:11px 18px; min-height:44px;
   display:inline-flex; align-items:center; justify-content:center;
 }
 .btn--quiet:hover:not(:disabled){color:var(--ink); border-color:var(--ink-3)}
@@ -492,8 +465,7 @@ html.dev .wrap{padding-top:12px}
   animation:dockin .34s cubic-bezier(.2,.8,.3,1) both;
 }
 .dock__in{max-width:640px; margin:0 auto; padding:0 0}
-.dock__note{
-  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.14em; text-transform:uppercase;
+.dock__note{ font-weight:600; font-size:13px;
   color:var(--ink-3); text-align:center; margin:9px 0 0; line-height:1.4;
 }
 .dock__note:empty{display:none}
@@ -505,36 +477,43 @@ html.dev .wrap{padding-top:12px}
 .picks{display:grid; gap:11px; margin-top:14px}
 .pick{
   display:block; text-decoration:none; color:inherit;
-  border:1px solid var(--rule-2); border-radius:2px; background:var(--sunk);
+  border:1px solid var(--rule-2); border-radius:10px; background:var(--sunk);
   padding:13px 14px; transition:border-color .16s ease, background .16s ease;
 }
 .pick:hover{border-color:var(--signal); background:var(--signal-wash)}
 .pick:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
 .pick__top{display:flex; align-items:baseline; gap:10px}
 .pick__n{font-family:var(--font-display); font-size:1.14rem; font-weight:600; color:var(--ink); letter-spacing:-.02em; min-width:0}
-.pick__go{margin-left:auto; font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--signal); flex:none}
-.pick__meta{font-family:var(--font-mono); font-size:10px; letter-spacing:.13em; text-transform:uppercase; color:var(--ink-3); margin:6px 0 0}
+.pick__go{margin-left:auto; font-size:13px; color:var(--signal); flex:none}
+.pick__meta{ font-weight:600; font-size:13px; color:var(--ink-3); margin:6px 0 0}
 .pick__desc{font-size:14px; color:var(--ink-2); margin:7px 0 0}
-.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:2px; padding:16px; text-align:center; margin-top:14px}
+.empty{font-size:15px; color:var(--ink-2); border:1px dashed var(--rule-2); border-radius:10px; padding:16px; text-align:center; margin-top:14px}
 
-/* ---- the stamp: the payoff ------------------------------------------------
-   Rotated, double-ruled, jade. The one thing on the page that looks pressed
-   into the paper rather than printed on it. */
-.stampwrap{display:flex; justify-content:center; margin:22px 0 6px}
+/* ---- the confirmation: the payoff ----------------------------------------
+   A jade check and one word. This used to be a rubber stamp, rotated and
+   double-ruled — a good joke on paper, and the wrong register for the moment a
+   guest finds out it worked. What they want here is certainty, not whimsy. */
+.stampwrap{display:flex; justify-content:center; margin:26px 0 8px}
 .stamp{
-  position:relative; color:var(--jade); border:2px solid currentColor; border-radius:3px;
-  padding:11px 20px 12px; transform:rotate(-1.6deg); text-align:center; max-width:100%;
-  animation:press .5s cubic-bezier(.2,.9,.3,1) both;
+  color:var(--jade); text-align:center; max-width:100%;
+  display:flex; flex-direction:column; align-items:center; gap:12px;
+  animation:press .45s cubic-bezier(.2,.9,.3,1) both;
 }
-.stamp::before{content:""; position:absolute; inset:3px; border:1px solid currentColor; border-radius:2px; opacity:.5}
-.stamp__t{font-family:var(--font-mono); font-size:15.5px; letter-spacing:.3em; text-transform:uppercase; font-weight:700; display:block; text-indent:.3em}
-.stamp__d{font-family:var(--font-mono); font-size:9px; letter-spacing:.18em; text-transform:uppercase; opacity:.8; display:block; margin-top:4px}
-@keyframes press{from{opacity:0; transform:rotate(-7deg) scale(1.3)}to{opacity:1; transform:rotate(-1.6deg) scale(1)}}
+.stamp::before{
+  content:"";
+  width:52px; height:52px; border-radius:50%; flex:none;
+  background:var(--jade-wash);
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%2316794f' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 6L9 17l-5-5'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:center; background-size:24px 24px;
+}
+.stamp__t{font-size:19px; letter-spacing:-.03em; font-weight:700; display:block; color:var(--ink)}
+.stamp__d{font-size:14px; display:block; margin-top:3px; color:var(--ink-3)}
+@keyframes press{from{opacity:0; transform:scale(.9)}to{opacity:1; transform:none}}
 .already{
-  margin-top:14px; border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  margin-top:14px; border:1px solid var(--jade); border-left-width:3px; border-radius:10px;
   background:var(--jade-wash); padding:11px 13px;
 }
-.already__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--jade); font-weight:700}
+.already__t{ font-size:13.5px; color:var(--jade); font-weight:600}
 .already p{font-size:14px; color:var(--ink-2); margin:.35em 0 0}
 
 /* ---- the way onward -------------------------------------------------------
@@ -545,9 +524,7 @@ html.dev .wrap{padding-top:12px}
 .onward{margin-top:22px}
 .onward .btn{width:100%}
 .onward__n{
-  margin:9px 0 0; text-align:center;
-  font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em;
-  text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; margin:9px 0 0; text-align:center; font-size:13.5px; color:var(--ink-3);
 }
 
 /* ---- the badge artwork ----------------------------------------------------
@@ -572,7 +549,7 @@ html.dev .wrap{padding-top:12px}
 }
 .art{margin:0}
 .art__mount{
-  position:relative; padding:9px; border-radius:3px;
+  position:relative; padding:9px; border-radius:16px;
   background:var(--art-mount); border:1px solid var(--art-edge);
   box-shadow:var(--art-shadow);
 }
@@ -584,7 +561,7 @@ html.dev .wrap{padding-top:12px}
   display:grid; grid-template-columns:88px minmax(0,1fr); gap:14px; align-items:center;
   margin-top:16px; padding-top:15px; border-top:1px dashed var(--rule-2);
 }
-.art--preview .art__mount{padding:5px; border-radius:2px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
+.art--preview .art__mount{padding:5px; border-radius:10px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
 .art--preview .art__cap .label{display:block; margin-bottom:5px}
 .art--big{margin:18px auto 0; max-width:340px}
 /* Crop marks: eight hairlines in one pseudo-element. A print artefact, not the
@@ -606,10 +583,9 @@ html.dev .wrap{padding-top:12px}
 @keyframes art-place{from{opacity:0; transform:translateY(-9px) scale(1.045)}to{opacity:1; transform:none}}
 
 /* ---- wire log + footer ---------------------------------------------------- */
-.wire{margin-top:26px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk); border-left:2px solid var(--signal-2)}
+.wire{margin-top:26px; border:1px solid var(--rule); border-radius:10px; background:var(--sunk); border-left:2px solid var(--signal-2)}
 .wire>summary{
-  cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
+  font-weight:600; cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px; font-size:13px; color:var(--ink-3);
 }
 .wire>summary::-webkit-details-marker{display:none}
 .wire>summary::before{content:"▸"; color:var(--signal)}
@@ -641,8 +617,7 @@ html.dev .wrap{padding-top:12px}
 .colophon__d{width:4px; height:4px; background:var(--rule-2); transform:rotate(45deg); flex:none}
 /* Quiet by size and setting, not by low contrast — it still has to be legible
    to the one person in a hundred who is looking for it. */
-.devlink{
-  font-family:var(--font-mono); font-size:9.5px; letter-spacing:.17em; text-transform:uppercase;
+.devlink{ font-weight:600; font-size:13px;
   color:var(--ink-3); background:none; border:0; padding:11px 0; margin-left:auto;
   cursor:pointer; text-decoration:none; transition:color .16s ease;
 }
@@ -675,22 +650,32 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
    back through the browser's own history.
    ------------------------------------------------------------------------- */
 .crumb{
-  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
-  font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+  font-weight:600; display:flex; gap:8px; align-items:center; flex-wrap:wrap; font-size:13px;
   /* A bottom margin as well as a top one. Adjacent margins collapse, so the
      gap is max(16px, whatever the next element already asks for) — never
      doubled, and never zero. Without it the trail sat flush against the
      invitation's frame on /register, whose card has no top margin. */
   color:var(--ink-3); margin:14px 0 16px;
 }
-.crumb a{color:var(--signal); text-decoration:none; border-bottom:1px solid var(--signal-2)}
-.crumb a:hover{border-bottom-color:var(--signal)}
-.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:2px}
+.crumb a{color:var(--jade); text-decoration:none; border-bottom:1px solid var(--jade-2)}
+.crumb a:hover{border-bottom-color:var(--jade)}
+.crumb a:focus-visible{outline:2px solid var(--signal); outline-offset:3px; border-radius:10px}
 .crumb span[aria-current]{color:var(--ink-2); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+/* ---- Ledger --------------------------------------------------------------
+   The last word on type and accent. Plus Jakarta Sans carries less colour on
+   the page than the serif it replaced, so headings take more weight and tighter
+   tracking to hold the same authority. Links are jade — the colour this app
+   uses for "confirmed on the ledger" — while clay stays reserved for waiting.
+   Kept at the end of the sheet deliberately: it must win over the page rules
+   above it.
+   -------------------------------------------------------------------------- */
+h1,h2,h3,h4{font-weight:700; letter-spacing:-.026em; line-height:1.16}
+h1{font-weight:800; line-height:1.1}
+a{color:var(--jade)}
 </style>
 </head>
 <body>
-<div class="grain" aria-hidden="true"></div>
 
 <!-- The diagnostics strip. Filed behind the developer affordance: net, event id
      and internal step names are not an invitation's business. -->
@@ -729,17 +714,16 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
   <section class="invite" id="invite" data-tone="neutral">
 
     <div class="head">
-      <span class="label" id="head-eyebrow">you are invited</span>
+      <span class="label" id="head-eyebrow">You are invited</span>
       <h1 id="head-name">Your invitation</h1>
       <p class="head__meta" id="head-meta" hidden></p>
-      <div class="orn" aria-hidden="true"><span class="orn__s"></span><span class="orn__d"></span><span class="orn__s"></span></div>
       <p class="head__desc" id="head-desc" hidden></p>
     </div>
 
     <ol class="steps" id="steps" hidden>
-      <li class="step" data-s="now"  id="st-1"><span class="step__n">1</span><span class="step__t">wallet</span></li>
-      <li class="step" data-s="todo" id="st-2"><span class="step__n">2</span><span class="step__t">details</span></li>
-      <li class="step" data-s="todo" id="st-3"><span class="step__n">3</span><span class="step__t">confirmed</span></li>
+      <li class="step" data-s="now"  id="st-1"><span class="step__n">1</span><span class="step__t">Wallet</span></li>
+      <li class="step" data-s="todo" id="st-2"><span class="step__n">2</span><span class="step__t">Details</span></li>
+      <li class="step" data-s="todo" id="st-3"><span class="step__n">3</span><span class="step__t">Confirmed</span></li>
     </ol>
 
     <!-- ============ boot ============ -->
@@ -856,8 +840,8 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
 
       <div class="proved">
         <div class="proved__k">
-          <span class="label">your wallet</span>
-          <span class="pill pill--yes">confirmed</span>
+          <span class="label">Your wallet</span>
+          <span class="pill pill--yes">Confirmed</span>
         </div>
         <span class="proved__v" id="proved-addr">—</span>
       </div>
@@ -867,14 +851,14 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
           <div class="art__bed"><img class="art__img" id="art-preview-img" alt="" width="512" height="512"></div>
         </div>
         <figcaption class="art__cap">
-          <span class="label">your badge</span>
+          <span class="label">Your badge</span>
           <p class="art__prov">Drawn from your own wallet, so no two guests get the same one. This exact artwork is what you will be given at the event.</p>
         </figcaption>
       </figure>
 
       <form id="form" autocomplete="on" novalidate>
         <div class="field">
-          <label class="label" for="dn"><span>the name on the list</span><span class="field__count" id="dn-count"></span></label>
+          <label class="label" for="dn"><span>The name on the list</span><span class="field__count" id="dn-count"></span></label>
           <input id="dn" name="name" type="text" maxlength="120" autocomplete="name"
                  spellcheck="false" placeholder="Ada Lovelace" required aria-required="true">
           <p class="field__why">
@@ -884,7 +868,7 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
         </div>
 
         <div class="field">
-          <label class="label" for="em"><span>email</span><span class="opt">optional</span></label>
+          <label class="label" for="em"><span>Email</span><span class="opt">Optional</span></label>
           <input id="em" name="email" type="email" maxlength="254" autocomplete="email"
                  inputmode="email" spellcheck="false" autocapitalize="off"
                  placeholder="you@example.com">
@@ -918,7 +902,7 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
           <div class="art__bed"><img class="art__img" id="art-hero-img" alt="" width="512" height="512"></div>
         </div>
         <figcaption class="art__cap">
-          <span class="label">the badge waiting for you</span>
+          <span class="label">The badge waiting for you</span>
         </figcaption>
       </figure>
 
@@ -929,7 +913,7 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
         <p class="onward__n" id="done-pass-note"></p>
       </div>
 
-      <div class="face__eyebrow face__eyebrow--mid"><span class="label">keep this</span></div>
+      <div class="face__eyebrow face__eyebrow--mid"><span class="label">Keep this</span></div>
       <div class="rows rows--quiet" id="done-rows"></div>
       <div class="links devonly" id="done-links"></div>
 
@@ -1431,7 +1415,7 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
     var e = app.event;
     if (!e) return;
     show("head-eyebrow", true);
-    setText("head-eyebrow", "you are invited");
+    setText("head-eyebrow", "You are invited");
     setText("head-name", e.name || ("Event " + app.eventId));
     var meta = $("head-meta");
     clear(meta);
@@ -1999,11 +1983,11 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
 
     var rows = $("done-rows");
     clear(rows);
-    rows.appendChild(row("name", reg.displayName || "— not given —", { prose: true }));
-    rows.appendChild(row("your wallet", reg.address || app.address, { ok: true }));
-    rows.appendChild(row("event", ev.name || "This event", { prose: true }));
-    if (reg.registeredAt) rows.appendChild(row("registered", fmtStamp(reg.registeredAt)));
-    rows.appendChild(row("reference", reg.id));
+    rows.appendChild(row("Name", reg.displayName || "— not given —", { prose: true }));
+    rows.appendChild(row("Your wallet", reg.address || app.address, { ok: true }));
+    rows.appendChild(row("Event", ev.name || "This event", { prose: true }));
+    if (reg.registeredAt) rows.appendChild(row("Registered", fmtStamp(reg.registeredAt)));
+    rows.appendChild(row("Reference", reg.id));
 
     var links = $("done-links");
     clear(links);
@@ -2073,7 +2057,7 @@ html.dev .devlink::before{content:"● "; font-size:8px; vertical-align:1px}
   function loadPicker() {
     showFace("picker");
     show("head-eyebrow", true);
-    setText("head-eyebrow", "you are invited");
+    setText("head-eyebrow", "You are invited");
     setText("head-name", "Which event?");
     show("head-meta", false);
     show("head-desc", false);

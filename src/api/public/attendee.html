@@ -5,9 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
-<meta name="theme-color" content="#f0ebe1" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#0e100f" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#faf9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#141413" media="(prefers-color-scheme: dark)">
 <title>Your badge — XRPL attendee pass</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
 <style>
 /* ==========================================================================
    THE PASS — the attendee half of the XRPL POAP demo.
@@ -26,31 +29,31 @@
    ========================================================================== */
 
 :root{
-  --font-display:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua","URW Palladio L",Georgia,"Times New Roman",serif;
-  --font-mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
 
-  --paper:#f0ebe1;
-  --surface:#f8f5ef;
-  --surface-2:#ece5d8;
-  --sunk:#e4dccc;
-  --ink:#1d1a16;
-  --ink-2:#4d453a;
-  --ink-3:#6b6153;
-  --rule:#d6cbb6;
-  --rule-2:#c0b39a;
+  --paper:#faf9f7;
+  --surface:#ffffff;
+  --surface-2:#f4f2ef;
+  --sunk:#f1efec;
+  --ink:#1c1b1a;
+  --ink-2:#57544f;
+  --ink-3:#8a8681;
+  --rule:#eceae6;
+  --rule-2:#ddd9d3;
 
-  --signal:#8d5310;
-  --signal-2:#b9812c;
-  --signal-wash:rgba(185,129,44,.13);
-  --on-signal:#fffaf2;
-  --jade:#186a4c;
-  --jade-wash:rgba(24,106,76,.12);
-  --vermilion:#a8331a;
-  --vermilion-wash:rgba(168,51,26,.11);
+  --signal:#b4552d;
+  --signal-2:#e2c3b1;
+  --signal-wash:rgba(180,85,45,.09);
+  --on-signal:#ffffff;
+  --jade:#16794f;
+  --jade-wash:rgba(22,121,79,.09);
+  --vermilion:#b0342a;
+  --vermilion-wash:rgba(176,52,42,.09);
 
-  --shadow:0 1px 0 rgba(255,255,255,.85) inset, 0 22px 40px -28px rgba(50,36,18,.6);
-  --grid:rgba(93,74,44,.09);
-  --grain-opacity:.055;
+  --shadow:0 1px 2px rgba(28,27,26,.04), 0 12px 30px -22px rgba(28,27,26,.26);
+  --grid:transparent;
+  --grain-opacity:0;
 
   /* The QR plate is deliberately NOT theme-aware. Phones scan dark-on-light;
      inverting for dark mode is how a demo dies at the moment it matters. */
@@ -60,28 +63,28 @@
 
 @media (prefers-color-scheme: dark){
   :root{
-    --paper:#0e100f;
-    --surface:#161917;
-    --surface-2:#1c201d;
-    --sunk:#101312;
-    --ink:#ece6da;
-    --ink-2:#b3aa9a;
-    --ink-3:#8d8778;
-    --rule:#2b302c;
-    --rule-2:#3c433d;
+    --paper:#141413;
+    --surface:#1c1c1b;
+    --surface-2:#232322;
+    --sunk:#191918;
+    --ink:#f2f0ed;
+    --ink-2:#b3afa8;
+    --ink-3:#8a8681;
+    --rule:#2c2b29;
+    --rule-2:#3b3a37;
 
-    --signal:#e0a24a;
-    --signal-2:rgba(201,135,48,.56);
-    --signal-wash:rgba(224,162,74,.12);
-    --on-signal:#17130c;
-    --jade:#5cbc93;
-    --jade-wash:rgba(92,188,147,.12);
-    --vermilion:#e8724f;
-    --vermilion-wash:rgba(232,114,79,.12);
+    --signal:#e08b5f;
+    --signal-2:#5c4030;
+    --signal-wash:rgba(224,139,95,.13);
+    --on-signal:#1c1310;
+    --jade:#4fbd8b;
+    --jade-wash:rgba(79,189,139,.13);
+    --vermilion:#e0736a;
+    --vermilion-wash:rgba(224,115,106,.13);
 
-    --shadow:0 1px 0 rgba(255,255,255,.045) inset, 0 26px 46px -32px rgba(0,0,0,.95);
-    --grid:rgba(224,214,190,.055);
-    --grain-opacity:.04;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
+    --grid:transparent;
+    --grain-opacity:0;
   }
 }
 
@@ -141,7 +144,7 @@ code,.mono{font-family:var(--font-mono)}
 .strip__in{display:flex; align-items:center; gap:12px; padding:7px 13px; max-width:640px; margin:0 auto}
 .mark{
   font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; font-weight:700;
-  color:var(--on-signal); background:var(--signal); padding:3px 6px; border-radius:2px; flex:none;
+  color:var(--on-signal); background:var(--signal); padding:3px 6px; border-radius:10px; flex:none;
 }
 .facts{
   display:flex; align-items:baseline; gap:0 16px; flex:1; min-width:0;
@@ -160,7 +163,7 @@ code,.mono{font-family:var(--font-mono)}
 .banner{
   display:flex; gap:11px; align-items:flex-start; margin:14px 0 0;
   border:1px solid var(--vermilion); border-left-width:3px; background:var(--vermilion-wash);
-  padding:11px 13px; border-radius:2px;
+  padding:11px 13px; border-radius:10px;
 }
 .banner--warn{border-color:var(--signal); background:var(--signal-wash)}
 .banner__t{font-family:var(--font-mono); font-size:10.5px; letter-spacing:.16em; text-transform:uppercase; color:var(--ink); font-weight:700}
@@ -170,12 +173,12 @@ code,.mono{font-family:var(--font-mono)}
    A ticket: ink border, ribbon head, punched perforation, stub. */
 .pass{
   position:relative; margin:18px 0 0;
-  border:1.5px solid var(--ink); border-radius:3px;
+  border:1.5px solid var(--ink); border-radius:16px;
   background:var(--surface); box-shadow:var(--shadow);
 }
 .pass__ribbon{
   display:flex; align-items:center; gap:10px;
-  padding:9px 14px; border-radius:2px 2px 0 0;
+  padding:9px 14px; border-radius:10px 2px 0 0;
   background:var(--ink); color:var(--paper);
   font-family:var(--font-mono); font-size:10px; letter-spacing:.2em; text-transform:uppercase; font-weight:700;
 }
@@ -211,7 +214,7 @@ code,.mono{font-family:var(--font-mono)}
 .stub__addr{
   display:block; width:100%; text-align:left; cursor:pointer;
   font-family:var(--font-mono); font-size:12.5px; line-height:1.5; color:var(--ink);
-  background:var(--sunk); border:1px solid var(--rule); border-radius:2px;
+  background:var(--sunk); border:1px solid var(--rule); border-radius:10px;
   padding:10px 11px; overflow-wrap:anywhere; min-height:44px;
 }
 .stub__addr:focus-visible{outline:2px solid var(--signal); outline-offset:2px}
@@ -222,7 +225,7 @@ code,.mono{font-family:var(--font-mono)}
 .stub__row{display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
 .pill{
   font-family:var(--font-mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; font-weight:700;
-  padding:3px 7px; border-radius:2px; flex:none;
+  padding:3px 7px; border-radius:10px; flex:none;
 }
 .pill--no{color:var(--signal); background:var(--signal-wash); border:1px solid var(--signal-2)}
 .pill--yes{color:var(--jade); background:var(--jade-wash); border:1px solid color-mix(in srgb, var(--jade) 45%, transparent)}
@@ -243,13 +246,13 @@ code,.mono{font-family:var(--font-mono)}
 .scan__sub{font-size:14px; color:var(--ink-3); margin:0 0 16px}
 .plate{
   position:relative; width:min(320px,100%); margin:0 auto;
-  aspect-ratio:1/1; padding:9px; border-radius:3px;
+  aspect-ratio:1/1; padding:9px; border-radius:16px;
   background:var(--qr-plate); border:1px solid var(--rule-2);
   box-shadow:0 14px 30px -22px rgba(30,20,6,.8);
 }
 .plate svg{display:block; width:100%; height:100%}
 .bracket{position:absolute; width:19px; height:19px; border:2.5px solid var(--signal); pointer-events:none}
-.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:3px 0 0 0}
+.bracket--tl{top:-8px; left:-8px; border-right:0; border-bottom:0; border-radius:16px 0 0 0}
 .bracket--tr{top:-8px; right:-8px; border-left:0; border-bottom:0; border-radius:0 3px 0 0}
 .bracket--bl{bottom:-8px; left:-8px; border-right:0; border-top:0; border-radius:0 0 0 3px}
 .bracket--br{bottom:-8px; right:-8px; border-left:0; border-top:0; border-radius:0 0 3px 0}
@@ -266,14 +269,14 @@ code,.mono{font-family:var(--font-mono)}
 .watching{
   display:inline-flex; align-items:center; gap:8px; margin-top:16px;
   font-family:var(--font-mono); font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
-  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:2px; padding:6px 10px;
+  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:10px; padding:6px 10px;
 }
 .watching .dot{color:var(--signal); animation:blink 1.7s ease-in-out infinite}
 .watching[data-paused="1"] .dot{color:var(--ink-3); animation:none}
 
 /* ---- the funded moment --------------------------------------------------- */
 .landed{
-  margin:0 0 18px; border:1px solid var(--jade); border-left-width:3px; border-radius:2px;
+  margin:0 0 18px; border:1px solid var(--jade); border-left-width:3px; border-radius:10px;
   background:var(--jade-wash); padding:12px 13px; text-align:left;
   animation:land .55s cubic-bezier(.2,.85,.25,1) both;
 }
@@ -292,13 +295,13 @@ code,.mono{font-family:var(--font-mono)}
 .links{display:flex; flex-wrap:wrap; gap:8px; margin-top:7px}
 .link{
   font-family:var(--font-mono); font-size:10.5px; letter-spacing:.1em; text-transform:uppercase;
-  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:2px;
+  color:var(--signal); text-decoration:none; border:1px solid var(--signal-2); border-radius:10px;
   padding:7px 12px; min-height:40px; display:inline-flex; align-items:center;
 }
 .link::after{content:" ↗"; opacity:.6}
 
 /* ---- the two calls of the confirm path ----------------------------------- */
-.calls{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:2px; margin-top:6px}
+.calls{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:10px; margin-top:6px}
 .call{background:var(--surface); padding:11px 12px; display:grid; grid-template-columns:20px minmax(0,1fr); gap:2px 10px; align-items:start}
 .call__m{grid-row:1/3; font-family:var(--font-mono); font-size:13px; font-weight:700; color:var(--ink-3); line-height:1.35}
 .call[data-s="run"] .call__m{color:var(--signal); animation:blink 1s ease-in-out infinite}
@@ -319,7 +322,7 @@ code,.mono{font-family:var(--font-mono)}
 
 /* ---- choices ------------------------------------------------------------- */
 .choice{margin-top:20px}
-.seg{display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--rule-2); border-radius:2px; overflow:hidden; margin-top:8px}
+.seg{display:grid; grid-template-columns:1fr 1fr; border:1px solid var(--rule-2); border-radius:10px; overflow:hidden; margin-top:8px}
 .seg label{position:relative; display:block; min-width:0}
 .seg input{position:absolute; opacity:0; width:1px; height:1px}
 .seg span{
@@ -340,7 +343,7 @@ code,.mono{font-family:var(--font-mono)}
 /* ---- buttons ------------------------------------------------------------- */
 .btn{
   font-family:var(--font-mono); letter-spacing:.14em; text-transform:uppercase; font-weight:700;
-  border-radius:2px; cursor:pointer; position:relative; overflow:hidden;
+  border-radius:10px; cursor:pointer; position:relative; overflow:hidden;
   transition:transform .12s ease, filter .16s ease, background .16s ease;
 }
 .btn:active:not(:disabled){transform:translateY(1px)}
@@ -386,7 +389,7 @@ code,.mono{font-family:var(--font-mono)}
 @keyframes dockin{from{transform:translateY(15px)}to{transform:none}}
 
 /* ---- wire log + footer --------------------------------------------------- */
-.wire{margin-top:26px; border:1px solid var(--rule); border-radius:2px; background:var(--sunk)}
+.wire{margin-top:26px; border:1px solid var(--rule); border-radius:10px; background:var(--sunk)}
 .wire>summary{
   cursor:pointer; list-style:none; padding:10px 12px; min-height:42px; display:flex; align-items:center; gap:9px;
   font-family:var(--font-mono); font-size:10px; letter-spacing:.15em; text-transform:uppercase; color:var(--ink-3);
@@ -444,7 +447,7 @@ code,.mono{font-family:var(--font-mono)}
 
 .art{margin:0}
 .art__mount{
-  position:relative; padding:9px; border-radius:3px;
+  position:relative; padding:9px; border-radius:16px;
   background:var(--art-mount); border:1px solid var(--art-edge);
   box-shadow:var(--art-shadow);
 }
@@ -468,10 +471,10 @@ code,.mono{font-family:var(--font-mono)}
 .art__ph--load{animation:art-wait 1.9s ease-in-out infinite}
 @keyframes art-wait{0%,100%{opacity:.5}50%{opacity:.95}}
 button.art__ph{cursor:pointer; color:var(--art-bright)}
-button.art__ph:focus-visible{outline:2px solid #e0a24a; outline-offset:-4px}
+button.art__ph:focus-visible{outline:2px solid #e08b5f; outline-offset:-4px}
 .art__ph-b{
   display:inline-block; padding:7px 12px; border:1px solid rgba(255,255,255,.28);
-  border-radius:2px; color:#f4eee2; font-weight:700;
+  border-radius:10px; color:#f4eee2; font-weight:700;
 }
 button.art__ph:hover .art__ph-b{border-color:rgba(255,255,255,.5); background:rgba(255,255,255,.07)}
 
@@ -483,7 +486,7 @@ button.art__ph:hover .art__ph-b{border-color:rgba(255,255,255,.5); background:rg
   display:grid; grid-template-columns:88px minmax(0,1fr); gap:14px; align-items:center;
   margin-top:16px; padding-top:15px; border-top:1px dashed var(--rule-2); text-align:left;
 }
-.art--preview .art__mount{padding:5px; border-radius:2px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
+.art--preview .art__mount{padding:5px; border-radius:10px; box-shadow:0 8px 18px -14px rgba(30,20,6,.8)}
 .art--preview .art__cap .label{display:block; margin-bottom:5px}
 .art--preview .art__prov{font-size:12.5px; line-height:1.45; color:var(--ink-3)}
 .art--preview .art__ph{padding:7px; font-size:8.5px; letter-spacing:.09em; gap:5px; line-height:1.5}
