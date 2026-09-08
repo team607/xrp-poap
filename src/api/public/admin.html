@@ -826,10 +826,14 @@ a{color:var(--jade)}
             <div class="count"><div class="count__n" id="c-total">&mdash;</div><div class="count__k">registered</div></div>
             <div class="count count--good"><div class="count__n" id="c-checked">&mdash;</div><div class="count__k">checked in</div></div>
             <div class="count"><div class="count__n" id="c-attend">&mdash;</div><div class="count__k">attendance rows</div></div>
+            <div class="count count--warn"><div class="count__n" id="c-nobadge">&mdash;</div><div class="count__k">no badge</div></div>
           </div>
           <div class="book__ft">
             <span><b>Registered</b> is a row somebody created on the public page. <b>Attendance rows</b>
-              are signed claims this server verified against the chain and indexed.</span>
+              are signed claims this server verified against the chain and indexed. <b>No badge</b> is
+              the difference between them &mdash; people who signed up and hold nothing. Usually their
+              wallet was never funded, so there was never an account for a badge to land in; open one
+              of them in the roster below to see which.</span>
           </div>
         </section>
 
@@ -978,6 +982,9 @@ a{color:var(--jade)}
   var eventsMeta = { limit: 50, offset: 0 };
   var current = null;          // event on the detail screen
   var regs = { rows: [], total: 0, checkedIn: 0, limit: 50, offset: 0 };
+  /* The attendance total, kept beside `regs` because the shortfall needs both
+     and they arrive from two different calls, in either order. */
+  var attendTotal = null;
   var offline = false;
   var countsGen = 0;           // cancels in-flight per-row count fetches
   var detailGen = 0;           // cancels in-flight detail fetches
@@ -1774,6 +1781,7 @@ a{color:var(--jade)}
     var gen = detailGen;
     current = null;
     regs = { rows: [], total: 0, checkedIn: 0, limit: REG_PAGE, offset: 0 };
+    attendTotal = null;
 
     clearFlash("detail-flash");
     clear($("detail-missing"));
@@ -2055,6 +2063,7 @@ a{color:var(--jade)}
         $("regs-empty").appendChild(errBox(r, "The counts above may be stale. Press Refresh."));
         setText("c-total", "?");
         setText("c-checked", "?");
+        setText("c-nobadge", "?");
         return;
       }
       regs.rows = r.json.registrations || [];
@@ -2064,8 +2073,30 @@ a{color:var(--jade)}
       regs.limit = r.json.limit || REG_PAGE;
       setText("c-total", String(regs.total));
       setText("c-checked", String(regs.checkedIn));
+      paintShortfall();
       paintRegs();
     });
+  }
+
+  /**
+   * Registered minus attendance rows: the people who signed up and hold
+   * nothing.
+   *
+   * Deliberately NOT called "never funded", however reliably that is the
+   * cause. This page's whole argument is that a database count and a chain
+   * fact are different things and must not be merged, and an unfunded wallet
+   * is a third thing that neither number measures. What is true here is the
+   * subtraction; the reason is in the footnote, where a guess belongs.
+   *
+   * Blank until both halves are in, and never negative: a walk-up who never
+   * registered makes attendance exceed registrations, which is a real event
+   * and not a shortfall.
+   */
+  function paintShortfall() {
+    var el = $("c-nobadge");
+    if (!el) return;
+    if (attendTotal === null || typeof regs.total !== "number") { el.textContent = "\u2014"; return; }
+    el.textContent = String(Math.max(0, regs.total - attendTotal));
   }
 
   function paintRegs() {
@@ -2168,10 +2199,14 @@ a{color:var(--jade)}
   function loadAttendance() {
     var gen = detailGen;
     setText("c-attend", "…");
+    setText("c-nobadge", "…");
     api("GET", "/events/" + encodeURIComponent(current.eventId) + "/attendance?limit=1&offset=0")
       .then(function (r) {
         if (gen !== detailGen) return;
-        setText("c-attend", r.ok && r.json ? String(r.json.total) : "?");
+        var ok = r.ok && r.json && typeof r.json.total === "number";
+        attendTotal = ok ? r.json.total : null;
+        setText("c-attend", ok ? String(r.json.total) : "?");
+        if (ok) paintShortfall(); else setText("c-nobadge", "?");
       });
   }
 

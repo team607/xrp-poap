@@ -371,8 +371,43 @@ a.btn--go{color:var(--on-signal)}
 .flash__m em{color:var(--ink-2); font-style:normal; display:block; font-size:13px; margin-top:4px}
 
 /* ---------- deck ----------------------------------------------------------- */
-.deck{display:grid; grid-template-columns:minmax(300px,352px) minmax(0,1fr); gap:clamp(16px,2vw,26px); margin-top:clamp(14px,2vw,20px); align-items:start}
-@media (max-width:1040px){ .deck{grid-template-columns:minmax(0,1fr)} }
+.deck{display:grid; grid-template-columns:minmax(300px,352px) minmax(0,1fr) minmax(232px,286px); gap:clamp(16px,2vw,26px); margin-top:clamp(14px,2vw,20px); align-items:start}
+/* Below this the shift list drops under the pair rather than squeezing the
+   docket, which is the one panel a volunteer reads under pressure. */
+@media (max-width:1300px){ .deck{grid-template-columns:minmax(300px,352px) minmax(0,1fr)} .shift{grid-column:1 / -1} }
+@media (max-width:1040px){ .deck{grid-template-columns:minmax(0,1fr)} .shift{grid-column:auto} }
+
+/* ---- this shift ----------------------------------------------------------
+   The answer to the only question a volunteer has after handing a phone back:
+   did that one land? Every badge issued at this desk, newest first, turning
+   green on its own as each attendee accepts.
+
+   It exists so that "you can move on, the desk keeps watching" is TRUE rather
+   than merely written down. The full table further down the page carries the
+   ids and the hashes; this carries a name and a colour. */
+.shift .card__hd{border-radius:16px 16px 0 0}
+.shift__n{margin-left:auto; font-size:13.5px; font-weight:600; color:var(--ink-3)}
+.shift__list{max-height:min(52vh,460px); overflow-y:auto; overscroll-behavior:contain}
+.shift__row{display:flex; align-items:center; gap:11px; padding:12px 15px; border-bottom:1px solid var(--rule)}
+.shift__row:last-child{border-bottom:0}
+.shift__row.is-new{animation:shiftin .45s cubic-bezier(.2,.8,.3,1) both}
+@keyframes shiftin{from{opacity:0; background:var(--jade-wash)}to{opacity:1; background:transparent}}
+.shift__who{min-width:0; flex:1 1 auto}
+.shift__nm{font-size:14.5px; font-weight:600; letter-spacing:-.012em; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.shift__ad{margin-top:2px; font-family:var(--font-mono); font-size:11.5px; color:var(--ink-3)}
+.shift__at{font-family:var(--font-mono); font-size:11.5px; color:var(--ink-3); flex:none}
+.shift__pill{border-radius:999px; padding:3px 10px; font-size:12.5px; font-weight:600; flex:none; white-space:nowrap}
+.shift__pill--held{background:var(--jade-wash); color:var(--jade)}
+/* The one still in flight. Clay, and it pulses, because it is the row the
+   volunteer is actually waiting on. */
+.shift__pill--wait{background:var(--signal-wash); color:var(--signal)}
+.shift__row--wait .shift__nm{color:var(--signal)}
+.shift__row--wait .shift__pill{animation:blink 1.7s ease-in-out infinite}
+.shift__none{padding:18px 15px; font-size:14px; color:var(--ink-3); line-height:1.55}
+@media (prefers-reduced-motion: reduce){
+  .shift__row.is-new{animation:none}
+  .shift__row--wait .shift__pill{animation:none}
+}
 
 .card{border:1px solid var(--rule); border-radius:16px; background:var(--surface); box-shadow:var(--shadow); min-width:0}
 .card__hd{display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding:11px 15px; border-bottom:1px solid var(--rule); border-radius:16px 3px 0 0}
@@ -606,6 +641,25 @@ a.btn--go{color:var(--on-signal)}
 .wait__hd{display:flex; gap:12px; align-items:center; flex-wrap:wrap; padding:12px 14px; border-bottom:1px dashed var(--signal)}
 .wait__t{font-size:16px; letter-spacing:-.014em}
 .wait__clock{font-family:var(--font-mono); font-size:12px; color:var(--ink-2); margin-left:auto}
+
+/* ---- what has already happened -------------------------------------------
+   Three rows that split the work the SERVER has already finished from the one
+   thing it is waiting on. Without this the card says only "waiting", and a
+   volunteer staring at it cannot tell a stuck desk from an attendee who has
+   not picked their phone up — which is exactly the question they ask. */
+.done3{margin:12px 0 0; display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:12px; overflow:hidden}
+.done3__r{display:flex; align-items:center; gap:11px; padding:10px 13px; background:var(--surface)}
+.done3__m{
+  flex:none; width:19px; height:19px; border-radius:50%; display:grid; place-items:center;
+  font-size:11px; line-height:1; font-weight:700;
+  background:var(--jade-wash); color:var(--jade);
+}
+.done3__r--now .done3__m{background:var(--signal-wash); color:var(--signal); animation:blink 1.7s ease-in-out infinite}
+.done3__t{font-size:14px; color:var(--ink-2); min-width:0}
+.done3__r--now .done3__t{color:var(--ink); font-weight:600}
+.done3__v{margin-left:auto; font-family:var(--font-mono); font-size:11.5px; color:var(--ink-3); flex:none; white-space:nowrap}
+.done3__r--now .done3__v{color:var(--signal)}
+@media (prefers-reduced-motion: reduce){ .done3__r--now .done3__m{animation:none} }
 .wait__bar{height:3px; background:var(--rule); overflow:hidden}
 .wait__bar i{display:block; height:100%; width:38%; background:var(--signal); animation:slide 1.5s ease-in-out infinite}
 @keyframes slide{0%{transform:translateX(-105%)}100%{transform:translateX(300%)}}
@@ -1097,6 +1151,15 @@ a{color:var(--jade)}
       </div>
       <div class="docket__body" id="docket-body"><!-- painted by JS --></div>
       <div class="acts" id="docket-acts"><!-- painted by JS --></div>
+    </section>
+
+    <!-- ---------- this shift ---------- -->
+    <section class="card shift" id="shift" aria-labelledby="shift-t" aria-live="polite">
+      <div class="card__hd">
+        <h2 class="card__t" id="shift-t">This shift</h2>
+        <span class="shift__n" id="shift-n">0</span>
+      </div>
+      <div class="shift__list" id="shift-list"><!-- painted by JS --></div>
     </section>
   </div>
 
@@ -2884,6 +2947,25 @@ a{color:var(--jade)}
   }
 
   /* ---- waiting for the attendee's phone ------------------------------- */
+  /** The three-row progress block. Each entry is [label, value, done]. */
+  function doneRows(rows) {
+    var box = node("div", "done3");
+    for (var i = 0; i < rows.length; i++) {
+      var label = rows[i][0], value = rows[i][1], done = rows[i][2];
+      var r = node("div", "done3__r" + (done ? "" : " done3__r--now"));
+      r.appendChild(node("span", "done3__m", done ? "✓" : "●"));
+      r.appendChild(node("span", "done3__t", label));
+      if (value) {
+        var v = node("span", "done3__v", value);
+        /* The last row's value IS the clock, so the ticker drives it too. */
+        if (!done) v.setAttribute("data-wait-clock", "");
+        r.appendChild(v);
+      }
+      box.appendChild(r);
+    }
+    return box;
+  }
+
   function paintWaiting(body, acts, opts) {
     opts = opts || {};
     var l = look || {};
@@ -2931,12 +3013,26 @@ a{color:var(--jade)}
     wh.appendChild(node("h3", "wait__t", "Waiting for the attendee to confirm on their phone"));
     var clock = node("span", "wait__clock", "0:00");
     clock.id = "wait-clock";
+    clock.setAttribute("data-wait-clock", "");
     wh.appendChild(clock);
     wait.appendChild(wh);
     var bar = node("div", "wait__bar"); bar.appendChild(node("i")); wait.appendChild(bar);
+
+    /* Reaching this card at all means the mint and the offer both succeeded,
+       which means the wallet was fundable and IS funded — the ledger would
+       have refused the offer otherwise. So the first two rows are not
+       optimism, they are things that have already happened. */
+    var l3 = l || {};
+    wait.appendChild(doneRows([
+      ["Wallet funded", l3.balanceXrp != null ? l3.balanceXrp + " XRP" : "", true],
+      ["Badge minted", opts.nftokenId ? short(opts.nftokenId, 6, 4) : "", true],
+      ["Waiting for them to accept it", "0:00", false]
+    ]));
+
     var wb = node("div", "wait__bd");
     wb.innerHTML = "Checking every few seconds for <b>" + esc(eventName()) + "</b>. " +
-      "Leave this up and start the next person whenever you like — the list below keeps watching for you.";
+      "<b>Moving on is safe.</b> Start the next person whenever you like — this desk keeps watching " +
+      "in the background, and their row in <b>This shift</b> turns green on its own.";
     wait.appendChild(wb);
     body.appendChild(wait);
 
@@ -3133,10 +3229,15 @@ a{color:var(--jade)}
       offerId: (lastClaim && lastClaim.address === address) ? (lastClaim.offerId || "") : ""
     };
     watch.tick = setInterval(function () {
-      var el = $("wait-clock");
-      if (!el || !watch) return;
+      if (!watch) return;
+      /* Every element carrying the attribute, not one id: the card shows the
+         elapsed time twice — once in the heading, once on the row that is
+         actually waiting — and both have to move. */
+      var els = document.querySelectorAll("[data-wait-clock]");
+      if (!els.length) return;
       var s = Math.floor((Date.now() - watch.startedAt) / 1000);
-      el.textContent = Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+      var txt = Math.floor(s / 60) + ":" + ("0" + (s % 60)).slice(-2);
+      for (var i = 0; i < els.length; i++) els[i].textContent = txt;
     }, 1000);
     watch.timer = setInterval(function () {
       if (document.hidden) return;      // do not poll a tab nobody is looking at
@@ -3304,6 +3405,10 @@ a{color:var(--jade)}
       if (raw) session = JSON.parse(raw) || [];
     } catch (e) { session = []; }
     if (!Array.isArray(session)) session = [];
+    /* A restored row is not a new one. Without this every reload replays the
+       arrival animation on the whole shift list at once, which reads as ten
+       badges landing at the same moment. */
+    for (var i = 0; i < session.length; i++) session[i].shown = true;
     paintSession();
   }
   function saveSession() {
@@ -3325,12 +3430,21 @@ a{color:var(--jade)}
   function recordSession(address, nftokenId, offerId, reused) {
     var row = findRow(address);
     if (!row) {
-      row = { address: address, eventId: eventId(), nftokenId: nftokenId || "", offerId: offerId || "", status: "offered", txHash: "", at: Date.now(), fresh: true };
+      /* The name is read HERE and stored, not looked up later: `look` is the
+         attendee currently on the docket, and by the time this row turns green
+         the volunteer has moved on to somebody else. */
+      var reg0 = registrationOf(address);
+      row = { address: address, eventId: eventId(), name: (reg0 && reg0.displayName) || "",
+              nftokenId: nftokenId || "", offerId: offerId || "", status: "offered", txHash: "", at: Date.now(), fresh: true };
       session.push(row);
     } else {
       if (nftokenId) row.nftokenId = nftokenId;
       if (offerId) row.offerId = offerId;
       if (row.status !== "confirmed") row.status = "offered";
+      if (!row.name) {
+        var regN = registrationOf(address);
+        if (regN && regN.displayName) row.name = regN.displayName;
+      }
       row.fresh = !reused;
     }
     saveSession();
@@ -3354,7 +3468,63 @@ a{color:var(--jade)}
     paintTally();
   }
 
+  /**
+   * THIS SHIFT — the panel beside the docket.
+   *
+   * Newest first, because the row a volunteer wants is the one they just
+   * handed over. Anything still `offered` is the one they are waiting on, so
+   * it is clay and it pulses; everything else is jade and settled.
+   *
+   * Only this event: a desk that switched events mid-shift must not appear to
+   * have issued somebody else's badges under the current taxon.
+   */
+  function paintShift() {
+    var list = $("shift-list");
+    if (!list) return;
+    var id = eventId();
+    var rows = [];
+    for (var i = session.length - 1; i >= 0; i--) {
+      if (rowEvent(session[i]) === id) rows.push(session[i]);
+    }
+    setText("shift-n", String(rows.length));
+    clear(list);
+
+    if (!rows.length) {
+      var none = node("p", "shift__none",
+        "Nobody yet. Every badge you hand over appears here and turns green on its own when the attendee accepts it — you do not have to wait on this screen.");
+      list.appendChild(none);
+      return;
+    }
+
+    for (var k = 0; k < rows.length; k++) {
+      var r = rows[k];
+      var held = r.status === "confirmed";
+      var row = node("div", "shift__row" + (held ? "" : " shift__row--wait") + (r.shown ? "" : " is-new"));
+      r.shown = true;
+
+      var who = node("div", "shift__who");
+      /* A walk-up has no name and never will; the address IS who they are, so
+         it moves up into the name slot rather than leaving a blank line. */
+      who.appendChild(node("div", "shift__nm", r.name || short(r.address, 10, 6)));
+      if (r.name) who.appendChild(node("div", "shift__ad", short(r.address, 6, 5)));
+      row.appendChild(who);
+
+      row.appendChild(node("span", "shift__pill shift__pill--" + (held ? "held" : "wait"),
+        held ? "Held" : "Signing"));
+
+      var at = new Date(r.at || Date.now());
+      var t = "";
+      try {
+        t = at.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      } catch (e) { t = ""; }
+      if (t) row.appendChild(node("span", "shift__at", t));
+
+      list.appendChild(row);
+    }
+  }
+
   function paintSession() {
+    paintShift();
     var tb = $("sess-rows");
     clear(tb);
     $("sess-empty").hidden = session.length > 0;
