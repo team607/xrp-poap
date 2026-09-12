@@ -149,15 +149,51 @@ a{color:var(--jade)}
 .pick__yr{font-size:12px; color:var(--ink-3)}
 .pick__date--none .pick__day{color:var(--ink-3); font-size:28px}
 
-.pick__b{flex:1 1 260px; min-width:0}
+/* The text column reserves the tallest shape it can hold, so a one-line name
+   leaves a gap rather than a shorter card. Measured off the rendered boxes:
+
+     top   chip row  28px + 8px below
+     name  2 lines   62px   (26px, line-height 1.2, clamped to 2)
+     meta  1 line    24px + 8px above
+     desc  2 lines   46px + 10px above   (clamped to 2)
+                    ----
+                     186px, rounded up to 188
+
+   The two clamps are what make that a CEILING rather than a hope: without them
+   a third line pushes straight past it.
+
+   Derived by eye twice, at 146 and then 148, and both left the list ragged
+   because both forgot the chip row. If any of the four changes, measure the
+   boxes again rather than doing the arithmetic. And not align-self:stretch,
+   which was here first and silently won — stretch sets the used height to the
+   flex line's own, so the minimum never applied at all. */
+.pick__b{flex:1 1 260px; min-width:0; min-height:188px}
 .pick__top{display:flex; align-items:center; gap:9px; margin-bottom:8px; flex-wrap:wrap}
 .pick__n{margin:0; font-size:clamp(19px,2.3vw,26px); font-weight:700; letter-spacing:-.028em; line-height:1.2}
+/* Two lines for the name too, so every row is the same height.
+   THE CLAMP IS ON THIS SPAN AND NOT ON THE LINK. -webkit-line-clamp needs
+   overflow:hidden, and the link's ::after is what stretches the click target
+   over the whole card. Hide the overflow on the <a> and that target gets
+   clipped back to the heading; hide it on a span inside, and ::after — a
+   sibling of the span, not a child — is untouched. */
+.pick__nt{
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2;
+  overflow:hidden;
+}
 .pick__n a{color:inherit; text-decoration:none}
 /* The stretch. Sits under the buttons, over everything else. */
 .pick__n a::after{content:""; position:absolute; inset:0; border-radius:16px; z-index:0}
 .pick__n a:focus{outline:none}
 .pick__meta{margin:8px 0 0; font-size:15px; color:var(--ink-2)}
-.pick__desc{margin:10px 0 0; font-size:14.5px; color:var(--ink-3); text-wrap:pretty}
+/* Two lines, then an ellipsis. One event with a paragraph in its description
+   made its card three times the height of the next, which turns a list you
+   scan into a ragged column. The description is a taste of the event, not the
+   event; whoever wants the rest opens it, and that page prints all of it. */
+.pick__desc{
+  margin:10px 0 0; font-size:14.5px; color:var(--ink-3);
+  display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2;
+  overflow:hidden;
+}
 
 /* The taxon is on the row rather than behind a keystroke: it is the number
    stamped into every badge for this event, and the one thing that makes two
@@ -426,8 +462,9 @@ a{color:var(--jade)}
 
     /* The heading holds the link, and the link stretches over the card. */
     var h = node("h2", "pick__n");
-    var a = node("a", null, e.name || ("Event " + e.eventId));
+    var a = node("a", null);
     a.href = href;
+    a.appendChild(node("span", "pick__nt", e.name || ("Event " + e.eventId)));
     h.appendChild(a);
     b.appendChild(h);
 
