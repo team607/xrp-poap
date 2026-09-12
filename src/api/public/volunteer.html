@@ -936,15 +936,12 @@ a{color:var(--jade)}
       <a href="/admin">Organiser</a>
     </nav>
     <span class="nav__gap"></span>
-    <span class="nav__id" id="nav-id" hidden></span>
     <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
   </div>
 </header>
 
-<header class="rail">
+<header class="rail auth-in">
   <div class="wrap rail__in">
-    <div class="rail__brand">
-    </div>
     <div class="cells auth-in" role="group" aria-label="Desk status">
       <!-- The only control up here, and the one that decides what every card
            below is about. -->
@@ -966,7 +963,6 @@ a{color:var(--jade)}
       <button class="btn btn--go btn--tiny auth-in" id="btn-next" type="button" title="Clear the card and start the next attendee (N)">Next attendee</button>
       <span class="who-in auth-in" id="hdr-who-wrap"><span id="hdr-who">&mdash;</span></span>
       <button class="btn btn--ghost btn--tiny auth-in" id="btn-out" type="button">Sign out</button>
-      <button class="btn btn--ghost btn--tiny" id="btn-theme" type="button" title="Switch between the paper and ink palettes">Theme</button>
     </div>
   </div>
 </header>
@@ -1012,10 +1008,7 @@ a{color:var(--jade)}
         <div class="gate__mark">Staff sign-in</div>
         <div class="card">
           <div class="card__body">
-            <h1 tabindex="-1" id="login-h">Volunteer desk</h1>
-            <p class="gate__sub">This desk issues real badges and spends the event&rsquo;s funds, so it
-              stays behind the organiser account.</p>
-
+            <h1 tabindex="-1" id="login-h">Sign in</h1>
             <div id="login-flash" style="margin-top:16px"></div>
 
             <form class="form" id="login-form" style="margin-top:16px" autocomplete="on" novalidate>
@@ -1035,8 +1028,6 @@ a{color:var(--jade)}
             </form>
           </div>
         </div>
-        <p class="gate__foot">Use the organiser account for this event. If you do not have it, ask
-          whoever set the event up &mdash; there is no self-service reset.</p>
       </div>
     </div>
   </section>
@@ -1257,7 +1248,6 @@ a{color:var(--jade)}
   var me = null;               // { email } once signed in
   var consoleBooted = false;   // the desk's one-time boot has run
   var SESS_KEY = "poap-desk:session";
-  var THEME_KEY = "poap-desk:theme";
   var EVENT_KEY = "poap-desk:event";
   var DEV_KEY = "poap-desk:dev";
   var CSRF_COOKIE = "poap_csrf";
@@ -3996,8 +3986,18 @@ a{color:var(--jade)}
       closeConsole();
       setSignedIn(null);
       showView("view-login", "login-h");
-      if (r.ok) flash("login-flash", "ok", "signed out", "Signed out on the server, not just in this browser.");
-      else flash("login-flash", "warn", "signed out", "This browser dropped the session. " + messageOf(r));
+      /* Same rule as the console: silence on success, because the sign-in
+         screen is the confirmation. A failure still speaks, because the
+         server may still hold the session and the next reload would sign you
+         back in without saying why. */
+      if (!r.ok) {
+        flash(
+          "login-flash",
+          "warn",
+          "Signed out here, but not confirmed",
+          "The server did not answer, so its copy of the session may still be open. Try again, or close this tab.",
+        );
+      }
     });
   });
 
@@ -4062,14 +4062,6 @@ a{color:var(--jade)}
      the button that threw all of that away sat one thumb-width from the one
      that re-checks it. Rows carry the event they were issued under, so the list
      stays correct across a change of event and does not need clearing. */
-  $("btn-theme").addEventListener("click", function () {
-    var root = document.documentElement;
-    var cur = root.getAttribute("data-theme");
-    var dark = cur ? cur === "dark" : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
-    var next = dark ? "light" : "dark";
-    root.setAttribute("data-theme", next);
-    try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* private mode */ }
-  });
 
   document.addEventListener("keydown", function (e) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
@@ -4175,8 +4167,6 @@ a{color:var(--jade)}
 
   (function boot() {
     try {
-      var saved = localStorage.getItem(THEME_KEY);
-      if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
     } catch (e) { /* private mode */ }
 
     var dev = "0";

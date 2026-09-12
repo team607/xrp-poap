@@ -424,17 +424,23 @@ h1{
 
 /* The last tile is the rest of the wall. It reads as part of the grid because
    that is what it is: the badges that did not fit. */
-.badge--more a{
+/* The overflow tile is a BUTTON, not a link — it loads the next page rather
+   than going anywhere — so it needs the tile geometry spelled out here. It was
+   styled as `.badge--more a` and got none of this, which is why it rendered as
+   a default browser button squashed between two squares. */
+.badge--more button{
   display:flex; flex-direction:column; align-items:center; justify-content:center;
-  gap:4px; height:100%; width:100%;
+  gap:2px; width:100%; aspect-ratio:1/1; padding:0;
   background:var(--surface-2); border:1px dashed var(--rule-2);
-  color:var(--ink-2); text-decoration:none; cursor:pointer;
+  color:var(--ink-2); cursor:pointer;
   font-family:var(--font-display);
+  transition:border-color .15s ease, color .15s ease, background .15s ease;
 }
-.badge--more a:hover{border-color:var(--ink-3); color:var(--ink)}
-.badge--more a:focus-visible{outline:2px solid var(--jade); outline-offset:2px}
-.badge--more .n{font-size:clamp(18px,2.4vw,26px); font-weight:800; letter-spacing:-.035em}
-.badge--more .k{font-size:12.5px; color:var(--ink-3)}
+.badge--more button:hover{border-color:var(--ink-3); color:var(--ink); background:var(--surface)}
+.badge--more button:focus-visible{outline:2px solid var(--jade); outline-offset:2px}
+.badge--more .n{font-size:clamp(17px,2.2vw,23px); font-weight:800; letter-spacing:-.035em; line-height:1}
+.badge--more .k{font-size:12.5px; color:var(--ink-3); line-height:1}
+@media (prefers-reduced-motion: reduce){ .badge--more button{transition:none} }
 .more{margin:22px 0 0; text-align:center}
 .more button{
   font:inherit;
@@ -498,7 +504,6 @@ a{color:var(--jade)}
       <a href="/admin">Organiser</a>
     </nav>
     <span class="nav__gap"></span>
-    <span class="nav__id" id="nav-id" hidden></span>
     <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
   </div>
 </header>
@@ -1020,7 +1025,7 @@ a{color:var(--jade)}
     var a = document.createElement("button");
     a.type = "button";
     a.appendChild(el("span", "n", "+" + num(left)));
-    a.appendChild(el("span", "k", left === 1 ? "more" : "more"));
+    a.appendChild(el("span", "k", "more"));
     a.setAttribute("aria-label", "Show " + num(left) + " more badges");
     a.addEventListener("click", function () { loadBadges(); });
     li.appendChild(a);

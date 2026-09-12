@@ -190,6 +190,16 @@ code,pre,.mono{font-family:var(--font-mono)}
 .rail__nav svg{width:16px; height:16px; flex:none}
 .rail__gap{flex:1 1 auto}
 .rail__foot{background:var(--paper); border-radius:12px; padding:13px}
+.rail__out{
+  font-family:var(--font-display); font-size:14.5px; font-weight:600;
+  display:flex; align-items:center; gap:10px; width:100%;
+  margin-top:10px; padding:10px 12px;
+  background:none; border:1px solid var(--rule); border-radius:9px;
+  color:var(--ink-2); cursor:pointer; text-align:left;
+}
+.rail__out:hover{border-color:var(--vermilion); color:var(--vermilion); background:var(--vermilion-wash)}
+.rail__out:focus-visible{outline:2px solid var(--jade); outline-offset:2px}
+.rail__out svg{width:16px; height:16px; flex:none}
 .rail__k{font-size:12.5px; font-weight:600; color:var(--ink-3)}
 .rail__id{
   margin-top:7px; font-family:var(--font-mono); font-size:11.5px;
@@ -232,6 +242,7 @@ code,pre,.mono{font-family:var(--font-mono)}
   .rail__nav button{padding:8px 11px; white-space:nowrap}
   .rail__nav svg{display:none}
   .rail__foot{display:none}
+  .rail__out{width:auto; margin-top:0; padding:8px 11px; white-space:nowrap}
 }
 
 /* ---------- buttons -------------------------------------------------------- */
@@ -302,7 +313,6 @@ code,pre,.mono{font-family:var(--font-mono)}
 }
 .gate__mark::after{content:""; flex:1; height:1px; background:var(--rule-2)}
 .gate h1{font-size:1.55rem; letter-spacing:-.02em}
-.gate__sub{font-size:14.5px; color:var(--ink-2); margin-top:6px}
 
 /* ---------- forms ---------------------------------------------------------- */
 .form{display:grid; gap:clamp(13px,1.8vw,17px)}
@@ -394,12 +404,19 @@ td .val{font-family:var(--font-mono); font-size:11.5px; color:var(--ink); overfl
 
 /* A draft is invisible to the public. That is the single most confusing thing
    in this model, so it is stated on the row itself — never in a tooltip. */
-tr[data-draft="1"] td{background:var(--signal-wash)}
-tr[data-draft="1"] td:first-child{box-shadow:inset 3px 0 0 var(--signal)}
-tr[data-draft="1"]:hover td{background:color-mix(in srgb, var(--signal-wash) 70%, var(--surface-2))}
+/* A draft is UNPUBLISHED, not wrong. It was washed in clay with a clay rule
+   down the side, which is this product's colour for something that needs
+   attention — so the one row on the page that is merely unfinished read as the
+   one row on fire. It recedes instead: the whole row goes quiet, which is also
+   what being invisible to the public looks like. */
+tr[data-draft="1"] td{background:var(--paper); color:var(--ink-3)}
+tr[data-draft="1"] td:first-child{box-shadow:inset 3px 0 0 var(--rule-2)}
+tr[data-draft="1"]:hover td{background:var(--surface-2)}
+tr[data-draft="1"] .td-name a{color:var(--ink-3)}
+tr[data-draft="1"] .taxonno{color:var(--ink-3)}
 .draftsay{
-  display:block; margin-top:5px; font-family:var(--font-display); font-size:13px;
-  color:var(--signal); max-width:52ch; letter-spacing:0;
+  display:block; margin-top:4px; font-family:var(--font-display); font-size:13px;
+  color:var(--ink-3); max-width:52ch; letter-spacing:0;
 }
 
 .pill{ font-size:12.5px; font-weight:600; padding:3px 11px; border-radius:999px; white-space:nowrap; display:inline-block; border:1px solid transparent}
@@ -563,7 +580,6 @@ a{color:var(--jade)}
       <a href="/admin" aria-current="page">Organiser</a>
     </nav>
     <span class="nav__gap"></span>
-    <span class="nav__id" id="nav-id" hidden></span>
     <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
   </div>
 </header>
@@ -591,6 +607,14 @@ a{color:var(--jade)}
     <span class="rail__net" id="rail-net"><span class="dot"></span><span id="rail-net-t">&mdash;</span></span>
     <span class="pulse" id="pulse" data-up="1" style="margin-top:9px"><span class="dot"></span><span id="pulse-t">live</span></span>
   </div>
+
+  <!-- Last thing in the rail, under the deployment's own facts. It was buried
+       in Settings, which is two clicks from anywhere and the wrong place for
+       the one control somebody reaches for when they are walking away from a
+       shared machine. -->
+  <button class="rail__out" id="btn-out" type="button" hidden>
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9"/></svg>Sign out
+  </button>
 </nav>
 
 <div class="main">
@@ -629,16 +653,13 @@ a{color:var(--jade)}
   <section id="view-login" hidden>
     <div class="gate">
       <div class="gate__card">
-        <div class="gate__mark">organiser sign-in</div>
+        <div class="gate__mark">Staff sign-in</div>
         <div class="card">
           <div class="card__body">
             <h1 tabindex="-1" id="login-h">Sign in</h1>
-            <p class="gate__sub">One operator account, configured on the server. This console creates
-              events, edits them, and reads who has registered.</p>
+            <div id="login-flash" style="margin-top:16px"></div>
 
-            <div id="login-flash" style="margin-top:14px"></div>
-
-            <form class="form" id="login-form" style="margin-top:14px" autocomplete="on" novalidate>
+            <form class="form" id="login-form" style="margin-top:16px" autocomplete="on" novalidate>
               <div class="field" id="f-email">
                 <label for="in-email">Email</label>
                 <input class="in" id="in-email" name="email" type="email" autocomplete="username"
@@ -655,11 +676,6 @@ a{color:var(--jade)}
             </form>
           </div>
         </div>
-        <p class="help" style="margin-top:12px">
-          There is no password reset and no second account &mdash; the credentials come from the
-          server&rsquo;s environment. If you are locked out, whoever runs the deployment re-runs
-          <code class="mono">npm run admin:hash</code> and restarts it.
-        </p>
       </div>
     </div>
   </section>
@@ -790,7 +806,7 @@ a{color:var(--jade)}
               <th>name</th>
               <th>address</th>
               <th>proof</th>
-              <th>email <span class="pii">&middot; personal data</span></th>
+              <th>email</th>
               <th>registered</th>
               <th>arrived</th>
             </tr>
@@ -887,15 +903,6 @@ a{color:var(--jade)}
       </div>
     </div>
 
-    <div class="card" style="max-width:720px; margin-top:18px">
-      <div class="card__hd"><span class="label">This browser</span></div>
-      <div class="card__body" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center">
-        <button class="btn btn--ghost" id="btn-theme" type="button">Switch palette</button>
-        <button class="btn btn--stop" id="btn-out" type="button" hidden>Sign out</button>
-        <span class="label" style="flex:1 1 220px">Signing out revokes the session on the server, not
-          just in this tab.</span>
-      </div>
-    </div>
   </section>
 
   <section id="view-form" hidden>
@@ -1170,7 +1177,7 @@ a{color:var(--jade)}
                 <th>name</th>
                 <th>address</th>
                 <th>proof</th>
-                <th>email <span class="pii">&middot; personal data</span></th>
+                <th>email</th>
                 <th>registered</th>
                 <th>checked in</th>
               </tr>
@@ -1202,24 +1209,6 @@ a{color:var(--jade)}
   </section>
 
 
-  <footer class="foot">
-    <p>
-      <b>No seed, secret or private key is ever requested by, displayed in, or stored by this page.</b>
-      Your password is sent once to <code class="mono">POST /admin/api/login</code> and is never stored,
-      echoed or logged &mdash; not by this page, and not by the server, which holds only a scrypt hash.
-    </p>
-    <p>
-      <b>A draft event is invisible to the public.</b> Its registration page 404s and it is absent from
-      every public list, deliberately indistinguishable from an id that never existed. Set it to
-      <em>open</em> when you want people to be able to register.
-    </p>
-    <p>
-      <b>Attendance is an event, not a state.</b> A badge that is later burned still verifies, because
-      the attendee&rsquo;s <code class="mono">NFTokenAcceptOffer</code> hash <em>is</em> the attendance
-      record. That is why the burned count sits next to the minted count rather than being subtracted
-      from it.
-    </p>
-  </footer>
 </main>
 </div>
 </div>
@@ -1245,7 +1234,6 @@ a{color:var(--jade)}
   var routing = false;
   var booted = false;
   var savingForm = false;
-  var THEME_KEY = "poap-admin:theme";
   var CSRF_COOKIE = "poap_csrf";
   var CSRF_HEADER = "x-csrf-token";
   var REG_PAGE = 50;
@@ -1559,8 +1547,16 @@ a{color:var(--jade)}
     markRail("set");
   }
 
+  /* Views you can only be on before signing in. The rail is a menu of places
+     none of which are reachable yet, over an issuer address nobody has been
+     shown they may see, so it goes away entirely rather than sitting there
+     greyed out. */
+  var GATED = ["view-boot", "view-login", "view-disabled"];
+
   function showView(id, focusId) {
     for (var i = 0; i < VIEWS.length; i++) show($(VIEWS[i]), VIEWS[i] === id);
+    var rail = $("rail");
+    if (rail) rail.hidden = GATED.indexOf(id) !== -1;
     if (focusId) { var f = $(focusId); if (f) f.focus(); }
   }
 
@@ -1762,17 +1758,17 @@ a{color:var(--jade)}
     a.href = "#/e/" + encodeURIComponent(ev.eventId);
     tdName.appendChild(a);
     if (ev.status === "draft") {
-      tdName.appendChild(node("span", "draftsay",
-        "Draft — invisible to the public. /register/" + ev.eventId + " returns 404 and nobody can register."));
+      /* One short line. The chip beside it already says "Draft" and the
+         footnote under the table explains what that means; this only has to
+         name the consequence. */
+      tdName.appendChild(node("span", "draftsay", "Not listed, and cannot take registrations."));
     }
     tr.appendChild(tdName);
 
     var tdSt = node("td");
+    /* The dashed Draft pill is the whole signal. A second chip saying "Not
+       public" beside it was the same fact twice, stacked, doubling the row. */
     tdSt.appendChild(statusPill(ev.status));
-    if (ev.status === "draft") {
-      tdSt.appendChild(document.createTextNode(" "));
-      tdSt.appendChild(node("span", "tag-hidden", "Not public"));
-    }
     tr.appendChild(tdSt);
 
     tr.appendChild(node("td", ev.eventDate ? "" : "td-dim", ev.eventDate ? fmtDay(ev.eventDate) : "—"));
@@ -1849,7 +1845,11 @@ a{color:var(--jade)}
           var signed = (r.ok && r.json && typeof r.json.total === "number") ? r.json.total : null;
           if (tcell) {
             clear(tcell);
-            if (held !== null && signed) {
+            /* BOTH, not either. Without `held` an event that has not happened
+               yet draws an empty bar at 0%, which says nobody came rather than
+               nobody has been yet; without `signed` the division is by zero and
+               a walk-up-only event reports a confident 100%. */
+            if (held && signed) {
               var pct = Math.min(100, Math.round((held / signed) * 100));
               var box = node("div", "minitrack");
               var fill = node("span", "minitrack__f");
@@ -3089,18 +3089,25 @@ a{color:var(--jade)}
         current = null;
         paintRail();
         showView("view-login", "login-h");
-        if (r.ok) flash("login-flash", "ok", "signed out", "Session revoked on the server, not just in this browser.");
-        else flash("login-flash", "warn", "signed out", "This browser dropped the session. " + messageOf(r));
-      });
-    });
+        /* Nothing to say when it worked: the sign-in screen IS the
+           confirmation, and a banner announcing what you are looking at is
+           noise.
 
-    $("btn-theme").addEventListener("click", function () {
-      var root = document.documentElement;
-      var cur = root.getAttribute("data-theme");
-      var dark = cur ? cur === "dark" : !!(window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
-      var next = dark ? "light" : "dark";
-      root.setAttribute("data-theme", next);
-      try { localStorage.setItem(THEME_KEY, next); } catch (e) { /* private mode */ }
+           A FAILURE STILL HAS TO SPEAK. This browser has forgotten the
+           session either way, but if the POST never landed the server may
+           still hold it — and the next reload would sign you straight back in
+           with no explanation. Said plainly, without the server's own words:
+           those are for an operator reading a log, not for somebody walking
+           away from a shared machine. */
+        if (!r.ok) {
+          flash(
+            "login-flash",
+            "warn",
+            "Signed out here, but not confirmed",
+            "The server did not answer, so its copy of the session may still be open. Try again, or close this tab.",
+          );
+        }
+      });
     });
 
     var navs = document.querySelectorAll(".rail__nav button");
@@ -3207,8 +3214,6 @@ a{color:var(--jade)}
 
   (function boot() {
     try {
-      var saved = localStorage.getItem(THEME_KEY);
-      if (saved === "dark" || saved === "light") document.documentElement.setAttribute("data-theme", saved);
     } catch (e) { /* private mode */ }
 
     measureRail();

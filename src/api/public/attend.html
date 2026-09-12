@@ -727,7 +727,6 @@ a{color:var(--jade)}
       <a href="/admin">Organiser</a>
     </nav>
     <span class="nav__gap"></span>
-    <span class="nav__id" id="nav-id" hidden></span>
     <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
   </div>
 </header>
@@ -1070,19 +1069,7 @@ a{color:var(--jade)}
   </details>
 
   <div class="foot">
-    <p>
-      <b>This page never holds a key.</b> It cannot ask you for a seed, and it could not use one if you
-      typed it in. Everything is approved by you, inside Xaman, on your own phone.
-    </p>
-    <p>
-      All this tab remembers, and only until you close it: which event you are at, the wallet you
-      proved, and whatever Xaman is being asked right now.
-    </p>
     <p id="foot-net">This is a test network. The XRP involved is play money and none of it is real.</p>
-    <p class="devline">
-      <button class="devtoggle" id="devtoggle" type="button" aria-pressed="false">Developer view</button>
-      <span class="devhint">shift + D</span>
-    </p>
   </div>
 </main>
 
@@ -1769,6 +1756,9 @@ a{color:var(--jade)}
   }
   function applyDev(on) {
     document.body.classList.toggle("dev", !!on);
+    /* There is no on-screen toggle any more — Shift+D is the whole affordance,
+       deliberately undiscoverable. Kept null-safe rather than deleted so a
+       future build can put a button back without rewiring this. */
     var b = $("devtoggle");
     if (b) {
       b.setAttribute("aria-pressed", on ? "true" : "false");
@@ -3606,9 +3596,6 @@ a{color:var(--jade)}
     $("act").addEventListener("click", onAct);
     $("stub-addr").addEventListener("click", copyAddress);
 
-    $("devtoggle").addEventListener("click", function () {
-      setDev(!document.body.classList.contains("dev"));
-    });
     document.addEventListener("keydown", function (ev) {
       if (!ev.shiftKey || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       if (ev.key !== "D" && ev.key !== "d") return;

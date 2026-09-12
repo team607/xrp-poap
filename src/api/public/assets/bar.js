@@ -15,22 +15,10 @@
 (function () {
   "use strict";
 
-  function shorten(s) {
-    s = String(s || "");
-    return s.length > 16 ? s.slice(0, 6) + "…" + s.slice(-6) : s;
-  }
 
   function paint(h) {
     if (!h || typeof h !== "object") return;
 
-    var idEl = document.getElementById("nav-id");
-    if (idEl && typeof h.issuer === "string" && h.issuer) {
-      idEl.textContent = shorten(h.issuer);
-      // The whole address on hover: the short form is for glancing, and
-      // somebody checking against an explorer needs all of it.
-      idEl.title = h.issuer;
-      idEl.hidden = false;
-    }
 
     var netEl = document.getElementById("nav-net");
     var netT = document.getElementById("nav-net-t");
