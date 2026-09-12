@@ -232,6 +232,51 @@ export class PgRegistrationRepository implements RegistrationRepository {
     return (res.rows as RegistrationRow[]).map(rowToRegistration);
   }
 
+  /**
+   * Every registration, newest first, optionally for one event.
+   *
+   * The `$1::bigint IS NULL` shape rather than string-built SQL: the filter is
+   * either applied or it is not, and the parameter list never changes length,
+   * so there is one query plan and no way to interpolate an id into the text.
+   */
+  async listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+    checkedIn?: boolean;
+  }): Promise<RegistrationRecord[]> {
+    const { limit, offset } = normalizePaging(opts);
+    const filter =
+      opts?.checkedIn === undefined
+        ? ""
+        : opts.checkedIn
+          ? "AND checked_in_at IS NOT NULL"
+          : "AND checked_in_at IS NULL";
+
+    const res = await this.db.query(
+      `SELECT ${COLUMNS} FROM registrations
+        WHERE ($1::bigint IS NULL OR event_id = $1) ${filter}
+        ${ORDER_BY} LIMIT $2 OFFSET $3`,
+      [opts?.eventId ?? null, limit, offset],
+    );
+    return (res.rows as RegistrationRow[]).map(rowToRegistration);
+  }
+
+  async countAll(opts?: { eventId?: EventId }): Promise<{ total: number; checkedIn: number }> {
+    const res = await this.db.query(
+      `SELECT count(*)::text AS total,
+              count(checked_in_at)::text AS checked_in
+         FROM registrations
+        WHERE ($1::bigint IS NULL OR event_id = $1)`,
+      [opts?.eventId ?? null],
+    );
+    const row = res.rows[0] as { total: string; checked_in: string } | undefined;
+    return {
+      total: row ? Number(row.total) : 0,
+      checkedIn: row ? Number(row.checked_in) : 0,
+    };
+  }
+
   /** Both numbers in one round trip: the desk shows them side by side. */
   async countByEvent(eventId: EventId): Promise<{ total: number; checkedIn: number }> {
     const res = await this.db.query(

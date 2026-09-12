@@ -245,6 +245,28 @@ class FakeRegistrationRepository implements RegistrationRepository {
     return { total: rows.length, checkedIn: rows.filter((r) => r.checkedInAt).length };
   }
 
+
+  async listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+    checkedIn?: boolean;
+  }): Promise<RegistrationRecord[]> {
+    const all = this.rows
+      .filter((r) => opts?.eventId === undefined || r.eventId === opts.eventId)
+      .filter((r) =>
+        opts?.checkedIn === undefined ? true : Boolean(r.checkedInAt) === opts.checkedIn,
+      );
+    const offset = opts?.offset ?? 0;
+    return all.slice(offset, offset + (opts?.limit ?? 50)).map((r) => ({ ...r }));
+  }
+
+  async countAll(opts?: { eventId?: EventId }): Promise<{ total: number; checkedIn: number }> {
+    const rows = this.rows.filter(
+      (r) => opts?.eventId === undefined || r.eventId === opts.eventId,
+    );
+    return { total: rows.length, checkedIn: rows.filter((r) => r.checkedInAt).length };
+  }
   async markCheckedIn(id: string, at?: Date): Promise<void> {
     const row = this.rows.find((r) => r.id === id);
     if (row) row.checkedInAt = at ?? NOW;
@@ -473,7 +495,7 @@ describe("GET /api/events/summary", () => {
     expect(body).not.toContain(ATTENDEE);
   });
 
-  it("puts the most recent event first", async () => {
+  it("puts the most recent finished event above older ones", async () => {
     const h = harness();
     h.events.seed(4246, "closed", { name: "Older", eventDate: "2020-01-01" });
     h.events.seed(4247, "closed", { name: "Newer", eventDate: "2026-01-01" });
@@ -481,6 +503,47 @@ describe("GET /api/events/summary", () => {
     const names = (await summary(h)).events.map((e: { name: string }) => e.name);
 
     expect(names.indexOf("Newer")).toBeLessThan(names.indexOf("Older"));
+  });
+
+  /*
+   * The band order is what the front page is FOR. Date-descending buried the
+   * one event a visitor could still act on underneath the ones they could not:
+   * a party happening this evening sat below a run that finished in September.
+   */
+  it("puts what is happening now above what is coming up, and both above what is over", async () => {
+    const h = harness();
+    // Dates chosen so that a pure date sort in either direction gets this
+    // wrong: the closed event is the most recent, the live one the oldest.
+    h.events.seed(4248, "closed", { name: "Finished", eventDate: "2030-01-01" });
+    h.events.seed(4249, "open", { name: "Coming up", eventDate: "2029-01-01" });
+    h.events.seed(4250, "live", { name: "Happening now", eventDate: "2020-01-01" });
+
+    const names = (await summary(h)).events.map((e: { name: string }) => e.name);
+
+    expect(names.indexOf("Happening now")).toBeLessThan(names.indexOf("Coming up"));
+    expect(names.indexOf("Coming up")).toBeLessThan(names.indexOf("Finished"));
+  });
+
+  it("reads forwards for events still to come and backwards for those over", async () => {
+    const h = harness();
+    h.events.seed(4251, "open", { name: "Sooner", eventDate: "2029-01-01" });
+    h.events.seed(4252, "open", { name: "Later", eventDate: "2029-06-01" });
+
+    const names = (await summary(h)).events.map((e: { name: string }) => e.name);
+
+    // The next one you could attend comes first; among finished events the
+    // most recent does, which the test above already pins.
+    expect(names.indexOf("Sooner")).toBeLessThan(names.indexOf("Later"));
+  });
+
+  it("sorts an undated event last within its own band, not to the top", async () => {
+    const h = harness();
+    h.events.seed(4253, "open", { name: "Dated", eventDate: "2029-01-01" });
+    h.events.seed(4254, "open", { name: "Undated", eventDate: null });
+
+    const names = (await summary(h)).events.map((e: { name: string }) => e.name);
+
+    expect(names.indexOf("Dated")).toBeLessThan(names.indexOf("Undated"));
   });
 });
 

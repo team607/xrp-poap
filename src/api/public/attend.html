@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/assets/bar.css">
 <style>
 /* ==========================================================================
    THE PASS — the REAL attendee page, on the attendee's own phone.
@@ -87,6 +88,12 @@
   --qr-ink:#17140f;
   --qr-png:#ffffff;
 }
+/* The shared bar is sticky at the top with z-index 60. Everything on this page
+   that also sticks has to sit UNDER it and BELOW it, or the two overlap the
+   moment somebody scrolls. --barh is the one number that says how far down. */
+:root{ --barh:60px }
+@media (max-width:520px){ :root{ --barh:96px } }
+
 
 @media (prefers-color-scheme: dark){
   :root{
@@ -154,7 +161,7 @@ code,.mono{font-family:var(--font-mono)}
    readings that used to live here — network, ids, balances — are the same
    nodes, moved into the developer drawer below. */
 .strip{
-  position:sticky; top:0; z-index:40;
+  position:sticky; top:var(--barh); z-index:40;
   background:color-mix(in srgb, var(--paper) 90%, transparent);
   -webkit-backdrop-filter:saturate(150%) blur(9px);
   backdrop-filter:saturate(150%) blur(9px);
@@ -707,8 +714,23 @@ h1,h2,h3,h4{font-weight:700; letter-spacing:-.026em; line-height:1.16}
 h1{font-weight:800; line-height:1.1}
 a{color:var(--jade)}
 </style>
+<script src="/assets/bar.js" defer></script>
 </head>
 <body>
+<header class="nav">
+  <div class="nav__in">
+    <a class="nav__mark" href="/">POAP</a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="/events">Events</a>
+      <a href="/attend" aria-current="page">My pass</a>
+      <a href="/volunteer">Desk</a>
+      <a href="/admin">Organiser</a>
+    </nav>
+    <span class="nav__gap"></span>
+    <span class="nav__id" id="nav-id" hidden></span>
+    <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
+  </div>
+</header>
 
 <header class="strip">
   <div class="strip__in">
@@ -728,10 +750,6 @@ a{color:var(--jade)}
 </header>
 
 <main class="wrap">
-
-  <nav class="trail" aria-label="Breadcrumb">
-    <a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">My pass</span>
-  </nav>
 
   <noscript>
     <div class="banner">
@@ -3415,7 +3433,7 @@ a{color:var(--jade)}
     a.href = "/attend/" + encodeURIComponent(String(e.eventId));
     var top = node("div", "pick__top");
     top.appendChild(node("span", "pick__n", e.name || ("Event " + e.eventId)));
-    top.appendChild(node("span", "pick__go", e.status === "live" ? "happening now" : "open"));
+    top.appendChild(node("span", "pick__go", e.status === "live" ? "Happening now" : "Open"));
     a.appendChild(top);
     var bits = [];
     if (e.eventDate) bits.push(fmtDate(e.eventDate));

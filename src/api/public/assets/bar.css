@@ -1,0 +1,97 @@
+/* ==========================================================================
+   THE BAR — the one piece of chrome every page in this product shares.
+
+   It was copied into two pages, then four, and a copied navigation is six
+   things that drift apart. This file is the only description of it; each page
+   contributes the twelve lines of markup and nothing else.
+
+   It ends with the two facts that decide whether anything below it is real:
+   WHICH ISSUER minted these badges, and WHICH NETWORK it did it on. A badge on
+   testnet is a rehearsal. Both come from /health, which publishes them; neither
+   is a secret, and the issuer is stamped into every badge on the ledger anyway.
+
+   The tokens it uses (--paper, --ink, --jade …) are defined by the page, not
+   here: every page already carries the palette, and a second copy in this file
+   would be one more thing to keep in step.
+   ========================================================================== */
+
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 60;
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  -webkit-backdrop-filter: saturate(160%) blur(10px);
+  backdrop-filter: saturate(160%) blur(10px);
+  border-bottom: 1px solid var(--rule);
+}
+
+.nav__in {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 clamp(16px, 4vw, 24px);
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 3vw, 30px);
+}
+
+/* The product's name, and the way home. */
+.nav__mark {
+  font-size: 16.5px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--ink);
+  text-decoration: none;
+  flex: none;
+}
+.nav__mark:hover { color: var(--ink); }
+.nav__mark:focus-visible { outline: 2px solid var(--jade); outline-offset: 3px; border-radius: 4px; }
+
+.nav__links { display: flex; gap: 2px; align-items: center; min-width: 0; }
+.nav__links a {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--ink-3);
+  padding: 7px 12px;
+  border-radius: 9px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.nav__links a:hover { color: var(--ink-2); background: var(--surface-2); }
+.nav__links a:focus-visible { outline: 2px solid var(--jade); outline-offset: 2px; }
+.nav__links a[aria-current] { font-weight: 600; color: var(--ink); background: var(--surface-2); }
+
+.nav__gap { flex: 1 1 auto; }
+
+.nav__id {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+
+.nav__net {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--jade-wash);
+  color: var(--jade);
+  border-radius: 999px;
+  padding: 6px 13px;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.nav__net i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex: none; }
+/* Anything that is not mainnet is a rehearsal, and clay is this product's
+   colour for "not the real thing yet". */
+.nav__net[data-net]:not([data-net="mainnet"]) { background: var(--signal-wash); color: var(--signal); }
+
+/* The address is the first thing to go: it is reassurance, not navigation. */
+@media (max-width: 780px) { .nav__id { display: none; } }
+@media (max-width: 520px) {
+  .nav__in { gap: 10px; padding-top: 9px; padding-bottom: 9px; flex-wrap: wrap; }
+  .nav__links { order: 3; width: 100%; overflow-x: auto; scrollbar-width: none; }
+  .nav__links::-webkit-scrollbar { display: none; }
+  .nav__links a { padding: 6px 9px; font-size: 14px; }
+}

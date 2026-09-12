@@ -25,6 +25,7 @@ import { registerPageRoutes } from "./routes/pages.js";
 import { registerEventRoutes } from "./routes/events.js";
 import { registerRegistrationRoutes } from "./routes/registrations.js";
 import { registerRosterRoute } from "./routes/roster.js";
+import { registerRegistryRoutes } from "./routes/registry.js";
 import { registerVerifyRoute } from "./routes/verify.js";
 import { registerXamanWebhookRoute } from "./routes/xaman-webhook.js";
 
@@ -102,6 +103,11 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
       status: "ok",
       network: deps.config.network,
       issuer: deps.config.issuerAddress,
+      // Published for the same reason the issuer is: it is already stamped on
+      // every transaction this server submits, and somebody reading the ledger
+      // needs it to tell our transactions from anybody else's. Omitted rather
+      // than sent as null when unset, so "no tag" and "tag 0" stay different.
+      ...(deps.config.sourceTag === undefined ? {} : { sourceTag: deps.config.sourceTag }),
       xamanConfigured: Boolean(deps.config.xumm.apiKey && deps.config.xumm.apiSecret),
       time: new Date().toISOString(),
     }),
@@ -128,6 +134,8 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
     // unauthenticated and set their own limits, which needs the plugin here.
     // Both no-op when their repositories are absent from the deps.
     registerEventRoutes(scope, deps);
+    // The organiser's cross-event lists. Admin-guarded inside the module.
+    registerRegistryRoutes(scope, deps);
     registerRegistrationRoutes(scope, deps);
 
     // Inside the rate-limited scope on purpose: POST /admin/api/login is a

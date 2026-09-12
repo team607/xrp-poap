@@ -189,6 +189,14 @@ class FakeAttendanceRepository implements AttendanceRepository {
   async listByAddress(_address: string): Promise<AttendanceRecord[]> {
     return [];
   }
+  /* Not exercised by these tests: the cross-event list has its own file. */
+  async listAll(): Promise<AttendanceRecord[]> {
+    return [];
+  }
+  async countAll(): Promise<number> {
+    return 0;
+  }
+
 }
 
 class FakeRegistrationRepository implements RegistrationRepository {
@@ -224,6 +232,13 @@ class FakeRegistrationRepository implements RegistrationRepository {
   async markCheckedIn(id: string, at?: Date): Promise<void> {
     const row = this.rows.find((r) => r.id === id);
     if (row) row.checkedInAt = at ?? new Date();
+  }
+  /* Not exercised by these tests: the cross-event list has its own file. */
+  async listAll(): Promise<RegistrationRecord[]> {
+    return [];
+  }
+  async countAll(): Promise<{ total: number; checkedIn: number }> {
+    return { total: 0, checkedIn: 0 };
   }
 }
 

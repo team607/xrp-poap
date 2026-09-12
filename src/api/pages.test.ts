@@ -23,12 +23,13 @@ import { PAGES_DIR, registerPageRoutes } from "./routes/pages.js";
 
 /** Every page file the routes can serve, and the routes that serve it. */
 const PAGES: ReadonlyArray<{ file: string; routes: readonly string[] }> = [
-  { file: "index.html", routes: ["/"] },
   { file: "admin.html", routes: ["/admin", "/admin/"] },
   { file: "register.html", routes: ["/register", "/register/700010"] },
   { file: "volunteer.html", routes: ["/volunteer"] },
   { file: "attend.html", routes: ["/attend", "/attend/700010"] },
-  { file: "events.html", routes: ["/events", "/events/"] },
+  // The bare host and /events are the same page: the public record is the
+  // landing page.
+  { file: "events.html", routes: ["/", "/events", "/events/"] },
   { file: "event.html", routes: ["/events/700010"] },
 ];
 
@@ -62,18 +63,27 @@ describe("the page routes", () => {
     }
   });
 
-  it("answers the bare host with the front door", async () => {
+  it("answers the bare host with the event list", async () => {
     // The regression this file exists for: `/` returning
     // {"error":{"code":"NOT_FOUND","message":"No route for GET /"}}.
     const res = await app.inject({ method: "GET", url: "/" });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toBe(marker("index.html"));
+    expect(res.body).toBe(marker("events.html"));
     expect(res.body).not.toContain("NOT_FOUND");
   });
 
+  // Linked from every breadcrumb and from the bar's own tab, so the two
+  // addresses must not drift onto different files.
+  it("serves the same page at / and at /events", async () => {
+    const root = await app.inject({ method: "GET", url: "/" });
+    const named = await app.inject({ method: "GET", url: "/events" });
+
+    expect(root.body).toBe(named.body);
+  });
+
   it("503s a page missing from the build, and names the file", async () => {
-    rmSync(join(dir, "index.html"));
+    rmSync(join(dir, "events.html"));
 
     const res = await app.inject({ method: "GET", url: "/" });
 
@@ -81,14 +91,14 @@ describe("the page routes", () => {
     // two messages sends an operator to the right place.
     expect(res.statusCode).toBe(503);
     expect(res.json().error.code).toBe("SERVICE_UNAVAILABLE");
-    expect(res.json().error.message).toContain("index.html");
+    expect(res.json().error.message).toContain("events.html");
   });
 
   it("reads from disk per request, so an edit needs no restart", async () => {
     const before = await app.inject({ method: "GET", url: "/" });
-    expect(before.body).toBe(marker("index.html"));
+    expect(before.body).toBe(marker("events.html"));
 
-    writeFileSync(join(dir, "index.html"), "<!doctype html><title>edited</title>", "utf8");
+    writeFileSync(join(dir, "events.html"), "<!doctype html><title>edited</title>", "utf8");
 
     const after = await app.inject({ method: "GET", url: "/" });
     expect(after.body).toContain("edited");

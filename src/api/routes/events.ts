@@ -303,15 +303,43 @@ export function registerEventRoutes(app: FastifyInstance, deps: ApiDeps): void {
         ),
       );
 
-      // Most recent first: this page is a record of what has happened, and the
-      // thing somebody wants is the event they were just at. Undated events
-      // sort last rather than first — an absent date is unknown, not ancient.
+      /*
+       * HAPPENING NOW, THEN COMING UP, THEN OVER.
+       *
+       * The list used to be date-descending, which put a run that finished in
+       * September above a party happening this evening — the one event a
+       * visitor could still act on was buried under the ones they could not.
+       *
+       * Within each band the order is the one that band wants: the next event
+       * first among those still to come, the most recent first among those
+       * already over. `live` is its own band rather than part of "coming up"
+       * because a door that is open right now is not a plan.
+       *
+       * Undated events sort last inside their band: an absent date is unknown,
+       * not ancient, and it must not push a real date around.
+       */
+      const BAND: Record<string, number> = { live: 0, open: 1, closed: 2 };
+      const band = (e: EventRecord): number => BAND[e.status] ?? 3;
+
       const merged = pages
         .flat()
-        .sort(
-          (a, b) =>
-            (b.eventDate ?? "").localeCompare(a.eventDate ?? "") || b.eventId - a.eventId,
-        )
+        .sort((a, b) => {
+          const byBand = band(a) - band(b);
+          if (byBand !== 0) return byBand;
+
+          const da = a.eventDate ?? "";
+          const db = b.eventDate ?? "";
+          if (da === "" || db === "") {
+            // Both undated: fall through to the id. One undated: it goes last.
+            if (da !== db) return da === "" ? 1 : -1;
+            return b.eventId - a.eventId;
+          }
+
+          // Coming up reads forwards, everything else reads backwards.
+          const ascending = band(a) <= 1;
+          const byDate = ascending ? da.localeCompare(db) : db.localeCompare(da);
+          return byDate !== 0 ? byDate : b.eventId - a.eventId;
+        })
         .slice(offset, offset + limit);
 
       const summaries = await Promise.all(

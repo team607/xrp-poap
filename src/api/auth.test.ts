@@ -119,6 +119,13 @@ const unusedRepo = {
   async listByAddress(): Promise<AttendanceRecord[]> {
     return [];
   },
+  /* Not exercised here: the cross-event list has its own file. */
+  async listAll(): Promise<AttendanceRecord[]> {
+    return [];
+  },
+  async countAll(): Promise<number> {
+    return 0;
+  },
 } satisfies AttendanceRepository;
 
 const unusedClaims = {
@@ -552,12 +559,17 @@ describe("admin config absent", () => {
    * routes in this change. That is the whole design: a route registered by some
    * other module — the registration API, an event editor written next month —
    * is covered without knowing this file exists.
+   *
+   * The stand-in path is deliberately one nothing will ever really serve. It
+   * used to be /admin/api/registrations, which stopped being hypothetical the
+   * day that route was written and turned this into a duplicate-route crash
+   * rather than the assertion it is meant to be.
    */
   it("503s an admin route registered by another module", async () => {
     const h = harness({ config: testConfig() });
-    h.app.get("/admin/api/registrations", async () => ({ leaked: "everything" }));
+    h.app.get("/admin/api/some-future-module", async () => ({ leaked: "everything" }));
 
-    const res = await h.app.inject({ method: "GET", url: "/admin/api/registrations" });
+    const res = await h.app.inject({ method: "GET", url: "/admin/api/some-future-module" });
 
     expect(res.statusCode).toBe(503);
     expect(res.body).not.toContain("leaked");
@@ -822,15 +834,15 @@ describe("requireAdmin / the /admin/api guard", () => {
 
   it("covers an admin route registered by another module", async () => {
     const h = harness();
-    h.app.get("/admin/api/registrations", async () => ({ rows: [] }));
+    h.app.get("/admin/api/some-future-module", async () => ({ rows: [] }));
 
-    const anonymous = await h.app.inject({ method: "GET", url: "/admin/api/registrations" });
+    const anonymous = await h.app.inject({ method: "GET", url: "/admin/api/some-future-module" });
     expect(anonymous.statusCode).toBe(401);
 
     const { cookie } = await signedIn(h);
     const authenticated = await h.app.inject({
       method: "GET",
-      url: "/admin/api/registrations",
+      url: "/admin/api/some-future-module",
       headers: { cookie },
     });
     expect(authenticated.statusCode).toBe(200);

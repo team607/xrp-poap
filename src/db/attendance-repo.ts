@@ -243,6 +243,31 @@ export class PgAttendanceRepository implements AttendanceRepository {
     return (res.rows as AttendanceRow[]).map(rowToRecord);
   }
 
+  /** Every badge, in claim order, optionally for one event. See the contract. */
+  async listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+  }): Promise<AttendanceRecord[]> {
+    const { limit, offset } = normalizePaging(opts);
+    const res = await this.db.query(
+      `SELECT ${COLUMNS} FROM attendance
+        WHERE ($1::bigint IS NULL OR event_id = $1)
+        ${ORDER_BY} LIMIT $2 OFFSET $3`,
+      [opts?.eventId ?? null, limit, offset],
+    );
+    return (res.rows as AttendanceRow[]).map(rowToRecord);
+  }
+
+  async countAll(opts?: { eventId?: EventId }): Promise<number> {
+    const res = await this.db.query(
+      "SELECT count(*)::text AS n FROM attendance WHERE ($1::bigint IS NULL OR event_id = $1)",
+      [opts?.eventId ?? null],
+    );
+    const row = res.rows[0] as { n: string } | undefined;
+    return row ? Number(row.n) : 0;
+  }
+
   async countByEvent(eventId: EventId): Promise<number> {
     const res = await this.db.query(
       "SELECT count(*)::text AS n FROM attendance WHERE event_id = $1",

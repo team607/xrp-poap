@@ -177,6 +177,25 @@ export class MemoryAttendanceRepository implements AttendanceRepository {
       .map((r) => clone(r.record));
   }
 
+  async listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+  }): Promise<AttendanceRecord[]> {
+    const { limit, offset } = normalizePaging(opts);
+    return this.rows
+      .filter((r) => opts?.eventId === undefined || r.record.eventId === opts.eventId)
+      .sort(byClaimedAtThenId)
+      .slice(offset, offset + limit)
+      .map((r) => clone(r.record));
+  }
+
+  async countAll(opts?: { eventId?: EventId }): Promise<number> {
+    return this.rows.filter(
+      (r) => opts?.eventId === undefined || r.record.eventId === opts.eventId,
+    ).length;
+  }
+
   async countByEvent(eventId: EventId): Promise<number> {
     return this.rows.filter((r) => r.record.eventId === eventId).length;
   }
@@ -685,6 +704,35 @@ export class MemoryRegistrationRepository implements RegistrationRepository {
       .sort(byIdDesc)
       .slice(offset, offset + limit)
       .map((r) => cloneRegistration(r.record));
+  }
+
+  async listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+    checkedIn?: boolean;
+  }): Promise<RegistrationRecord[]> {
+    const { limit, offset } = normalizePaging(opts);
+    return this.rows
+      .filter((r) => {
+        if (opts?.eventId !== undefined && r.record.eventId !== opts.eventId) return false;
+        if (opts?.checkedIn === undefined) return true;
+        return opts.checkedIn ? r.record.checkedInAt != null : r.record.checkedInAt == null;
+      })
+      .sort(byIdDesc)
+      .slice(offset, offset + limit)
+      .map((r) => cloneRegistration(r.record));
+  }
+
+  async countAll(opts?: { eventId?: EventId }): Promise<{ total: number; checkedIn: number }> {
+    let total = 0;
+    let checkedIn = 0;
+    for (const r of this.rows) {
+      if (opts?.eventId !== undefined && r.record.eventId !== opts.eventId) continue;
+      total += 1;
+      if (r.record.checkedInAt != null) checkedIn += 1;
+    }
+    return { total, checkedIn };
   }
 
   async countByEvent(eventId: EventId): Promise<{ total: number; checkedIn: number }> {

@@ -168,6 +168,14 @@ class FakeAttendanceRepository implements AttendanceRepository {
   async listByAddress(address: string): Promise<AttendanceRecord[]> {
     return this.rows.filter((row) => row.address === address);
   }
+
+  /* Not exercised here: the cross-event list has its own file. */
+  async listAll(): Promise<AttendanceRecord[]> {
+    return [];
+  }
+  async countAll(): Promise<number> {
+    return 0;
+  }
 }
 
 class FakeSponsorLedger implements SponsorLedger {
@@ -463,6 +471,29 @@ describe("GET /health", () => {
     const h = harness();
     const res = await h.app.inject({ method: "GET", url: "/health" });
     expect(res.body).not.toContain(FAKE_SEED);
+  });
+
+  /* The public pages print the tag beside the taxon so that somebody reading
+     the ledger can tell this deployment's transactions from anybody else's. It
+     is on every transaction we submit already; publishing it reveals nothing. */
+  it("publishes the source tag when one is configured", async () => {
+    const h = harness({ config: { sourceTag: 2607210007 } });
+
+    const res = await h.app.inject({ method: "GET", url: "/health" });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toMatchObject({ sourceTag: 2607210007 });
+  });
+
+  /* Omitted rather than null: a deployment with no tag and a deployment
+     tagged 0 are different things, and a page that renders `null` as "tag 0"
+     would be stating the wrong one as fact. */
+  it("omits the source tag entirely when none is configured", async () => {
+    const h = harness({ config: { sourceTag: undefined } });
+
+    const res = await h.app.inject({ method: "GET", url: "/health" });
+
+    expect(Object.prototype.hasOwnProperty.call(res.json(), "sourceTag")).toBe(false);
   });
 });
 

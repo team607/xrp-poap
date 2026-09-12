@@ -32,6 +32,45 @@ function readPage(dir: string, file: string): string | undefined {
 }
 
 /**
+ * The one stylesheet and the one script every page shares.
+ *
+ * The bar across the top of the product was copied into each page while there
+ * were two of them. At six it stopped being a copy and started being six things
+ * that drift, which is the opposite of what a shared bar is for. These are the
+ * shared parts; the markup stays in each page because it is twelve semantic
+ * lines and a nav that only exists once JavaScript has run is a worse trade.
+ *
+ * Same read-per-request as the pages, for the same reason.
+ */
+const ASSET_TYPES: Readonly<Record<string, string>> = {
+  ".css": "text/css; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+};
+
+function serveAsset(app: FastifyInstance, file: string, dir: string): void {
+  const ext = file.slice(file.lastIndexOf("."));
+  const type = ASSET_TYPES[ext] ?? "application/octet-stream";
+  app.get(`/assets/${file}`, async (_request, reply) => {
+    const body = readPage(dir, join("assets", file));
+    if (body === undefined) {
+      return reply.code(503).send({
+        error: {
+          code: "SERVICE_UNAVAILABLE",
+          message: `The asset src/api/public/assets/${file} is not present in this build.`,
+        },
+      });
+    }
+    // No long cache: these are read per request like the pages, and a stale
+    // bar served from a browser cache after a deploy is a support ticket.
+    return reply
+      .code(200)
+      .type(type)
+      .header("cache-control", "no-cache")
+      .send(body);
+  });
+}
+
+/**
  * A missing page is a 503 naming the file, never a crash and never a 404:
  * 404 would imply the route does not exist, sending an operator to look in the
  * wrong place. The only useful distinction is "that UI has not been built yet".
@@ -62,10 +101,23 @@ export function registerPageRoutes(
 ): void {
   const dir = options.htmlDir ?? PAGES_DIR;
 
-  // The front door. Someone who types the bare host gets a hallway that points
-  // at the right page, NOT the JSON 404 the root used to answer — which reads
-  // as a broken deployment even when everything under it is fine.
-  servePage(app, "/", "index.html", dir);
+  // Shared chrome, before the pages that reference it.
+  serveAsset(app, "bar.css", dir);
+  serveAsset(app, "bar.js", dir);
+
+  // The front door is the public record: every event that has happened, with
+  // its turnout, and a Register button on the ones still taking names.
+  //
+  // It used to be a hallway asking "which one are you?", which made a guest
+  // answer a question before seeing anything. The list answers it instead —
+  // somebody looking for the event they went to is already there, somebody
+  // signing up has the button, and the bar across the top carries the two
+  // staff doors.
+  //
+  // NOT the JSON 404 the root once answered, which read as a broken deployment
+  // even when everything under it was fine. That is the regression pages.test
+  // exists to catch.
+  servePage(app, "/", "events.html", dir);
 
   // Admin. A single page that decides between the login form and the dashboard
   // by asking GET /admin/api/me — the server is the authority on whether a
@@ -94,7 +146,8 @@ export function registerPageRoutes(
   servePage(app, "/attend", "attend.html", dir);
   servePage(app, "/attend/:eventId", "attend.html", dir);
 
-  // The public record: every event that is not a draft, with its turnout.
+  // The same page as `/`, kept because it is the address people link to and
+  // the one the bar's own Events tab points at.
   //
   // `/events` and not `/events/:something` — the parametric routes under this
   // prefix belong to the API (claims, roster, attendance), and a page route

@@ -458,6 +458,24 @@ export interface AttendanceRepository {
   ): Promise<AttendanceRecord[]>;
   countByEvent(eventId: EventId): Promise<number>;
   listByAddress(address: string): Promise<AttendanceRecord[]>;
+  /**
+   * Across every event, newest first, optionally narrowed to one.
+   *
+   * The organiser's badge list is a list of badges, not a list of events with
+   * badges under them: "which wallet took a badge, and when" is a question
+   * about the deployment. Merging N paginated per-event reads in a browser
+   * cannot page honestly, so the ordering and the window belong here.
+   *
+   * With `eventId` set this answers the same rows as listByEvent. That overlap
+   * is deliberate: one endpoint serves both the unfiltered list and the
+   * filtered one, so the page has a single code path.
+   */
+  listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+  }): Promise<AttendanceRecord[]>;
+  countAll(opts?: { eventId?: EventId }): Promise<number>;
 }
 
 
@@ -559,6 +577,14 @@ export interface RegistrationRepository {
     opts?: { limit?: number; offset?: number; checkedIn?: boolean },
   ): Promise<RegistrationRecord[]>;
   countByEvent(eventId: EventId): Promise<{ total: number; checkedIn: number }>;
+  /** Across every event, optionally narrowed to one. See AttendanceRepository.listAll. */
+  listAll(opts?: {
+    limit?: number;
+    offset?: number;
+    eventId?: EventId;
+    checkedIn?: boolean;
+  }): Promise<RegistrationRecord[]>;
+  countAll(opts?: { eventId?: EventId }): Promise<{ total: number; checkedIn: number }>;
   markCheckedIn(id: string, at?: Date): Promise<void>;
 }
 

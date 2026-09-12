@@ -203,6 +203,14 @@ class FakeAttendanceRepository implements AttendanceRepository {
   async listByAddress(_address: string): Promise<AttendanceRecord[]> {
     return [];
   }
+
+  /* Not exercised here: the cross-event list has its own file. */
+  async listAll(): Promise<AttendanceRecord[]> {
+    return [];
+  }
+  async countAll(): Promise<number> {
+    return 0;
+  }
 }
 
 class FakeSponsorLedger implements SponsorLedger {

@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="/assets/bar.css">
 <style>
 /* ==========================================================================
    THE INVITATION — the public registration page.
@@ -72,6 +73,12 @@
      dark mode is how a registration dies at the moment it matters. */
   --qr-plate:#ffffff;
 }
+/* The shared bar is sticky at the top with z-index 60. Everything on this page
+   that also sticks has to sit UNDER it and BELOW it, or the two overlap the
+   moment somebody scrolls. --barh is the one number that says how far down. */
+:root{ --barh:60px }
+@media (max-width:520px){ :root{ --barh:96px } }
+
 
 @media (prefers-color-scheme: dark){
   :root{
@@ -137,7 +144,7 @@ code,.mono{font-family:var(--font-mono)}
 
 /* ---- status strip · developer only --------------------------------------- */
 .strip{
-  position:sticky; top:0; z-index:40;
+  position:sticky; top:var(--barh); z-index:40;
   background:color-mix(in srgb, var(--paper) 90%, transparent);
   -webkit-backdrop-filter:saturate(150%) blur(9px);
   backdrop-filter:saturate(150%) blur(9px);
@@ -674,8 +681,23 @@ h1,h2,h3,h4{font-weight:700; letter-spacing:-.026em; line-height:1.16}
 h1{font-weight:800; line-height:1.1}
 a{color:var(--jade)}
 </style>
+<script src="/assets/bar.js" defer></script>
 </head>
 <body>
+<header class="nav">
+  <div class="nav__in">
+    <a class="nav__mark" href="/">POAP</a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="/events" aria-current="page">Events</a>
+      <a href="/attend">My pass</a>
+      <a href="/volunteer">Desk</a>
+      <a href="/admin">Organiser</a>
+    </nav>
+    <span class="nav__gap"></span>
+    <span class="nav__id" id="nav-id" hidden></span>
+    <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
+  </div>
+</header>
 
 <!-- The diagnostics strip. Filed behind the developer affordance: net, event id
      and internal step names are not an invitation's business. -->
@@ -694,7 +716,7 @@ a{color:var(--jade)}
 <main class="wrap">
 
   <nav class="crumb" aria-label="Breadcrumb">
-    <a href="/">Home</a><span aria-hidden="true">/</span><span aria-current="page">Register</span>
+    <a href="/events">Events</a><span aria-hidden="true">/</span><span aria-current="page">Register</span>
   </nav>
 
   <noscript>
@@ -2090,7 +2112,7 @@ a{color:var(--jade)}
     a.href = "/register/" + encodeURIComponent(String(e.eventId));
     var top = node("div", "pick__top");
     top.appendChild(node("span", "pick__n", e.name || ("Event " + e.eventId)));
-    top.appendChild(node("span", "pick__go", e.status === "live" ? "happening now" : "register"));
+    top.appendChild(node("span", "pick__go", e.status === "live" ? "Happening now" : "Register"));
     a.appendChild(top);
     var bits = [];
     if (e.eventDate) bits.push(fmtDate(e.eventDate));
