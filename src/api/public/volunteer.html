@@ -298,7 +298,11 @@ a.btn--go{color:var(--on-signal)}
 @media (max-width:700px){ .banner__act{margin-left:0; width:100%} .banner{flex-wrap:wrap} }
 
 /* ---------- sign-in gate --------------------------------------------------- */
-.gate{display:grid; place-items:center; min-height:calc(100vh - var(--railh) - 60px); padding:clamp(18px,5vw,64px) 0}
+/* Top-aligned, not centred. The card lost its explanatory copy and centring
+   what was left in a viewport-tall grid put a screen of nothing above a form
+   somebody is about to type into. --railh is still right for `.bay` below,
+   where `.rail` really is a strip across the top; it was never right here. */
+.gate{display:grid; place-items:start center; padding:clamp(28px,7vh,72px) 0 64px}
 .gate__card{width:min(430px,100%)}
 .gate__mark{ font-weight:600; font-size:13px;
   color:var(--ink-3); display:flex; gap:10px; align-items:center; margin-bottom:16px;
