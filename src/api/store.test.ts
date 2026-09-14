@@ -22,6 +22,7 @@ import type { SignInResolution, SignInService } from "../xaman/signin.js";
 import { readAccount } from "../xrpl/account.js";
 import { memo, PURCHASE_MEMO_TYPE } from "../xrpl/memos.js";
 import { findPurchasePayment, verifyPurchasePayment } from "../xrpl/purchase.js";
+import { COLLECT_CODE_TTL_MS } from "./collect.js";
 import type { ApiDeps } from "./deps.js";
 import { registerErrorHandler } from "./http-errors.js";
 import type { AdminGuard } from "./routes/events.js";
@@ -410,6 +411,9 @@ describe("attendee: the store", () => {
     });
     expect(await h.stores.purchases.unitsTaken(EVENT)).toEqual({ [bread.id]: 3 });
     expect(res.body).not.toContain("xamanUuid");
+    // What lets this page, and only this page, collect the order later.
+    expect(res.json().collectSecret).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    expect(res.json().purchase.collectSecret).toBeUndefined();
   });
 
   it("turns away a wallet that is not at the event", async () => {
@@ -644,13 +648,92 @@ describe("vendor: signing in and serving orders", () => {
     expect(other.statusCode).toBe(403);
   });
 
-  it("records a hand-over only with the header, only for a paid order at its own counter, and undoes one", async () => {
+  it("hands an order over only when the attendee's code is scanned at its own counter", async () => {
     const h = await harness();
     await attendee(h);
     const { bread } = await stall(h);
     const placed = (await buy(h, { address: ATTENDEE, itemId: bread.id })).json();
     const { cookie } = await signInAs(h, DOMINOS);
-    const handover = (handedOver: boolean, headers: Record<string, string> = { cookie, "x-poap-vendor": "1" }) =>
+    const collect = (secret: string = placed.collectSecret) =>
+      h.app.inject({ method: "POST", url: `/api/purchases/${placed.purchase.id}/collect`, payload: { secret } });
+    const scan = (code: string, headers: Record<string, string> = { cookie, "x-poap-vendor": "1" }) =>
+      h.app.inject({ method: "POST", url: "/api/vendor/handover", headers, payload: { code } });
+
+    // Nothing to collect before it is paid.
+    expect((await collect()).statusCode).toBe(409);
+    await h.stores.purchases.markPaid(placed.purchase.id, paidOnLedger(h, placed.purchase));
+
+    // The order id and the wallet address are public; the buyer's secret is not.
+    expect((await collect("A".repeat(22))).statusCode).toBe(403);
+    const issued = await collect();
+    expect(issued.statusCode).toBe(200);
+    // It travels as a link to the vendor's screen, so a phone's camera can scan it too.
+    const link = `https://poap.example/vendor#collect=${issued.json().code}`;
+
+    expect((await scan(link, { cookie })).statusCode).toBe(403);
+    expect((await scan(link, { "x-poap-vendor": "1" })).statusCode).toBe(401);
+
+    const done = await scan(link);
+    expect(done.statusCode).toBe(200);
+    expect(done.json()).toMatchObject({ alreadyHandedOver: false, purchase: { itemName: "Garlic bread" } });
+    expect(done.json().purchase.handedOverAt).toBeTruthy();
+
+    // Scanned again: it says so, and nothing is handed over twice.
+    const again = await scan(issued.json().code);
+    expect(again.json()).toMatchObject({ alreadyHandedOver: true });
+    expect(again.json().purchase.handedOverAt).toBe(done.json().purchase.handedOverAt);
+    // Collected: there is no fresh code for it.
+    expect((await collect()).statusCode).toBe(409);
+  });
+
+  it("refuses an address for a code, an edited code, another counter's order, and a code past its minutes", async () => {
+    const h = await harness();
+    await attendee(h);
+    const { bread } = await stall(h);
+    const placed = (await buy(h, { address: ATTENDEE, itemId: bread.id })).json();
+    await h.stores.purchases.markPaid(placed.purchase.id, paidOnLedger(h, placed.purchase));
+    const issued = await h.app.inject({
+      method: "POST",
+      url: `/api/purchases/${placed.purchase.id}/collect`,
+      payload: { secret: placed.collectSecret },
+    });
+    const code = issued.json().code as string;
+
+    const dominos = await signInAs(h, DOMINOS);
+    const scan = (value: string, cookie = dominos.cookie) =>
+      h.app.inject({
+        method: "POST",
+        url: "/api/vendor/handover",
+        headers: { cookie, "x-poap-vendor": "1" },
+        payload: { code: value },
+      });
+
+    expect((await scan(ATTENDEE)).statusCode).toBe(400);
+    const edited = code.replace(/\.(\d{10})\./, (_match, expires: string) => `.${Number(expires) + 600}.`);
+    expect((await scan(edited)).statusCode).toBe(400);
+
+    await h.stores.vendors.createVendor({ eventId: EVENT, name: "Adidas", walletAddress: ADIDAS });
+    const adidas = await signInAs(h, ADIDAS);
+    const elsewhere = await scan(code, adidas.cookie);
+    expect(elsewhere.statusCode).toBe(403);
+    expect(elsewhere.json().error.message).toContain("Dominos");
+
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(Date.now() + COLLECT_CODE_TTL_MS + 1_000);
+    const late = await scan(code);
+    expect(late.statusCode).toBe(409);
+    expect(late.json().error.details).toMatchObject({ reason: "expired" });
+    expect((await h.stores.purchases.find(placed.purchase.id))?.handedOverAt).toBeNull();
+  });
+
+  it("hands nothing over by button any more, but still takes a hand-over back", async () => {
+    const h = await harness();
+    await attendee(h);
+    const { bread } = await stall(h);
+    const placed = (await buy(h, { address: ATTENDEE, itemId: bread.id })).json();
+    await h.stores.purchases.markPaid(placed.purchase.id, paidOnLedger(h, placed.purchase));
+    const { cookie } = await signInAs(h, DOMINOS);
+    const button = (handedOver: boolean, headers: Record<string, string> = { cookie, "x-poap-vendor": "1" }) =>
       h.app.inject({
         method: "POST",
         url: `/api/vendor/orders/${placed.purchase.id}/handover`,
@@ -658,20 +741,19 @@ describe("vendor: signing in and serving orders", () => {
         payload: { handedOver },
       });
 
-    expect((await handover(true, { cookie })).statusCode).toBe(403);
-    // Unpaid: nothing to hand over.
-    expect((await handover(true)).statusCode).toBe(409);
+    const pressed = await button(true);
+    expect(pressed.statusCode).toBe(400);
+    expect(pressed.json().error.details).toMatchObject({ reason: "scan_required" });
+    expect((await h.stores.purchases.find(placed.purchase.id))?.handedOverAt).toBeNull();
 
-    await h.stores.purchases.markPaid(placed.purchase.id, paidOnLedger(h, placed.purchase));
-    const done = await handover(true);
-    expect(done.statusCode).toBe(200);
-    expect(done.json().purchase.handedOverAt).toBeTruthy();
-    expect((await handover(false)).json().purchase.handedOverAt).toBeNull();
+    await h.stores.purchases.setHandedOver(placed.purchase.id, true);
+    expect((await button(false, { cookie })).statusCode).toBe(403);
+    expect((await button(false)).json().purchase.handedOverAt).toBeNull();
 
     // Somebody else's counter cannot touch it, and cannot tell it exists.
     await h.stores.vendors.createVendor({ eventId: EVENT, name: "Adidas", walletAddress: ADIDAS });
     const intruder = await signInAs(h, ADIDAS);
-    expect((await handover(true, { cookie: intruder.cookie, "x-poap-vendor": "1" })).statusCode).toBe(404);
+    expect((await button(false, { cookie: intruder.cookie, "x-poap-vendor": "1" })).statusCode).toBe(404);
   });
 
   it("signs out for real", async () => {

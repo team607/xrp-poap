@@ -762,6 +762,11 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
 .receipt__say{font-size:14.5px; color:var(--ink-2); margin:6px 0 0}
 .receipt .crumbs{margin-top:14px; text-align:left}
 .receipt .retry{justify-content:center}
+.collect{margin-top:14px}
+.collect .plate{width:min(260px,100%)}
+.collect .ticker{justify-content:center}
+.collect .clock{margin-left:0}
+.collect__go{margin-top:14px}
 
 .orders{border-top:1px solid var(--rule); padding:15px 17px 10px}
 .orders__t{font-size:15px; font-weight:700; letter-spacing:-.012em; margin:0 0 2px}
@@ -831,6 +836,7 @@ a{color:var(--jade)}
       <a href="/events">Events</a>
       <a href="/attend" aria-current="page">My pass</a>
       <a href="/volunteer">Desk</a>
+      <a href="/vendor">Vendor</a>
       <a href="/admin">Organiser</a>
     </nav>
     <span class="nav__gap"></span>
@@ -3605,10 +3611,30 @@ a{color:var(--jade)}
     clock: null,
     inFlight: false,
     orderInFlight: false,
+    secrets: {},       /* purchaseId -> the secret its order answer carried */
+    collect: null,     /* {purchaseId, code, expiresAt, expired}: a code on screen for the counter */
+    collectBusy: false,
+    collectTimer: null,
+    collectClock: null,
+    collectInFlight: false,
+    justCollected: null,
     sig: null
   };
 
   function orderCode(id) { return String(id || "").replace(/-/g, "").slice(0, 6).toUpperCase(); }
+
+  /* The secret an order's own answer carries, shown to be given a collection
+     code. localStorage rather than sessionStorage: coming back from Xaman, or
+     opening the pass in a new tab, must not lose it. */
+  var SECRET_PREFIX = "poap.collect.";
+  function keepCollectSecret(purchaseId, secret) {
+    shop.secrets[purchaseId] = secret;
+    try { localStorage.setItem(SECRET_PREFIX + purchaseId, secret); } catch (e) { /* private mode: this visit only */ }
+  }
+  function collectSecretFor(purchaseId) {
+    if (shop.secrets[purchaseId]) return shop.secrets[purchaseId];
+    try { return localStorage.getItem(SECRET_PREFIX + purchaseId); } catch (e) { return null; }
+  }
 
   /** Decimal XRP to drops, as a Number: exact below nine billion XRP. */
   function toDrops(v) {
@@ -3652,6 +3678,7 @@ a{color:var(--jade)}
     shop.qty = {};
     shop.order = null;
     shop.receipt = null;
+    shop.collect = null;
     shop.busyItem = null;
     ssDel(ssKey("order"));
   }
@@ -3661,10 +3688,12 @@ a{color:var(--jade)}
     if (!shop.open || document.hidden) return;
     shop.timer = setInterval(loadShop, SHOP_REFRESH_MS);
     if (shop.order && shop.order.purchase.status === "reserved") startOrderPoll();
+    if (shop.collect) startCollectPoll();
   }
   function stopShopTimers() {
     if (shop.timer) { clearInterval(shop.timer); shop.timer = null; }
     stopOrderPoll();
+    stopCollectPoll();
   }
   function startOrderPoll() {
     stopOrderPoll();
@@ -3762,6 +3791,7 @@ a{color:var(--jade)}
       shop.busyItem = null;
       if (r.ok && r.json && r.json.purchase && r.json.xaman) {
         shop.order = { purchase: r.json.purchase, xaman: r.json.xaman };
+        if (r.json.collectSecret) keepCollectSecret(r.json.purchase.id, String(r.json.collectSecret));
         shop.receipt = null;
         shop.qty[item.id] = 1;
         ssSet(ssKey("order"), JSON.stringify(shop.order));
@@ -3814,7 +3844,7 @@ a{color:var(--jade)}
 
     /* Every poll lands here. Rebuilding an unchanged card would take a thumb's
        target out from under it mid-tap, so an unchanged card is left alone. */
-    var sig = JSON.stringify([visible, st, w, shop.qty, shop.order, shop.receipt, shop.busyItem, app.coarse]);
+    var sig = JSON.stringify([visible, st, w, shop.qty, shop.order, shop.receipt, shop.busyItem, shop.collect, shop.collectBusy, app.coarse]);
     if (sig === shop.sig) return;
     shop.sig = sig;
 
@@ -3989,8 +4019,11 @@ a{color:var(--jade)}
 
   function receiptCard(p) {
     var collected = !!p.handedOverAt;
-    var box = node("div", "receipt" + (shop.justPaid === p.id ? " receipt--new" : ""));
+    var c = shop.collect && shop.collect.purchaseId === p.id ? shop.collect : null;
+    var fresh = shop.justPaid === p.id || shop.justCollected === p.id;
     shop.justPaid = null;
+    shop.justCollected = null;
+    var box = node("div", "receipt" + (fresh ? " receipt--new" : ""));
     box.setAttribute("data-state", collected ? "collected" : "paid");
 
     var hd = node("div", "receipt__hd");
@@ -3999,9 +4032,21 @@ a{color:var(--jade)}
     box.appendChild(hd);
     box.appendChild(node("div", "receipt__code", orderCode(p.id)));
     box.appendChild(node("div", "receipt__what", p.quantity + " × " + p.itemName));
-    box.appendChild(node("p", "receipt__say", collected
-      ? "Handed over at the " + p.vendorName + " counter."
-      : "Show this at the " + p.vendorName + " counter."));
+
+    if (collected) {
+      box.appendChild(node("p", "receipt__say", "Collected at the " + p.vendorName + " counter."));
+    } else if (c && !c.expired) {
+      box.appendChild(collectPlate(p, c));
+    } else {
+      if (c && c.expired) box.appendChild(node("p", "receipt__say", "That code has expired. Show a new one at the counter."));
+      var go = node("button", "btn btn--act collect__go",
+        shop.collectBusy ? "One moment…" : c && c.expired ? "Show a new code" : "Collect at " + p.vendorName);
+      go.type = "button";
+      go.disabled = !!shop.collectBusy;
+      go.setAttribute("aria-busy", shop.collectBusy ? "true" : "false");
+      go.addEventListener("click", function () { startCollect(p); });
+      box.appendChild(go);
+    }
 
     var rows = node("div", "crumbs");
     rows.appendChild(row("Paid", fmtXrp(p.amountXrp) + " XRP to " + p.vendorName, { prose: true }));
@@ -4012,6 +4057,8 @@ a{color:var(--jade)}
     var close = node("button", "btn btn--quiet", "Close");
     close.type = "button";
     close.addEventListener("click", function () {
+      stopCollectPoll();
+      shop.collect = null;
       shop.receipt = null;
       paintShop();
     });
@@ -4019,6 +4066,117 @@ a{color:var(--jade)}
     bar.appendChild(close);
     box.appendChild(bar);
     return box;
+  }
+
+  /* ---- collecting at the counter ------------------------------------------
+     The attendee shows a code, the vendor scans it, and the order is handed
+     over. The code is a link to the vendor's screen, so it scans with the
+     counter's own scanner or with a phone camera. It lasts a few minutes, so it
+     is only put on screen once somebody is at the counter. */
+
+  function collectLink(code) { return location.origin + "/vendor#collect=" + encodeURIComponent(code); }
+
+  function collectPlate(p, c) {
+    var wrap = node("div", "scan collect");
+    var plate = node("div", "plate is-live");
+    var holder = node("div");
+    holder.setAttribute("aria-hidden", "true");
+    try {
+      holder.appendChild(QR.render(collectLink(c.code), "#f7f3ea", "#17140f").svg);
+    } catch (e) {
+      holder.appendChild(node("div", "plate__fail",
+        "The code would not draw. Ask the counter to find order " + orderCode(p.id) + " instead."));
+    }
+    plate.appendChild(holder);
+    ["tl", "tr", "bl", "br"].forEach(function (k) { plate.appendChild(node("span", "bracket bracket--" + k)); });
+    wrap.appendChild(plate);
+    wrap.appendChild(node("p", "scan__cap", "Show this to the " + p.vendorName + " counter."));
+    var ticker = node("div", "ticker");
+    var watching = node("span", "watching");
+    watching.appendChild(node("span", "dot"));
+    watching.appendChild(node("span", null, "waiting for the counter to scan"));
+    ticker.appendChild(watching);
+    var clock = node("span", "clock");
+    clock.id = "collect-clock";
+    ticker.appendChild(clock);
+    wrap.appendChild(ticker);
+    setTimeout(paintCollectClock, 0);
+    return wrap;
+  }
+
+  function startCollect(p) {
+    if (shop.collectBusy) return;
+    clearError("shop-err");
+    var secret = collectSecretFor(p.id);
+    if (!secret) {
+      showLocalError("shop-err", "NOT_THIS_PHONE",
+        "This order was bought on another phone or browser, so it can only be collected from there.",
+        null, null, null);
+      return;
+    }
+    shop.collectBusy = true;
+    paintShop();
+    call("POST", "/api/purchases/" + encodeURIComponent(p.id) + "/collect", { secret: secret }).then(function (r) {
+      shop.collectBusy = false;
+      if (r.ok && r.json && r.json.code) {
+        shop.collect = { purchaseId: p.id, code: String(r.json.code), expiresAt: String(r.json.expiresAt), expired: false };
+        if (r.json.purchase) shop.receipt = r.json.purchase;
+        paintShop();
+        startCollectPoll();
+        return;
+      }
+      paintShop();
+      showError("shop-err", r, { warn: r.status === 403 || r.status === 409 });
+      if (r.status === 409) loadShop();
+    });
+  }
+
+  function startCollectPoll() {
+    stopCollectPoll();
+    if (!shop.open || document.hidden || !shop.collect) return;
+    pollCollect();
+    shop.collectTimer = setInterval(pollCollect, ORDER_POLL_MS);
+    shop.collectClock = setInterval(paintCollectClock, 1000);
+  }
+  function stopCollectPoll() {
+    if (shop.collectTimer) { clearInterval(shop.collectTimer); shop.collectTimer = null; }
+    if (shop.collectClock) { clearInterval(shop.collectClock); shop.collectClock = null; }
+  }
+
+  var COLLECT_GRACE_MS = 15000;
+
+  function pollCollect() {
+    var c = shop.collect;
+    if (!c || shop.collectInFlight) return;
+    /* A scan in the code's last seconds still lands; after that, stop asking. */
+    if (c.expired && Date.now() - Date.parse(c.expiresAt) > COLLECT_GRACE_MS) { stopCollectPoll(); return; }
+    shop.collectInFlight = true;
+    call("GET", "/api/purchases/" + encodeURIComponent(c.purchaseId)).then(function (r) {
+      shop.collectInFlight = false;
+      if (!shop.collect || shop.collect.purchaseId !== c.purchaseId) return;
+      if (!r.ok || !r.json || !r.json.purchase || !r.json.purchase.handedOverAt) return;
+      stopCollectPoll();
+      shop.collect = null;
+      shop.receipt = r.json.purchase;
+      shop.justCollected = r.json.purchase.id;
+      paintShop();
+      loadShop();
+    });
+  }
+
+  function paintCollectClock() {
+    var c = shop.collect;
+    if (!c) return;
+    var left = Math.max(0, Math.round((Date.parse(c.expiresAt) - Date.now()) / 1000));
+    if (left === 0 && !c.expired) {
+      /* Still listening afterwards: a scan in its last second should land. */
+      c.expired = true;
+      if (shop.collectClock) { clearInterval(shop.collectClock); shop.collectClock = null; }
+      paintShop();
+      return;
+    }
+    var el = $("collect-clock");
+    if (el) el.textContent = Math.floor(left / 60) + ":" + ("0" + (left % 60)).slice(-2) + " left";
   }
 
   function paintStalls() {
@@ -4105,6 +4263,7 @@ a{color:var(--jade)}
     if (paid) {
       el.type = "button";
       el.addEventListener("click", function () {
+        if (shop.collect && shop.collect.purchaseId !== p.id) { stopCollectPoll(); shop.collect = null; }
         shop.receipt = p;
         paintShop();
         var pay = $("shop-pay");

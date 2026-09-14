@@ -266,11 +266,48 @@ a{color:var(--jade)}
   text-align:center; color:var(--ink-2); font-size:15px;
 }
 
+/* ---- scanning a code, finding an order ------------------------------------- */
+.scanbar{display:flex; gap:10px; flex-wrap:wrap; align-items:stretch; margin-top:20px}
+.scanbar__go{min-height:50px; padding:12px 20px; font-size:15px}
+.search{flex:1 1 240px; max-width:380px; display:flex}
+.search input{
+  width:100%; min-height:50px; padding:10px 14px; font:inherit; font-size:15px; color:var(--ink);
+  background:var(--surface); border:1px solid var(--rule-2); border-radius:10px;
+}
+.search input::placeholder{color:var(--ink-3)}
+.search input:focus{outline:2px solid var(--jade); outline-offset:1px}
+.scanpanel{
+  margin-top:12px; padding:14px; max-width:560px; display:grid; gap:12px;
+  border:1px solid var(--rule); border-radius:14px; background:var(--surface); box-shadow:var(--shadow);
+}
+.scanpanel__view{width:100%; aspect-ratio:4/3; border-radius:12px; overflow:hidden; background:#0f1110}
+.scanpanel__view video{display:block; width:100%; height:100%; object-fit:cover}
+.scanpanel__view{position:relative}
+.scanpanel__view::after{
+  content:""; position:absolute; top:50%; left:50%; width:62%; aspect-ratio:1/1; transform:translate(-50%,-50%);
+  border:2px solid rgba(255,255,255,.9); border-radius:14px; box-shadow:0 0 0 999px rgba(0,0,0,.28); pointer-events:none;
+}
+.scanpanel__note{font-size:14px; color:var(--ink-2)}
+.scanpanel__form{display:flex; gap:8px; flex-wrap:wrap}
+.scanpanel__form input{
+  flex:1 1 220px; min-height:44px; padding:10px 12px; font-family:var(--font-mono); font-size:13px;
+  color:var(--ink); background:var(--sunk); border:1px solid var(--rule-2); border-radius:10px;
+}
+.scanpanel__form input:focus{outline:2px solid var(--jade); outline-offset:1px}
+.scanned{margin-top:12px; padding:12px 14px; border:1px solid var(--jade); border-left-width:4px; border-radius:12px; background:var(--jade-wash)}
+.scanned--warn{border-color:var(--signal); background:var(--signal-wash)}
+.scanned--bad{border-color:var(--vermilion); background:var(--vermilion-wash)}
+.scanned--busy{border-color:var(--rule-2); background:var(--sunk)}
+.scanned__t{font-size:17px; font-weight:700; letter-spacing:-.012em; color:var(--ink)}
+.scanned__d{font-size:14px; color:var(--ink-2); margin-top:2px}
+.found{margin-top:14px; font-size:14px; font-weight:600; color:var(--ink-3)}
+
 @media (prefers-reduced-motion: reduce){
   *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
 }
 </style>
 <script src="/assets/bar.js" defer></script>
+<script src="/assets/qr-read.js" defer></script>
 </head>
 <body>
 <header class="nav">
@@ -280,6 +317,7 @@ a{color:var(--jade)}
       <a href="/events">Events</a>
       <a href="/attend">My pass</a>
       <a href="/volunteer">Desk</a>
+      <a href="/vendor" aria-current="page">Vendor</a>
       <a href="/admin">Organiser</a>
     </nav>
     <span class="nav__gap"></span>
@@ -351,6 +389,23 @@ a{color:var(--jade)}
     <div id="counter-banner"></div>
 
     <div id="counter-body">
+      <div class="scanbar">
+        <button class="btn btn--go scanbar__go" id="btn-scan" type="button">Scan collection code</button>
+        <label class="search">
+          <span class="sr">Find an order</span>
+          <input id="search" type="search" placeholder="Find by order code or wallet" autocomplete="off" autocapitalize="off" spellcheck="false">
+        </label>
+      </div>
+      <div class="scanpanel" id="scan-panel" hidden>
+        <div class="scanpanel__view" id="scan-view" hidden><video id="scan-video" playsinline muted autoplay></video></div>
+        <p class="scanpanel__note" id="scan-note"></p>
+        <form class="scanpanel__form" id="scan-form" novalidate>
+          <input id="scan-input" type="text" placeholder="Or paste the code" autocomplete="off" spellcheck="false" aria-label="Collection code">
+          <button class="btn" type="submit">Hand over</button>
+          <button class="btn btn--ghost" id="btn-scan-close" type="button">Close</button>
+        </form>
+      </div>
+      <div id="scan-result" aria-live="polite"></div>
       <div class="tally" role="tablist" aria-label="Orders">
         <button class="tally__b" id="tab-todo" type="button" role="tab" data-tab="todo" aria-selected="true" aria-controls="orders">
           <span class="tally__n" id="n-todo">&mdash;</span><span class="tally__k">to hand over</span>
@@ -361,6 +416,7 @@ a{color:var(--jade)}
       </div>
 
       <div id="orders-flash"></div>
+      <p class="found" id="found" hidden></p>
       <div class="rail" id="orders" role="tabpanel"></div>
       <p class="empty" id="orders-empty" hidden></p>
     </div>
@@ -385,6 +441,7 @@ a{color:var(--jade)}
   var SIGNIN_POLL_MS = 2500;
   var SS_SIGNIN = "poap.vendor.signin";
   var LS_COUNTER = "poap.vendor.counter";
+  var SS_CODE = "poap.vendor.collect";
 
   var app = {
     me: null,            /* {address, vendors:[{id, name, active, eventId, eventName, eventStatus}]} */
@@ -393,6 +450,8 @@ a{color:var(--jade)}
     orders: [],
     counts: null,
     tab: "todo",
+    query: "",           /* the search box */
+    pendingCode: null,   /* a code scanned before this screen was signed in */
     seen: null,          /* ids on the last read; null until there has been one */
     fresh: {},           /* ids that arrived since, for the one-time arrival */
     busy: {},            /* purchaseId -> a hand-over being recorded */
@@ -512,6 +571,7 @@ a{color:var(--jade)}
      ====================================================================== */
 
   function toSignIn(note) {
+    closeScanner();
     stopPolling();
     app.me = null;
     app.vendorId = null;
@@ -680,6 +740,7 @@ a{color:var(--jade)}
     }
     chooseCounter((pick || live || vendors[0]).id);
     $("counter-h").focus();
+    handOverPendingCode();
   }
 
   function counterById(id) {
@@ -827,7 +888,19 @@ a{color:var(--jade)}
     $("tab-todo").setAttribute("aria-selected", app.tab === "todo" ? "true" : "false");
     $("tab-done").setAttribute("aria-selected", app.tab === "done" ? "true" : "false");
 
+    /* A search looks through both lists at once: "have I already given them
+       this?" is exactly what it is for. */
+    var q = String(app.query || "").trim().toLowerCase();
     var list = app.tab === "todo" ? todo : done;
+    if (q) {
+      list = todo.concat(done).filter(function (o) {
+        return orderCode(o.id).toLowerCase().indexOf(q) !== -1 ||
+          String(o.buyerAddress || "").toLowerCase().indexOf(q) !== -1;
+      });
+    }
+    var found = $("found");
+    found.hidden = !q || !list.length;   /* no match: the empty line says so */
+    if (q) found.textContent = list.length === 1 ? "1 order matches" : list.length + " orders match";
     var host = $("orders");
     clear(host);
     for (var k = 0; k < list.length; k++) host.appendChild(ticket(list[k]));
@@ -836,9 +909,11 @@ a{color:var(--jade)}
     var empty = $("orders-empty");
     if (!read) { empty.hidden = true; return; }
     empty.hidden = list.length > 0;
-    empty.textContent = app.tab === "todo"
-      ? (done.length ? "Everything is handed over." : "No paid orders yet.")
-      : "Nothing handed over yet.";
+    empty.textContent = q
+      ? "No order matches “" + String(app.query).trim() + "”."
+      : app.tab === "todo"
+        ? (done.length ? "Everything is handed over." : "No paid orders yet.")
+        : "Nothing handed over yet.";
   }
 
   function ticket(o) {
@@ -864,17 +939,10 @@ a{color:var(--jade)}
     meta.appendChild(tail);
     t.appendChild(meta);
 
-    t.appendChild(node("div", "ticket__tear"));
-
-    if (!done) {
-      var go = node("button", "btn btn--go ticket__go", busy ? "Recording…" : "Mark handed over");
-      go.type = "button";
-      go.disabled = busy;
-      go.setAttribute("aria-busy", busy ? "true" : "false");
-      go.setAttribute("aria-label", "Mark order " + orderCode(o.id) + " handed over");
-      go.addEventListener("click", function () { handOver(o, true); });
-      t.appendChild(go);
-    } else {
+    /* Handing over is done by scanning the attendee's code, never from here.
+       A handed-over ticket keeps an Undo, for a mis-scan. */
+    if (done) {
+      t.appendChild(node("div", "ticket__tear"));
       var undo = node("button", "btn btn--ghost ticket__undo", busy ? "Undoing…" : "Undo");
       undo.type = "button";
       undo.disabled = busy;
@@ -916,6 +984,235 @@ a{color:var(--jade)}
 
 
   /* ======================================================================
+     HANDING OVER BY CODE
+
+     The attendee taps Collect on their order and shows a code; scanning it
+     hands the order over. The code is a link to this page, so a phone's own
+     camera scans it too: the link opens /vendor#collect=…, and the code is
+     handed over for the counter signed in here, straight after a sign-in if
+     there has not been one.
+     ====================================================================== */
+
+  var scanner = { stream: null, detector: null, timer: null, canvas: null, tick: 0, session: 0 };
+
+  /* Chrome's own QR reader where it has one (Android, computers). Chrome on an
+     iPhone has none, so the page reads the frames itself: /assets/qr-read.js. */
+  function nativeReader() {
+    if (typeof window.BarcodeDetector !== "function") return Promise.resolve(null);
+    var formats;
+    try {
+      formats = typeof window.BarcodeDetector.getSupportedFormats === "function"
+        ? window.BarcodeDetector.getSupportedFormats()
+        : ["qr_code"];
+    } catch (e) {
+      return Promise.resolve(null);
+    }
+    return Promise.resolve(formats).then(function (list) {
+      if (!list || list.indexOf("qr_code") === -1) return null;
+      try { return new window.BarcodeDetector({ formats: ["qr_code"] }); } catch (e) { return null; }
+    }, function () { return null; });
+  }
+
+  function cameraProblem(err) {
+    var name = err && err.name;
+    if (name === "NotAllowedError" || name === "SecurityError") {
+      return "The camera is blocked for this page. Allow it in the browser's site settings and tap Scan again, or paste the code.";
+    }
+    if (name === "NotFoundError" || name === "OverconstrainedError") return "No camera was found. Paste the code instead.";
+    return "The camera could not be opened. Paste the code instead.";
+  }
+
+  function openScanner() {
+    show("scan-panel", true);
+    $("scan-input").value = "";
+    if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+      show("scan-view", false);
+      setText("scan-note", "This browser cannot open the camera here. Paste the code instead.");
+      $("scan-input").focus();
+      return;
+    }
+    var session = ++scanner.session;
+    setText("scan-note", "Opening the camera…");
+    /* Asked for straight from the tap, before anything else waits. */
+    var camera = navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } },
+      audio: false
+    });
+    Promise.all([camera, nativeReader()]).then(function (both) {
+      var stream = both[0];
+      if (session !== scanner.session || $("scan-panel").hidden) {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
+      scanner.stream = stream;
+      scanner.detector = both[1];
+      var video = $("scan-video");
+      video.srcObject = stream;
+      show("scan-view", true);
+      setText("scan-note", "Point the camera at the code on their phone.");
+      var playing = video.play();
+      if (playing && playing.catch) playing.catch(function () { /* muted and inline: it plays */ });
+      nextScan(250);
+    }, function (err) {
+      if (session !== scanner.session) return;
+      show("scan-view", false);
+      setText("scan-note", cameraProblem(err));
+    });
+  }
+
+  function closeScanner() {
+    scanner.session++;
+    if (scanner.timer) { clearTimeout(scanner.timer); scanner.timer = null; }
+    if (scanner.stream) { scanner.stream.getTracks().forEach(function (t) { t.stop(); }); scanner.stream = null; }
+    var video = $("scan-video");
+    if (video) video.srcObject = null;
+    show("scan-view", false);
+    show("scan-panel", false);
+  }
+
+  function nextScan(ms) {
+    if (scanner.timer) clearTimeout(scanner.timer);
+    scanner.timer = setTimeout(scanOnce, ms);
+  }
+
+  function scanOnce() {
+    scanner.timer = null;
+    var video = $("scan-video");
+    var session = scanner.session;
+    if (!scanner.stream || !video) return;
+    if (video.readyState < 2 || !video.videoWidth) { nextScan(150); return; }
+    if (scanner.detector) {
+      scanner.detector.detect(video).then(function (codes) {
+        if (session !== scanner.session) return;
+        for (var i = 0; i < codes.length; i++) {
+          var raw = String(codes[i].rawValue || "");
+          if (raw) { scanned(raw); return; }
+        }
+        nextScan(150);
+      }, function () {
+        if (session !== scanner.session) return;
+        scanner.detector = null;   /* the page's own reader takes over */
+        nextScan(0);
+      });
+      return;
+    }
+    var text = null;
+    if (window.QRRead) {
+      try { text = window.QRRead.decode(grabFrame(video, (scanner.tick++ & 1) === 1)); } catch (e) { text = null; }
+    }
+    if (text) { scanned(text); return; }
+    nextScan(120);
+  }
+
+  /* The whole picture scaled down, and every other time the middle of it at
+     full size, for a code held further off. */
+  function grabFrame(video, middle) {
+    var vw = video.videoWidth, vh = video.videoHeight;
+    var sx = 0, sy = 0, sw = vw, sh = vh;
+    if (middle) {
+      var side = Math.round(Math.min(vw, vh) * 0.6);
+      sx = Math.round((vw - side) / 2);
+      sy = Math.round((vh - side) / 2);
+      sw = side;
+      sh = side;
+    }
+    var scale = Math.min(1, 720 / Math.max(sw, sh));
+    var w = Math.max(1, Math.round(sw * scale)), h = Math.max(1, Math.round(sh * scale));
+    var canvas = scanner.canvas || (scanner.canvas = document.createElement("canvas"));
+    if (canvas.width !== w) canvas.width = w;
+    if (canvas.height !== h) canvas.height = h;
+    var ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+    return ctx.getImageData(0, 0, w, h);
+  }
+
+  function scanned(raw) {
+    closeScanner();
+    submitCode(raw);
+  }
+
+  function scanResult(tone, title, detail) {
+    var host = $("scan-result");
+    clear(host);
+    if (!title) return;
+    var box = node("div", "scanned scanned--" + tone);
+    box.appendChild(node("div", "scanned__t", title));
+    if (detail) box.appendChild(node("div", "scanned__d", detail));
+    host.appendChild(box);
+  }
+
+  function keepPendingCode(code) {
+    app.pendingCode = code;
+    try { sessionStorage.setItem(SS_CODE, code); } catch (e) { /* private mode: kept in memory */ }
+  }
+
+  function handOverPendingCode() {
+    var code = app.pendingCode;
+    try {
+      code = code || sessionStorage.getItem(SS_CODE);
+      sessionStorage.removeItem(SS_CODE);
+    } catch (e) { /* private mode */ }
+    app.pendingCode = null;
+    if (code) submitCode(code);
+  }
+
+  function submitCode(raw) {
+    var code = String(raw || "").trim();
+    if (!code) return;
+    if (!app.me) { keepPendingCode(code); return; }
+    scanResult("busy", "Checking the code…", "");
+    call("POST", "/api/vendor/handover", { code: code }, { "x-poap-vendor": "1" }).then(function (r) {
+      if (r.status === 401) {
+        keepPendingCode(code);
+        toSignIn("Sign in again, and the code you scanned is handed over straight after.");
+        return;
+      }
+      if (!r.ok || !r.json || !r.json.purchase) {
+        scanResult("bad", messageOf(r, "That code did not work. Scan it again."), "");
+        return;
+      }
+      var p = r.json.purchase;
+      var detail = p.quantity + " × " + p.itemName + " · from …" + String(p.buyerAddress || "").slice(-4);
+      if (r.json.alreadyHandedOver) {
+        scanResult("warn", "Already handed over · " + orderCode(p.id),
+          detail + (p.handedOverAt ? " · at " + clockOf(p.handedOverAt) : ""));
+      } else {
+        scanResult("ok", "Handed over · " + orderCode(p.id), detail);
+      }
+      if (p.vendorId !== app.vendorId && counterById(p.vendorId)) {
+        chooseCounter(p.vendorId);
+        return;
+      }
+      var known = false;
+      for (var i = 0; i < app.orders.length; i++) {
+        if (app.orders[i].id !== p.id) continue;
+        if (!app.orders[i].handedOverAt && p.handedOverAt && app.counts) {
+          app.counts.handedOver += 1;
+          app.counts.toHandOver -= 1;
+        }
+        app.orders[i] = p;
+        known = true;
+      }
+      if (!known) app.orders.push(p);
+      app.sig = "local";
+      paintOrders();
+      loadOrders();
+    });
+  }
+
+  /** A code that arrived in this page's own address, because a phone camera scanned it. */
+  function takeCodeFromUrl() {
+    var m = /[#&]collect=([^&]+)/.exec(location.hash || "");
+    if (!m) return;
+    var code = m[1];
+    try { code = decodeURIComponent(code); } catch (e) { /* use it as it came */ }
+    try { history.replaceState(null, "", location.pathname + location.search); } catch (e) { /* the hash stays */ }
+    keepPendingCode(code);
+    if (app.me) handOverPendingCode();
+  }
+
+
+  /* ======================================================================
      BOOT
      ====================================================================== */
 
@@ -929,6 +1226,23 @@ a{color:var(--jade)}
     $("btn-out").addEventListener("click", signOut);
     $("tab-todo").addEventListener("click", function () { app.tab = "todo"; paintOrders(); });
     $("tab-done").addEventListener("click", function () { app.tab = "done"; paintOrders(); });
+    $("btn-scan").addEventListener("click", function () {
+      if ($("scan-panel").hidden) openScanner(); else closeScanner();
+    });
+    $("btn-scan-close").addEventListener("click", closeScanner);
+    $("scan-form").addEventListener("submit", function (e) {
+      e.preventDefault();
+      var value = $("scan-input").value;
+      if (!value.trim()) { $("scan-input").focus(); return; }
+      closeScanner();
+      submitCode(value);
+    });
+    $("search").addEventListener("input", function () {
+      app.query = $("search").value;
+      paintOrders();
+    });
+    window.addEventListener("hashchange", takeCodeFromUrl);
+    takeCodeFromUrl();
 
     call("GET", "/api/vendor/me").then(function (r) {
       if (r.ok && r.json) { forgetSignIn(); signedIn(r.json); return; }
@@ -937,6 +1251,8 @@ a{color:var(--jade)}
       if (r.status !== 401) {
         flash("signin-flash", "bad", messageOf(r));
         if (r.status === 404) { $("btn-signin").disabled = true; return; }
+      } else if (app.pendingCode) {
+        flash("signin-flash", "warn", "Sign in, and the order you scanned is handed over straight after.");
       }
       resumeSignIn();
     });
@@ -944,7 +1260,7 @@ a{color:var(--jade)}
 
   /* Nothing polls in a background tab; coming back reads straight away. */
   document.addEventListener("visibilitychange", function () {
-    if (document.hidden) { stopPolling(); stopSignInPoll(); return; }
+    if (document.hidden) { closeScanner(); stopPolling(); stopSignInPoll(); return; }
     if (app.me && app.vendorId) startPolling();
     else if (app.signin) startSignInPoll();
   });

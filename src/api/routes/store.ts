@@ -6,6 +6,7 @@
  *   POST /api/events/:eventId/purchases                order, and get a Payment to approve
  *   GET  /api/purchases/:purchaseId                    has it been paid?
  *   POST /api/purchases/:purchaseId/confirm            it was paid, here is the hash
+ *   POST /api/purchases/:purchaseId/collect            a code for the counter to scan
  *
  * PUBLIC, LIKE THE PASS THAT CALLS THEM. Nothing here moves money: an order is
  * a request for the buyer to pay, and only a Payment the buyer signs in their
@@ -22,6 +23,7 @@ import { z } from "zod";
 import { NotFoundError } from "../../errors.js";
 import type { AccountSnapshot } from "../../xrpl/account.js";
 import { readAllowanceStatus } from "../allowance.js";
+import { buyerSecret, checkBuyerSecret, collectKey, issueCollectCode } from "../collect.js";
 import type { ApiDeps } from "../deps.js";
 import {
   addressSchema,
@@ -58,11 +60,13 @@ const orderBodySchema = z
   })
   .strict();
 const confirmBodySchema = z.object({ txHash: txHashSchema }).strict();
+const collectBodySchema = z.object({ secret: z.string().trim().min(1).max(64) }).strict();
 
 type WalletParams = z.infer<typeof walletParamsSchema>;
 type PurchaseParams = z.infer<typeof purchaseParamsSchema>;
 type OrderBody = z.infer<typeof orderBodySchema>;
 type ConfirmBody = z.infer<typeof confirmBodySchema>;
+type CollectBody = z.infer<typeof collectBodySchema>;
 
 export function registerStoreRoutes(app: FastifyInstance, deps: ApiDeps): void {
   const { events, vendors, purchases } = deps;
@@ -183,7 +187,11 @@ export function registerStoreRoutes(app: FastifyInstance, deps: ApiDeps): void {
   /**
    * POST /api/events/:eventId/purchases { address, itemId, quantity, returnUrl? }
    *
-   * 201 { purchase, xaman } | 400 | 403 not an attendee | 404
+   * `collectSecret` in the answer is for the page that placed the order, and
+   * nothing else ever serves it: it is what that page shows to be given a
+   * collection code at the counter.
+   *
+   * 201 { purchase, xaman, collectSecret } | 400 | 403 not an attendee | 404
    * 409 closed, sold out, too little to spend, too many unpaid orders
    * 429 | 503 no Xaman
    */
@@ -201,7 +209,11 @@ export function registerStoreRoutes(app: FastifyInstance, deps: ApiDeps): void {
         { eventId, address, itemId, quantity, ...(returnUrl ? { returnUrl } : {}) },
         request.log,
       );
-      return reply.code(201).send({ purchase: toPurchaseView(placed.purchase), xaman: placed.xaman });
+      return reply.code(201).send({
+        purchase: toPurchaseView(placed.purchase),
+        xaman: placed.xaman,
+        collectSecret: buyerSecret(collectKey(deps.config), placed.purchase.id),
+      });
     },
   );
 
@@ -247,6 +259,59 @@ export function registerStoreRoutes(app: FastifyInstance, deps: ApiDeps): void {
         );
       }
       return reply.code(200).send({ purchase: toPurchaseView(purchase) });
+    },
+  );
+
+  /**
+   * POST /api/purchases/:purchaseId/collect { secret }
+   *
+   * A collection code for a paid order, to show at the counter: the vendor
+   * scans it and the order is handed over. It works for a few minutes.
+   *
+   * `secret` is what the order's own answer gave the buyer's page. The order id
+   * and the wallet address can both be read by anybody, so they are not enough.
+   *
+   * 200 { code, expiresAt, purchase } | 403 not the buyer's page | 404
+   * 409 not paid, or already handed over
+   */
+  app.post<{ Params: PurchaseParams; Body: CollectBody }>(
+    "/api/purchases/:purchaseId/collect",
+    {
+      schema: { params: purchaseParamsSchema, body: collectBodySchema },
+      config: { rateLimit: orderLimit },
+    },
+    async (request, reply) => {
+      const found = await purchases.find(request.params.purchaseId);
+      if (!found) return sendError(reply, 404, "NOT_FOUND", "No such order.");
+
+      const key = collectKey(deps.config);
+      if (!checkBuyerSecret(key, found.id, request.body.secret)) {
+        return sendError(reply, 403, "FORBIDDEN", "This order can only be collected from the phone that bought it.", {
+          purchaseId: found.id,
+        });
+      }
+
+      const order = await settler.settle(found, request.log);
+      if (order.handedOverAt) {
+        return sendError(reply, 409, "CONFLICT", `This was already collected at the ${order.vendorName} counter.`, {
+          purchaseId: order.id,
+          reason: "already_handed_over",
+        });
+      }
+      if (order.status !== "paid") {
+        return sendError(
+          reply,
+          409,
+          "CONFLICT",
+          order.status === "expired"
+            ? "This order lapsed without being paid, so there is nothing to collect."
+            : "This order is not paid yet. Approve the payment in Xaman first.",
+          { purchaseId: order.id, reason: "not_paid", status: order.status },
+        );
+      }
+
+      const { code, expiresAt } = issueCollectCode(key, order.id);
+      return reply.code(200).send({ code, expiresAt, purchase: toPurchaseView(order) });
     },
   );
 }

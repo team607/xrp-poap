@@ -7,7 +7,8 @@
  *   GET  /api/vendor/me                     who is signed in, and for which counters
  *   POST /api/vendor/logout
  *   GET  /api/vendor/orders?vendorId=       this counter's orders
- *   POST /api/vendor/orders/:id/handover    it left the counter (or it did not)
+ *   POST /api/vendor/handover               an attendee's collection code, scanned: handed over
+ *   POST /api/vendor/orders/:id/handover    take a hand-over back
  *
  * THE WALLET IS THE LOGIN. A vendor proves the wallet they are paid into, and
  * may see the orders of every vendor row that wallet is — the same proof the
@@ -28,6 +29,7 @@ import {
   type ConsumedSignIns,
   type SignInService,
 } from "../../xaman/signin.js";
+import { collectKey, readCollectCode } from "../collect.js";
 import type { ApiDeps } from "../deps.js";
 import { sendError } from "../http-errors.js";
 import { settlerFor, toPurchaseView } from "../purchases.js";
@@ -59,6 +61,7 @@ const ordersQuerySchema = z.object({
 });
 const handoverParamsSchema = z.object({ purchaseId: z.uuid() });
 const handoverBodySchema = z.object({ handedOver: z.boolean() }).strict();
+const scanBodySchema = z.object({ code: z.string().trim().min(1).max(500) }).strict();
 
 type SignInBody = z.infer<typeof signInBodySchema>;
 type UuidParams = z.infer<typeof uuidParamsSchema>;
@@ -66,6 +69,7 @@ type SessionBody = z.infer<typeof sessionBodySchema>;
 type OrdersQuery = z.infer<typeof ordersQuerySchema>;
 type HandoverParams = z.infer<typeof handoverParamsSchema>;
 type HandoverBody = z.infer<typeof handoverBodySchema>;
+type ScanBody = z.infer<typeof scanBodySchema>;
 
 export function registerVendorPortalRoutes(app: FastifyInstance, deps: ApiDeps): void {
   const { events, vendors, purchases, vendorSessions } = deps;
@@ -238,11 +242,75 @@ export function registerVendorPortalRoutes(app: FastifyInstance, deps: ApiDeps):
   );
 
   /**
-   * POST /api/vendor/orders/:purchaseId/handover { handedOver }
+   * POST /api/vendor/handover { code }
    *
-   * Needs the `x-poap-vendor: 1` header. Only a paid order, and only one of
-   * this wallet's counters; an order at somebody else's counter is a 404, not
-   * a 403, so this cannot be used to learn which orders exist.
+   * The attendee's collection code, scanned at the counter: the order is handed
+   * over. Scanning the same code again says it already was, and hands nothing
+   * over twice. The code may arrive on its own or inside the link it travels in.
+   *
+   * Needs the `x-poap-vendor: 1` header, and one of this wallet's counters.
+   *
+   * 200 { purchase, alreadyHandedOver } | 400 not a collection code | 401
+   * 403 another counter's order | 404 | 409 not paid, or the code has expired
+   */
+  app.post<{ Body: ScanBody }>(
+    "/api/vendor/handover",
+    { schema: { body: scanBodySchema } },
+    async (request, reply) => {
+      const signedIn = await readVendorSession(deps, request);
+      if (!signedIn) return sendError(reply, 401, "UNAUTHORIZED", notSignedIn);
+      if (!hasVendorHeader(request)) {
+        return sendError(reply, 403, "FORBIDDEN", `This request needs the ${VENDOR_HEADER} header.`);
+      }
+
+      const check = readCollectCode(collectKey(deps.config), request.body.code);
+      if (!check.purchaseId) {
+        return sendError(
+          reply,
+          400,
+          "INVALID_INPUT",
+          "That is not a collection code. Ask them to tap Collect on their order, then scan the code it shows.",
+          { reason: check.reason },
+        );
+      }
+
+      const order = await purchases.find(check.purchaseId);
+      if (!order) return sendError(reply, 404, "NOT_FOUND", "That order does not exist on this server.");
+      if (!signedIn.vendors.some((v) => v.id === order.vendorId)) {
+        return sendError(reply, 403, "FORBIDDEN", `That order was bought from ${order.vendorName}. Send them to that counter.`, {
+          reason: "other_counter",
+        });
+      }
+      if (order.handedOverAt) {
+        return reply.code(200).send({ purchase: toPurchaseView(order), alreadyHandedOver: true });
+      }
+      if (!check.ok) {
+        return sendError(reply, 409, "CONFLICT", "That code has expired. Ask them to tap Collect again for a fresh one.", {
+          reason: "expired",
+        });
+      }
+      if (order.status !== "paid") {
+        return sendError(reply, 409, "CONFLICT", "That order has not been paid, so there is nothing to hand over.", {
+          reason: "not_paid",
+          status: order.status,
+        });
+      }
+
+      const updated = await purchases.setHandedOver(order.id, true);
+      request.log.info({ purchaseId: order.id, vendorId: order.vendorId }, "order handed over by collection code");
+      return reply.code(200).send({ purchase: toPurchaseView(updated), alreadyHandedOver: false });
+    },
+  );
+
+  /**
+   * POST /api/vendor/orders/:purchaseId/handover { handedOver: false }
+   *
+   * Takes a hand-over back, for a mis-scan. Handing an order over is done by
+   * scanning the attendee's collection code, so `true` is refused here.
+   *
+   * Needs the `x-poap-vendor: 1` header, and only one of this wallet's
+   * counters; an order at somebody else's counter is a 404, not a 403, so this
+   * cannot be used to learn which orders exist.
    */
   app.post<{ Params: HandoverParams; Body: HandoverBody }>(
     "/api/vendor/orders/:purchaseId/handover",
@@ -259,7 +327,14 @@ export function registerVendorPortalRoutes(app: FastifyInstance, deps: ApiDeps):
         return sendError(reply, 404, "NOT_FOUND", "No such order at your counter.");
       }
 
-      const updated = await purchases.setHandedOver(order.id, request.body.handedOver);
+      if (request.body.handedOver) {
+        return sendError(reply, 400, "INVALID_INPUT", "Hand an order over by scanning the attendee's collection code.", {
+          purchaseId: order.id,
+          reason: "scan_required",
+        });
+      }
+
+      const updated = await purchases.setHandedOver(order.id, false);
       request.log.info(
         { purchaseId: order.id, vendorId: order.vendorId, handedOver: request.body.handedOver },
         "order hand-over recorded",

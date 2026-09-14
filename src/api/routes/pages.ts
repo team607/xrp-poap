@@ -104,6 +104,8 @@ export function registerPageRoutes(
   // Shared chrome, before the pages that reference it.
   serveAsset(app, "bar.css", dir);
   serveAsset(app, "bar.js", dir);
+  // The QR reader for camera scanners in browsers without one (Chrome on iPhone).
+  serveAsset(app, "qr-read.js", dir);
 
   // The front door is the public record: every event that has happened, with
   // its turnout, and a Register button on the ones still taking names.
