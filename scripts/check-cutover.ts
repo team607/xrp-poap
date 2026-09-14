@@ -36,7 +36,7 @@ import {
 } from "../src/config.js";
 import { XrplConnection, isRippledError } from "../src/xrpl/client.js";
 import { countPendingIssuerOffers } from "../src/xrpl/offers.js";
-import { getAccountBalanceXrp } from "../src/xrpl/sponsor.js";
+import { getAccountBalanceXrp } from "../src/xrpl/account.js";
 import { verifyClaim } from "../src/xrpl/verify.js";
 import type { XrplGateway } from "../src/types.js";
 import {
@@ -551,21 +551,21 @@ async function run(): Promise<void> {
     }
 
     // -- 7 ------------------------------------------------------------------
-    r.step(7, "[7] Sponsorship endpoint rate limited and daily-capped");
+    r.step(7, "[7] Attendee payments come from sealed, budgeted, capped treasuries");
 
-    if (!cfg.sponsor.enabled) {
-      r.check("[7] sponsorship is capped", true, "SPONSOR_ENABLED=false — nothing can be drained");
-    } else {
-      const cap = cfg.sponsor.dailyCapXrp;
-      const capDrops = BigInt(xrpToDrops(cap));
-      r.info("sponsor amount", `${cfg.sponsor.amountXrp} XRP per attendee`);
-      r.info("daily cap", `${cap} XRP`);
-      r.check("[7] a daily sponsorship cap is configured", capDrops > 0n, `${cap} XRP/day`);
-      r.skip(
-        "[7] sponsorship endpoint is rate limited",
-        "config-level cap only — confirm the per-address and per-IP limits in the API layer",
-      );
-    }
+    r.info("per-attendee ceiling", `${cfg.reward.maxPerAttendeeXrp} XRP`);
+    r.info("fee buffer", `${cfg.reward.feeBufferXrp} XRP per payment`);
+    r.check(
+      "[7] TREASURY_MASTER_KEY is configured",
+      Boolean(cfg.reward.treasuryMasterKey),
+      cfg.reward.treasuryMasterKey
+        ? "event treasuries can be created and opened"
+        : "unset — no event can pay its attendees",
+    );
+    r.skip(
+      "[7] every live event has a funded treasury and a budget",
+      "per event — check each event's treasury card in the organiser console",
+    );
 
     // -- 8 ------------------------------------------------------------------
     r.step(8, "[8] Offers created lazily, verified by the issuer's pending offer count");

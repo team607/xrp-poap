@@ -1,0 +1,957 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex">
+<title>Vendor counter</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="/assets/bar.css">
+<style>
+/* ==========================================================================
+   THE COUNTER — a vendor's screen at an event.
+
+   Somebody behind a table, a queue in front of them. The screen does one job:
+   show the paid orders still to be handed over, oldest first, each with a code
+   big enough to check against the attendee's phone, and one press to say it
+   went.
+
+   Orders are tickets on a rail, the way a kitchen pins them. An order reaches
+   this screen only once the ledger says it is paid, so every ticket here can
+   be handed over without asking anybody.
+
+   The wallet the vendor is paid into is the login, proven with a Xaman
+   sign-in. Same stationery as the rest of the product.
+   ========================================================================== */
+
+:root{
+  --font-display:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  --font-mono:"IBM Plex Mono",ui-monospace,"SF Mono",SFMono-Regular,Menlo,"Cascadia Mono",Consolas,"DejaVu Sans Mono",monospace;
+
+  --paper:#faf9f7;
+  --surface:#ffffff;
+  --surface-2:#f4f2ef;
+  --sunk:#f1efec;
+  --ink:#1c1b1a;
+  --ink-2:#57544f;
+  --ink-3:#8a8681;
+  --rule:#eceae6;
+  --rule-2:#ddd9d3;
+
+  --signal:#b4552d;
+  --signal-2:#e2c3b1;
+  --signal-wash:rgba(180,85,45,.09);
+  --on-signal:#ffffff;
+  --jade:#16794f; --jade-2:#a8cfbc;
+  --jade-wash:rgba(22,121,79,.09);
+  --vermilion:#b0342a;
+  --vermilion-wash:rgba(176,52,42,.09);
+
+  --shadow:0 1px 2px rgba(28,27,26,.04), 0 12px 30px -22px rgba(28,27,26,.26);
+}
+/* The shared bar is sticky at the top; nothing here sticks, but the number is
+   kept so the bar's own stylesheet finds it. */
+:root{ --barh:60px }
+@media (max-width:520px){ :root{ --barh:96px } }
+
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --paper:#141413;
+    --surface:#1c1c1b;
+    --surface-2:#232322;
+    --sunk:#191918;
+    --ink:#f2f0ed;
+    --ink-2:#b3afa8;
+    --ink-3:#8a8681;
+    --rule:#2c2b29;
+    --rule-2:#3b3a37;
+
+    --signal:#e08b5f;
+    --signal-2:#5c4030;
+    --signal-wash:rgba(224,139,95,.13);
+    --on-signal:#1c1310;
+    --jade:#4fbd8b; --jade-2:#2f6a52;
+    --jade-wash:rgba(79,189,139,.13);
+    --vermilion:#e0736a;
+    --vermilion-wash:rgba(224,115,106,.13);
+
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#141413;
+  --surface:#1c1c1b;
+  --surface-2:#232322;
+  --sunk:#191918;
+  --ink:#f2f0ed;
+  --ink-2:#b3afa8;
+  --ink-3:#8a8681;
+  --rule:#2c2b29;
+  --rule-2:#3b3a37;
+
+  --signal:#e08b5f;
+  --signal-2:#5c4030;
+  --signal-wash:rgba(224,139,95,.13);
+  --on-signal:#1c1310;
+  --jade:#4fbd8b; --jade-2:#2f6a52;
+  --jade-wash:rgba(79,189,139,.13);
+  --vermilion:#e0736a;
+  --vermilion-wash:rgba(224,115,106,.13);
+
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 12px 30px -22px rgba(0,0,0,.8);
+}
+
+*,*::before,*::after{box-sizing:border-box}
+[hidden]{display:none !important}
+html{-webkit-text-size-adjust:100%}
+body{
+  margin:0;
+  background:var(--paper);
+  color:var(--ink);
+  font-family:var(--font-display);
+  font-size:16px;
+  line-height:1.55;
+  overflow-x:hidden;
+}
+h1,h2,h3{margin:0; font-weight:700; letter-spacing:-.026em; line-height:1.14}
+h1{font-weight:800}
+p{margin:0}
+a{color:var(--jade)}
+[tabindex="-1"]:focus{outline:none}
+.sr{position:absolute; width:1px; height:1px; padding:0; margin:-1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; border:0}
+
+.wrap{max-width:1120px; margin:0 auto; padding:0 clamp(16px,4vw,24px) 56px}
+
+/* ---- buttons -------------------------------------------------------------- */
+.btn{
+  font-family:var(--font-display); font-size:14px; font-weight:600;
+  color:var(--ink); background:var(--surface);
+  border:1px solid var(--rule-2); border-radius:10px;
+  padding:9px 14px; min-height:40px; cursor:pointer; text-decoration:none;
+  display:inline-flex; align-items:center; justify-content:center; gap:8px;
+  position:relative; overflow:hidden;
+  transition:transform .12s ease, background .16s ease, border-color .16s ease, filter .16s ease;
+}
+.btn:hover:not(:disabled){background:var(--surface-2); border-color:var(--ink-3)}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:focus-visible{outline:2px solid var(--jade); outline-offset:2px}
+.btn:disabled{opacity:.45; cursor:not-allowed}
+.btn--go{background:var(--ink); color:var(--paper); border-color:transparent}
+.btn--go:hover:not(:disabled){background:var(--ink); border-color:transparent; filter:brightness(1.3)}
+.btn--ghost{background:transparent}
+.btn--big{width:100%; min-height:52px; padding:13px 22px; font-size:15px}
+.btn[aria-busy="true"]::after{
+  content:""; position:absolute; left:0; bottom:0; height:2px; width:100%;
+  background:linear-gradient(90deg,transparent,currentColor,transparent);
+  animation:sweep 1s linear infinite;
+}
+@keyframes sweep{from{transform:translateX(-100%)}to{transform:translateX(100%)}}
+
+/* ---- banners and notes ----------------------------------------------------- */
+.banner{
+  border:1px solid var(--vermilion); border-left-width:3px; background:var(--vermilion-wash);
+  padding:11px 13px; border-radius:10px; margin-top:14px;
+}
+.banner--quiet{border-color:var(--rule-2); background:var(--sunk)}
+.banner p{font-size:14.5px; color:var(--ink-2)}
+.banner b{color:var(--ink); font-weight:600}
+
+.flash{
+  margin-top:14px; border-left:3px solid var(--vermilion); background:var(--vermilion-wash);
+  padding:10px 13px; border-radius:0 10px 10px 0; font-size:14.5px; color:var(--ink);
+}
+.flash--warn{border-left-color:var(--signal); background:var(--signal-wash)}
+
+.quiet{color:var(--ink-3); font-size:15px; padding:48px 0; text-align:center}
+
+/* ---- sign-in ---------------------------------------------------------------- */
+.gate{display:grid; place-items:start center; padding:clamp(28px,7vh,72px) 0 24px}
+.gate__card{width:min(420px,100%)}
+.card{border:1px solid var(--rule); border-radius:16px; background:var(--surface); box-shadow:var(--shadow)}
+.card__body{padding:clamp(18px,3.4vw,26px)}
+.card h1{font-size:1.6rem}
+.lede{color:var(--ink-2); font-size:15px; margin-top:6px}
+.stack{display:grid; gap:12px; margin-top:18px}
+/* Theme-fixed: scanners want dark on light, whatever the page is wearing. */
+.qr{justify-self:center; width:min(248px,100%); aspect-ratio:1/1; padding:10px; border-radius:14px; background:#ffffff; border:1px solid var(--rule-2)}
+.qr img{display:block; width:100%; height:100%; object-fit:contain}
+.cap{font-size:13.5px; color:var(--ink-3); text-align:center}
+.ticker{display:flex; align-items:center; justify-content:center; gap:10px; flex-wrap:wrap}
+.watching{
+  display:inline-flex; align-items:center; gap:8px; font-size:13.5px; font-weight:600;
+  color:var(--ink-3); border:1px dashed var(--rule-2); border-radius:10px; padding:6px 10px;
+}
+.watching .dot{width:7px; height:7px; border-radius:50%; background:var(--signal); animation:blink 1.7s ease-in-out infinite}
+.clock{font-size:13.5px; font-weight:600; color:var(--ink-3)}
+.row{display:flex; gap:8px; flex-wrap:wrap; justify-content:center}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.28}}
+
+/* ---- the counter's head ---------------------------------------------------- */
+.head{display:flex; gap:14px 24px; align-items:flex-end; flex-wrap:wrap; margin-top:clamp(20px,3.4vw,34px)}
+.head__main{min-width:0; flex:1 1 300px}
+.head__t{font-size:clamp(2rem,6vw,3rem); letter-spacing:-.04em; line-height:1.05; overflow-wrap:anywhere}
+.head__s{display:flex; align-items:center; gap:8px 10px; flex-wrap:wrap; margin-top:8px; font-size:15.5px; color:var(--ink-2)}
+.head__act{display:flex; align-items:center; gap:10px 14px; flex-wrap:wrap}
+.wallet{font-family:var(--font-mono); font-size:13px; color:var(--ink-3)}
+.pill{font-size:12.5px; font-weight:600; padding:3px 11px; border-radius:999px; white-space:nowrap; border:1px solid transparent}
+.pill--live{color:var(--on-signal); background:var(--jade)}
+.pill--open,.pill--draft{color:var(--signal); background:var(--signal-wash)}
+.pill--closed{color:var(--ink-3); background:var(--sunk); border-color:var(--rule-2)}
+.pulse{display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:var(--ink-3)}
+.pulse .dot{width:8px; height:8px; border-radius:50%; background:var(--jade); box-shadow:0 0 0 3px var(--jade-wash)}
+.pulse[data-up="0"] .dot{background:var(--vermilion); box-shadow:0 0 0 3px var(--vermilion-wash)}
+
+/* One wallet can sell at more than one counter, or more than one event. */
+.counters{display:flex; gap:8px; flex-wrap:wrap; margin-top:18px}
+.counter{
+  display:grid; gap:1px; text-align:left; font:inherit; cursor:pointer;
+  background:var(--surface); color:var(--ink-2);
+  border:1px solid var(--rule-2); border-radius:12px; padding:8px 14px; min-height:44px;
+}
+.counter b{font-size:14.5px; font-weight:700; color:var(--ink)}
+.counter span{font-size:12.5px; color:var(--ink-3)}
+.counter:hover{border-color:var(--ink-3)}
+.counter:focus-visible{outline:2px solid var(--jade); outline-offset:2px}
+.counter[aria-pressed="true"]{border-color:var(--ink); box-shadow:inset 0 0 0 1px var(--ink)}
+
+/* ---- the two counts, which are also the two lists -------------------------- */
+.tally{display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; margin-top:20px; max-width:520px}
+.tally__b{
+  display:grid; gap:4px; text-align:left; font:inherit; cursor:pointer;
+  padding:13px 16px; border-radius:14px; border:1px solid var(--rule-2);
+  background:var(--surface); color:var(--ink-2); min-height:44px;
+}
+.tally__b:hover{border-color:var(--ink-3)}
+.tally__b:focus-visible{outline:2px solid var(--jade); outline-offset:2px}
+.tally__b[aria-selected="true"]{background:var(--ink); border-color:transparent; color:var(--paper)}
+.tally__n{font-size:clamp(1.9rem,6vw,2.4rem); font-weight:800; letter-spacing:-.03em; line-height:1}
+.tally__k{font-size:13.5px; font-weight:600}
+.tally__b[data-tab="todo"][aria-selected="false"] .tally__n{color:var(--signal)}
+
+/* ---- the rail of tickets ----------------------------------------------------- */
+.rail{display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,264px),1fr)); gap:16px 14px; margin-top:18px}
+.ticket{
+  position:relative; display:flex; flex-direction:column; min-width:0;
+  background:var(--surface); border:1px solid var(--rule); border-radius:14px;
+  box-shadow:var(--shadow); padding:18px 16px 14px;
+}
+/* The pin across the top: clay while it waits, jade once it has gone. */
+.ticket::before{
+  content:""; position:absolute; top:-1px; left:16px; right:16px; height:4px;
+  border-radius:0 0 4px 4px; background:var(--signal);
+}
+.ticket[data-done="1"]{background:var(--sunk); box-shadow:none}
+.ticket[data-done="1"]::before{background:var(--jade)}
+.ticket__top{display:flex; align-items:baseline; justify-content:space-between; gap:10px}
+.ticket__code{font-family:var(--font-mono); font-size:clamp(1.75rem,6vw,2rem); font-weight:600; letter-spacing:.1em; line-height:1; color:var(--ink)}
+.ticket[data-done="1"] .ticket__code{color:var(--ink-3)}
+.ticket__time{font-size:13px; font-weight:600; color:var(--ink-3); white-space:nowrap}
+.ticket__what{font-size:19px; font-weight:700; letter-spacing:-.018em; line-height:1.25; color:var(--ink); margin-top:10px; overflow-wrap:anywhere}
+.ticket__qty{color:var(--signal)}
+.ticket[data-done="1"] .ticket__qty{color:var(--ink-3)}
+.ticket__meta{font-size:13.5px; color:var(--ink-3); margin-top:3px}
+.ticket__meta b{font-family:var(--font-mono); font-weight:500; color:var(--ink-2)}
+.ticket__tear{border-top:1px dashed var(--rule-2); margin:14px -16px 12px}
+.ticket__go{width:100%; min-height:48px; font-size:15px}
+.ticket__undo{align-self:flex-start; min-height:36px; padding:6px 12px; font-size:13.5px}
+.ticket__err{font-size:13px; color:var(--vermilion); margin-top:8px}
+.ticket--new{animation:arrive .6s cubic-bezier(.2,.85,.25,1) both}
+@keyframes arrive{from{opacity:0; transform:translateY(-12px)}to{opacity:1; transform:none}}
+
+.empty{
+  margin-top:18px; padding:30px 16px; border:1px dashed var(--rule-2); border-radius:14px;
+  text-align:center; color:var(--ink-2); font-size:15px;
+}
+
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
+}
+</style>
+<script src="/assets/bar.js" defer></script>
+</head>
+<body>
+<header class="nav">
+  <div class="nav__in">
+    <a class="nav__mark" href="/">POAP</a>
+    <nav class="nav__links" aria-label="Sections">
+      <a href="/events">Events</a>
+      <a href="/attend">My pass</a>
+      <a href="/volunteer">Desk</a>
+      <a href="/admin">Organiser</a>
+    </nav>
+    <span class="nav__gap"></span>
+    <span class="nav__net" id="nav-net" hidden><i aria-hidden="true"></i><span id="nav-net-t"></span></span>
+  </div>
+</header>
+
+<main class="wrap" id="main">
+  <noscript>
+    <div class="banner"><p><b>JavaScript is needed.</b> The counter reads its orders from the server as they are paid.</p></div>
+  </noscript>
+
+  <div class="banner" id="bn-offline" hidden>
+    <p><b>Not connected.</b> Orders on this screen may be out of date. It reconnects by itself.</p>
+  </div>
+
+  <!-- ============ boot ============ -->
+  <section id="view-boot">
+    <p class="quiet">Opening your counter…</p>
+  </section>
+
+  <!-- ============ sign in ============ -->
+  <section id="view-signin" hidden>
+    <div class="gate">
+      <div class="gate__card">
+        <div class="card">
+          <div class="card__body">
+            <h1 tabindex="-1" id="signin-h">Vendor counter</h1>
+            <p class="lede">Sign in with the Xaman wallet you are paid into.</p>
+            <div id="signin-flash"></div>
+
+            <div class="stack" id="signin-idle">
+              <button class="btn btn--go btn--big" id="btn-signin" type="button">Sign in with Xaman</button>
+            </div>
+
+            <div class="stack" id="signin-live" hidden>
+              <div class="qr" id="signin-qr-box"><img id="signin-qr" alt="A QR code holding a Xaman sign-in request" width="228" height="228"></div>
+              <p class="cap">Scan it with Xaman. This page carries on by itself.</p>
+              <div class="ticker">
+                <span class="watching"><span class="dot" aria-hidden="true"></span><span>waiting for your signature</span></span>
+                <span class="clock" id="signin-clock"></span>
+              </div>
+              <div class="row">
+                <a class="btn btn--ghost" id="signin-open" href="#" rel="noopener noreferrer" hidden>Xaman on this device? Open it</a>
+                <button class="btn btn--ghost" id="btn-signin-again" type="button">Start again</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ the counter ============ -->
+  <section id="view-counter" hidden>
+    <div class="head">
+      <div class="head__main">
+        <h1 class="head__t" tabindex="-1" id="counter-h">&mdash;</h1>
+        <p class="head__s"><span id="counter-event"></span><span class="pill" id="counter-status" hidden></span></p>
+      </div>
+      <div class="head__act">
+        <span class="pulse" id="pulse" data-up="1"><span class="dot" aria-hidden="true"></span><span id="pulse-t">live</span></span>
+        <span class="wallet" id="counter-wallet">&mdash;</span>
+        <button class="btn btn--ghost" id="btn-out" type="button">Sign out</button>
+      </div>
+    </div>
+
+    <div class="counters" id="counters" role="group" aria-label="Your counters" hidden></div>
+    <div id="counter-banner"></div>
+
+    <div id="counter-body">
+      <div class="tally" role="tablist" aria-label="Orders">
+        <button class="tally__b" id="tab-todo" type="button" role="tab" data-tab="todo" aria-selected="true" aria-controls="orders">
+          <span class="tally__n" id="n-todo">&mdash;</span><span class="tally__k">to hand over</span>
+        </button>
+        <button class="tally__b" id="tab-done" type="button" role="tab" data-tab="done" aria-selected="false" aria-controls="orders">
+          <span class="tally__n" id="n-done">&mdash;</span><span class="tally__k">handed over</span>
+        </button>
+      </div>
+
+      <div id="orders-flash"></div>
+      <div class="rail" id="orders" role="tabpanel"></div>
+      <p class="empty" id="orders-empty" hidden></p>
+    </div>
+    <p class="sr" id="announce" aria-live="polite"></p>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  /*
+   *   POST /api/vendor/signin                 a Xaman SignIn to scan
+   *   GET  /api/vendor/signin/{uuid}          signed yet?
+   *   POST /api/vendor/session                it was: this wallet is signed in
+   *   GET  /api/vendor/me                     the counters this wallet sells at
+   *   GET  /api/vendor/orders?vendorId=       one counter's paid orders
+   *   POST /api/vendor/orders/{id}/handover   it left the counter (or it did not)
+   *   POST /api/vendor/logout
+   */
+  var POLL_MS = 4000;
+  var SIGNIN_POLL_MS = 2500;
+  var SS_SIGNIN = "poap.vendor.signin";
+  var LS_COUNTER = "poap.vendor.counter";
+
+  var app = {
+    me: null,            /* {address, vendors:[{id, name, active, eventId, eventName, eventStatus}]} */
+    vendorId: null,
+    vendor: null,        /* the counter, as the last orders read described it */
+    orders: [],
+    counts: null,
+    tab: "todo",
+    seen: null,          /* ids on the last read; null until there has been one */
+    fresh: {},           /* ids that arrived since, for the one-time arrival */
+    busy: {},            /* purchaseId -> a hand-over being recorded */
+    errors: {},          /* purchaseId -> why the last one did not stick */
+    sig: null,
+    timer: null,
+    inFlight: false,
+    signin: null,        /* {uuid, qrPng, deeplink, expiresAt} */
+    signinTimer: null,
+    signinClock: null,
+    signinInFlight: false
+  };
+
+  function $(id) { return document.getElementById(id); }
+  function node(tag, cls, text) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined && text !== null) n.textContent = String(text);
+    return n;
+  }
+  function clear(n) { while (n && n.firstChild) n.removeChild(n.firstChild); }
+  function setText(id, s) { var n = $(id); if (n) n.textContent = s; }
+  function show(id, on) { var n = $(id); if (n) n.hidden = !on; }
+  function short(s, head, tail) {
+    s = String(s || "");
+    return s.length > head + tail + 1 ? s.slice(0, head) + "…" + s.slice(-tail) : s;
+  }
+  /** The six characters a counter and a receipt both show. */
+  function orderCode(id) { return String(id || "").replace(/-/g, "").slice(0, 6).toUpperCase(); }
+  function clockOf(iso) {
+    var t = Date.parse(iso || "");
+    if (!isFinite(t)) return "";
+    var d = new Date(t);
+    return ("0" + d.getHours()).slice(-2) + ":" + ("0" + d.getMinutes()).slice(-2);
+  }
+
+  /* Two server-supplied strings reach an href or a src. Parsed, not trusted. */
+  function safeUrl(value) {
+    if (typeof value !== "string" || value === "") return null;
+    var u;
+    try { u = new URL(value, window.location.href); } catch (e) { return null; }
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  }
+  function safeDeeplink(value) {
+    if (typeof value !== "string" || value === "") return null;
+    if (/^xumm:/i.test(value) || /^xaman:/i.test(value)) return value;
+    return safeUrl(value);
+  }
+  function safeImage(value) {
+    if (typeof value !== "string" || value === "") return null;
+    if (/^data:image\/(png|jpeg|gif|webp|svg\+xml);/i.test(value)) return value;
+    return safeUrl(value);
+  }
+
+  /* ---- the one fetch. Never throws. ---- */
+  function call(method, path, body, headers) {
+    var h = { accept: "application/json" };
+    if (body !== undefined) h["content-type"] = "application/json";
+    if (headers) for (var k in headers) if (Object.prototype.hasOwnProperty.call(headers, k)) h[k] = headers[k];
+    var init = { method: method, headers: h, credentials: "same-origin" };
+    if (body !== undefined) init.body = JSON.stringify(body);
+    return fetch(path, init).then(function (res) {
+      return res.text().then(function (text) {
+        var json = null;
+        if (text) { try { json = JSON.parse(text); } catch (e) { json = null; } }
+        setOffline(false);
+        return { network: true, ok: res.ok, status: res.status, json: json };
+      });
+    }, function () {
+      setOffline(true);
+      return { network: false, ok: false, status: 0, json: null };
+    });
+  }
+
+  var offline = false;
+  function setOffline(v) {
+    if (offline === v) return;
+    offline = v;
+    show("bn-offline", v);
+    var p = $("pulse");
+    if (p) p.setAttribute("data-up", v ? "0" : "1");
+    setText("pulse-t", v ? "not connected" : "live");
+  }
+
+  function messageOf(r, fallback) {
+    if (!r.network) return "The server is not answering. Check the connection, then try again.";
+    var e = r.json && r.json.error;
+    if (e && e.code === "CONFIG_INVALID") return "Xaman is not set up on this server yet, so nobody can sign in.";
+    if (r.status === 404 && !(e && e.message)) return "The vendor counter is not available on this server.";
+    if (e && e.message) return String(e.message);
+    return fallback || "That did not go through. Try again.";
+  }
+
+  function flash(hostId, tone, text) {
+    var host = $(hostId);
+    if (!host) return;
+    clear(host);
+    if (!text) return;
+    var f = node("div", "flash" + (tone === "warn" ? " flash--warn" : ""), text);
+    f.setAttribute("role", tone === "warn" ? "status" : "alert");
+    host.appendChild(f);
+  }
+
+  var VIEWS = ["view-boot", "view-signin", "view-counter"];
+  function showView(id, focusId) {
+    for (var i = 0; i < VIEWS.length; i++) show(VIEWS[i], VIEWS[i] === id);
+    if (focusId) { var f = $(focusId); if (f) f.focus(); }
+  }
+
+
+  /* ======================================================================
+     SIGNING IN
+
+     Not opened in Xaman automatically, unlike the attendee's pass: a counter
+     is often a tablet on a table, with Xaman on the phone in the vendor's
+     pocket. The code is always shown, and "open it here" is a choice.
+     ====================================================================== */
+
+  function toSignIn(note) {
+    stopPolling();
+    app.me = null;
+    app.vendorId = null;
+    app.orders = [];
+    app.sig = null;
+    showView("view-signin", "signin-h");
+    paintSignIn();
+    flash("signin-flash", "warn", note || "");
+    if (app.signin) startSignInPoll();
+  }
+
+  function startSignIn() {
+    flash("signin-flash", "", "");
+    var btn = $("btn-signin");
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    call("POST", "/api/vendor/signin", { returnUrl: { web: location.origin + "/vendor" } }).then(function (r) {
+      btn.disabled = false;
+      btn.removeAttribute("aria-busy");
+      if (!r.ok || !r.json || !r.json.uuid) {
+        flash("signin-flash", "bad", messageOf(r, "The sign-in could not be started. Try again."));
+        return;
+      }
+      app.signin = r.json;
+      try { sessionStorage.setItem(SS_SIGNIN, JSON.stringify(r.json)); } catch (e) { /* private mode */ }
+      paintSignIn();
+      startSignInPoll();
+    });
+  }
+
+  /** Back from Xaman on the same device: carry on with the sign-in it was showing. */
+  function resumeSignIn() {
+    var saved = null;
+    try { saved = JSON.parse(sessionStorage.getItem(SS_SIGNIN) || "null"); } catch (e) { saved = null; }
+    if (!saved || !saved.uuid) return;
+    if (saved.expiresAt && Date.parse(saved.expiresAt) <= Date.now()) { forgetSignIn(); return; }
+    app.signin = saved;
+    paintSignIn();
+    startSignInPoll();
+  }
+
+  function forgetSignIn() {
+    app.signin = null;
+    stopSignInPoll();
+    try { sessionStorage.removeItem(SS_SIGNIN); } catch (e) { /* private mode */ }
+  }
+
+  function paintSignIn() {
+    var s = app.signin;
+    show("signin-idle", !s);
+    show("signin-live", !!s);
+    if (!s) return;
+    var qr = safeImage(s.qrPng);
+    var img = $("signin-qr");
+    show("signin-qr-box", !!qr);
+    if (qr && img.getAttribute("src") !== qr) img.setAttribute("src", qr);
+    var href = safeDeeplink(s.deeplink);
+    var open = $("signin-open");
+    open.hidden = !href;
+    if (href) open.href = href;
+    paintSignInClock();
+  }
+
+  function paintSignInClock() {
+    var s = app.signin;
+    var t = s && s.expiresAt ? Date.parse(s.expiresAt) : NaN;
+    if (!isFinite(t)) { setText("signin-clock", ""); return; }
+    var left = Math.max(0, Math.round((t - Date.now()) / 1000));
+    setText("signin-clock", Math.floor(left / 60) + ":" + ("0" + (left % 60)).slice(-2) + " left");
+  }
+
+  function startSignInPoll() {
+    stopSignInPoll();
+    if (!app.signin || document.hidden) return;
+    pollSignIn();
+    app.signinTimer = setInterval(pollSignIn, SIGNIN_POLL_MS);
+    app.signinClock = setInterval(paintSignInClock, 1000);
+  }
+  function stopSignInPoll() {
+    if (app.signinTimer) { clearInterval(app.signinTimer); app.signinTimer = null; }
+    if (app.signinClock) { clearInterval(app.signinClock); app.signinClock = null; }
+  }
+
+  function pollSignIn() {
+    var s = app.signin;
+    if (!s || app.signinInFlight) return;
+    if (s.expiresAt && Date.parse(s.expiresAt) <= Date.now()) {
+      forgetSignIn();
+      paintSignIn();
+      flash("signin-flash", "warn", "That sign-in timed out. Start a new one.");
+      return;
+    }
+    app.signinInFlight = true;
+    call("GET", "/api/vendor/signin/" + encodeURIComponent(s.uuid)).then(function (r) {
+      app.signinInFlight = false;
+      if (!app.signin || app.signin.uuid !== s.uuid) return;
+      if (!r.ok) {
+        if (r.status === 404) {
+          forgetSignIn();
+          paintSignIn();
+          flash("signin-flash", "warn", "That sign-in is no longer there. Start a new one.");
+        }
+        return;   /* anything else: the next tick asks again */
+      }
+      var j = r.json || {};
+      if (j.signed) { finishSignIn(s.uuid); return; }
+      if (j.rejected) {
+        forgetSignIn();
+        paintSignIn();
+        flash("signin-flash", "warn", "The sign-in was declined, or it timed out in Xaman. Start a new one.");
+      }
+    });
+  }
+
+  function finishSignIn(uuid) {
+    stopSignInPoll();
+    call("POST", "/api/vendor/session", { signinUuid: uuid }).then(function (r) {
+      forgetSignIn();
+      if (r.ok && r.json) { signedIn(r.json); return; }
+      paintSignIn();
+      flash("signin-flash", "bad", messageOf(r, "The sign-in could not be finished. Start a new one."));
+    });
+  }
+
+  function signOut() {
+    var b = $("btn-out");
+    b.disabled = true;
+    call("POST", "/api/vendor/logout").then(function (r) {
+      b.disabled = false;
+      forgetSignIn();
+      toSignIn(r.ok ? "" : "Signed out here, but the server did not confirm it. Close this tab to be sure.");
+    });
+  }
+
+
+  /* ======================================================================
+     THE COUNTER
+     ====================================================================== */
+
+  function signedIn(me) {
+    app.me = me;
+    var vendors = me.vendors || [];
+    showView("view-counter");
+    setText("counter-wallet", short(me.address, 6, 4));
+    $("counter-wallet").title = me.address || "";
+
+    if (!vendors.length) {
+      stopPolling();
+      app.vendorId = null;
+      setText("counter-h", "No counter");
+      setText("counter-event", "This wallet is not a vendor at any event here any more.");
+      show("counter-status", false);
+      show("counter-body", false);
+      show("counters", false);
+      clear($("counter-banner"));
+      $("counter-h").focus();
+      return;
+    }
+
+    var saved = null;
+    try { saved = localStorage.getItem(LS_COUNTER); } catch (e) { saved = null; }
+    var pick = null, live = null;
+    for (var i = 0; i < vendors.length; i++) {
+      if (vendors[i].id === saved) pick = vendors[i];
+      if (!live && vendors[i].eventStatus === "live") live = vendors[i];
+    }
+    chooseCounter((pick || live || vendors[0]).id);
+    $("counter-h").focus();
+  }
+
+  function counterById(id) {
+    var vs = (app.me && app.me.vendors) || [];
+    for (var i = 0; i < vs.length; i++) if (vs[i].id === id) return vs[i];
+    return null;
+  }
+
+  function chooseCounter(id) {
+    app.vendorId = id;
+    try { localStorage.setItem(LS_COUNTER, id); } catch (e) { /* private mode */ }
+    app.vendor = null;
+    app.orders = [];
+    app.counts = null;
+    app.seen = null;
+    app.fresh = {};
+    app.errors = {};
+    app.sig = null;
+    app.tab = "todo";
+    show("counter-body", true);
+    flash("orders-flash", "", "");
+    paintHead();
+    paintCounters();
+    paintOrders();
+    startPolling();
+  }
+
+  var STATUS_WORDS = { live: "Live", open: "Not started", draft: "Not started", closed: "Over" };
+
+  function paintHead() {
+    var v = app.vendor || counterById(app.vendorId);
+    setText("counter-h", v ? v.name : "—");
+    setText("counter-event", v ? v.eventName : "");
+    var st = v && v.eventStatus;
+    var pill = $("counter-status");
+    pill.hidden = !st || !STATUS_WORDS[st];
+    pill.className = "pill pill--" + (st || "none");
+    pill.textContent = STATUS_WORDS[st] || "";
+    document.title = (v ? v.name + " · " : "") + "Vendor counter";
+
+    var host = $("counter-banner");
+    clear(host);
+    var say = "";
+    if (v && v.active === false) say = "The organiser has taken this counter off the store, so no new orders can come in.";
+    else if (st === "closed") say = "This event is over, so no new orders can come in.";
+    else if (st && st !== "live") say = "This event has not started. Orders come in once it is live.";
+    if (!say) return;
+    var b = node("div", "banner banner--quiet");
+    b.appendChild(node("p", null, say));
+    host.appendChild(b);
+  }
+
+  function paintCounters() {
+    var vs = (app.me && app.me.vendors) || [];
+    var host = $("counters");
+    clear(host);
+    host.hidden = vs.length < 2;
+    if (vs.length < 2) return;
+    for (var i = 0; i < vs.length; i++) {
+      (function (v) {
+        var b = node("button", "counter");
+        b.type = "button";
+        b.setAttribute("aria-pressed", v.id === app.vendorId ? "true" : "false");
+        b.appendChild(node("b", null, v.name));
+        b.appendChild(node("span", null, v.eventName));
+        b.addEventListener("click", function () { if (v.id !== app.vendorId) chooseCounter(v.id); });
+        host.appendChild(b);
+      })(vs[i]);
+    }
+  }
+
+  function startPolling() {
+    stopPolling();
+    if (!app.vendorId) return;
+    /* One read whatever the tab is doing, so a counter opened in the
+       background is never blank when somebody looks at it; no repeating
+       poll until somebody does. */
+    loadOrders();
+    if (document.hidden) return;
+    app.timer = setInterval(loadOrders, POLL_MS);
+  }
+  function stopPolling() {
+    if (app.timer) { clearInterval(app.timer); app.timer = null; }
+  }
+
+  function loadOrders() {
+    if (app.inFlight || !app.vendorId) return;
+    var id = app.vendorId;
+    app.inFlight = true;
+    call("GET", "/api/vendor/orders?vendorId=" + encodeURIComponent(id) + "&status=paid").then(function (r) {
+      app.inFlight = false;
+      if (app.vendorId !== id) return;
+      if (r.status === 401) { toSignIn("You were signed out. Sign in again to see your orders."); return; }
+      if (r.status === 403) {
+        stopPolling();
+        flash("orders-flash", "bad", messageOf(r));
+        return;
+      }
+      if (!r.ok || !r.json) return;   /* the offline banner says so; the next tick tries again */
+
+      var j = r.json;
+      var orders = j.orders || [];
+      var ids = {};
+      var arrived = [];
+      for (var i = 0; i < orders.length; i++) {
+        ids[orders[i].id] = true;
+        if (app.seen && !app.seen[orders[i].id]) {
+          app.fresh[orders[i].id] = true;
+          arrived.push(orders[i]);
+        }
+      }
+      app.seen = ids;
+
+      var sig = JSON.stringify([orders, j.counts, j.vendor]);
+      if (sig === app.sig) return;
+      app.sig = sig;
+      app.orders = orders;
+      app.counts = j.counts || null;
+      app.vendor = j.vendor || null;
+      paintHead();
+      paintOrders();
+      if (arrived.length) {
+        setText("announce", arrived.length === 1
+          ? "New order " + orderCode(arrived[0].id) + ": " + arrived[0].quantity + " " + arrived[0].itemName
+          : arrived.length + " new orders");
+      }
+    });
+  }
+
+  function paintOrders() {
+    var todo = [], done = [];
+    for (var i = 0; i < app.orders.length; i++) {
+      var o = app.orders[i];
+      if (o.status !== "paid") continue;
+      (o.handedOverAt ? done : todo).push(o);
+    }
+    /* First paid, first served. The latest hand-over first, where an undo is wanted. */
+    todo.sort(function (a, b) { return (Date.parse(a.paidAt) || 0) - (Date.parse(b.paidAt) || 0); });
+    done.sort(function (a, b) { return (Date.parse(b.handedOverAt) || 0) - (Date.parse(a.handedOverAt) || 0); });
+
+    var read = app.sig !== null;
+    var c = app.counts;
+    setText("n-todo", c ? String(c.toHandOver) : read ? String(todo.length) : "—");
+    setText("n-done", c ? String(c.handedOver) : read ? String(done.length) : "—");
+    $("tab-todo").setAttribute("aria-selected", app.tab === "todo" ? "true" : "false");
+    $("tab-done").setAttribute("aria-selected", app.tab === "done" ? "true" : "false");
+
+    var list = app.tab === "todo" ? todo : done;
+    var host = $("orders");
+    clear(host);
+    for (var k = 0; k < list.length; k++) host.appendChild(ticket(list[k]));
+    app.fresh = {};
+
+    var empty = $("orders-empty");
+    if (!read) { empty.hidden = true; return; }
+    empty.hidden = list.length > 0;
+    empty.textContent = app.tab === "todo"
+      ? (done.length ? "Everything is handed over." : "No paid orders yet.")
+      : "Nothing handed over yet.";
+  }
+
+  function ticket(o) {
+    var done = !!o.handedOverAt;
+    var busy = !!app.busy[o.id];
+    var t = node("article", "ticket" + (app.fresh[o.id] ? " ticket--new" : ""));
+    t.setAttribute("data-done", done ? "1" : "0");
+
+    var top = node("div", "ticket__top");
+    top.appendChild(node("span", "ticket__code", orderCode(o.id)));
+    top.appendChild(node("span", "ticket__time", done ? "handed over " + clockOf(o.handedOverAt) : "paid " + clockOf(o.paidAt)));
+    t.appendChild(top);
+
+    var what = node("div", "ticket__what");
+    what.appendChild(node("span", "ticket__qty", o.quantity + " ×"));
+    what.appendChild(document.createTextNode(" " + o.itemName));
+    t.appendChild(what);
+
+    var meta = node("div", "ticket__meta");
+    meta.appendChild(document.createTextNode(o.amountXrp + " XRP · from "));
+    var tail = node("b", null, "…" + String(o.buyerAddress || "").slice(-4));
+    tail.title = o.buyerAddress || "";
+    meta.appendChild(tail);
+    t.appendChild(meta);
+
+    t.appendChild(node("div", "ticket__tear"));
+
+    if (!done) {
+      var go = node("button", "btn btn--go ticket__go", busy ? "Recording…" : "Mark handed over");
+      go.type = "button";
+      go.disabled = busy;
+      go.setAttribute("aria-busy", busy ? "true" : "false");
+      go.setAttribute("aria-label", "Mark order " + orderCode(o.id) + " handed over");
+      go.addEventListener("click", function () { handOver(o, true); });
+      t.appendChild(go);
+    } else {
+      var undo = node("button", "btn btn--ghost ticket__undo", busy ? "Undoing…" : "Undo");
+      undo.type = "button";
+      undo.disabled = busy;
+      undo.setAttribute("aria-label", "Undo the hand-over of order " + orderCode(o.id));
+      undo.addEventListener("click", function () { handOver(o, false); });
+      t.appendChild(undo);
+    }
+    if (app.errors[o.id]) t.appendChild(node("p", "ticket__err", app.errors[o.id]));
+    return t;
+  }
+
+  function handOver(o, value) {
+    if (app.busy[o.id]) return;
+    app.busy[o.id] = true;
+    delete app.errors[o.id];
+    paintOrders();
+    call("POST", "/api/vendor/orders/" + encodeURIComponent(o.id) + "/handover",
+      { handedOver: value }, { "x-poap-vendor": "1" }).then(function (r) {
+      delete app.busy[o.id];
+      if (r.status === 401) { toSignIn("You were signed out. Sign in again to carry on."); return; }
+      if (r.ok && r.json && r.json.purchase) {
+        var next = r.json.purchase;
+        for (var i = 0; i < app.orders.length; i++) {
+          if (app.orders[i].id === o.id) app.orders[i] = next;
+        }
+        var was = !!o.handedOverAt, now = !!next.handedOverAt;
+        if (app.counts && was !== now) {
+          app.counts.handedOver += now ? 1 : -1;
+          app.counts.toHandOver += now ? -1 : 1;
+        }
+        app.sig = "local";   /* whatever the next read says is painted */
+        paintOrders();
+        return;
+      }
+      app.errors[o.id] = messageOf(r, "That was not recorded. Try again.");
+      paintOrders();
+    });
+  }
+
+
+  /* ======================================================================
+     BOOT
+     ====================================================================== */
+
+  function boot() {
+    $("btn-signin").addEventListener("click", startSignIn);
+    $("btn-signin-again").addEventListener("click", function () {
+      forgetSignIn();
+      paintSignIn();
+      startSignIn();
+    });
+    $("btn-out").addEventListener("click", signOut);
+    $("tab-todo").addEventListener("click", function () { app.tab = "todo"; paintOrders(); });
+    $("tab-done").addEventListener("click", function () { app.tab = "done"; paintOrders(); });
+
+    call("GET", "/api/vendor/me").then(function (r) {
+      if (r.ok && r.json) { forgetSignIn(); signedIn(r.json); return; }
+      showView("view-signin");
+      paintSignIn();
+      if (r.status !== 401) {
+        flash("signin-flash", "bad", messageOf(r));
+        if (r.status === 404) { $("btn-signin").disabled = true; return; }
+      }
+      resumeSignIn();
+    });
+  }
+
+  /* Nothing polls in a background tab; coming back reads straight away. */
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) { stopPolling(); stopSignInPoll(); return; }
+    if (app.me && app.vendorId) startPolling();
+    else if (app.signin) startSignInPoll();
+  });
+
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", boot);
+  else boot();
+})();
+</script>
+</body>
+</html>

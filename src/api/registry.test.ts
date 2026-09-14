@@ -42,7 +42,7 @@ function testConfig(): AppConfig {
     network: "testnet",
     issuerAddress: ISSUER,
     issuerSeed: "sEdV6Xn3bRq9J2wY4tK8mZpL1cH7dQa",
-    sponsor: { enabled: false, amountXrp: "1.5", dailyCapXrp: "50" },
+    reward: { maxPerAttendeeXrp: "10", feeBufferXrp: "0.01" },
     pinata: { gateway: "https://gateway.pinata.cloud" },
     xumm: {},
     demoEnabled: false,

@@ -683,6 +683,113 @@ body.dev .devtoggle{color:var(--signal); border-bottom-color:var(--signal)}
   *,*::before,*::after{animation-duration:.001ms !important; animation-iteration-count:1 !important; transition-duration:.001ms !important}
 }
 
+/* ---- the store ------------------------------------------------------------
+   After the badge, the XRP that came with it. A second card under the ticket:
+   the pass is finished, and this is what the day offers next.
+
+   Prices are set like a menu board, name to the left and price to the right
+   with a dotted leader between. The one thing that has to be unmistakable is
+   the order code on a receipt, because somebody behind a counter reads it off
+   this phone.
+   -------------------------------------------------------------------------- */
+.shop{
+  margin:18px 0 0; border:1px solid var(--rule); border-radius:16px;
+  background:var(--surface); box-shadow:var(--shadow); overflow:hidden;
+}
+.shop__hd{padding:20px 17px 16px}
+.shop__t{font-size:clamp(1.3rem,5.4vw,1.55rem); letter-spacing:-.028em}
+.purse{display:flex; align-items:baseline; gap:4px 9px; margin-top:10px; flex-wrap:wrap}
+.purse__n{font-size:clamp(2.1rem,9.5vw,2.6rem); font-weight:800; letter-spacing:-.035em; line-height:1; color:var(--ink)}
+.purse__n small{font-size:.4em; font-weight:700; letter-spacing:.02em; color:var(--ink-3); margin-left:6px}
+.purse__k{font-size:14.5px; font-weight:600; color:var(--ink-3)}
+.purse__note{font-size:14.5px; color:var(--ink-2); margin:10px 0 0}
+.shop__slot{padding:0 17px 16px}
+.shop__slot:empty{display:none}
+.shop .banner{margin:0}
+.shop .banner p{margin:0}
+.shop .err{margin-top:0}
+
+.stall{border-top:1px solid var(--rule); padding:15px 17px 6px}
+.stall__n{font-size:15px; font-weight:700; letter-spacing:-.012em; color:var(--ink); margin:0}
+.ware{padding:11px 0 13px; border-bottom:1px dotted var(--rule)}
+.ware:last-child{border-bottom:0}
+.ware__top{display:flex; align-items:baseline; gap:10px}
+.ware__n{font-size:16px; color:var(--ink); min-width:0; overflow-wrap:anywhere}
+.ware__top::after{content:""; order:1; flex:1 1 auto; min-width:16px; border-bottom:1px dotted var(--rule-2); transform:translateY(-4px)}
+.ware__p{order:2; font-family:var(--font-mono); font-size:14px; font-weight:500; color:var(--ink); white-space:nowrap}
+.ware__bottom{display:flex; align-items:center; gap:10px; margin-top:9px; flex-wrap:wrap}
+.ware__note{font-size:13.5px; color:var(--ink-3); margin-right:auto}
+.ware__note--out{color:var(--vermilion); font-weight:600}
+.ware[data-off="1"] .ware__n,.ware[data-off="1"] .ware__p{color:var(--ink-3)}
+.qty{display:inline-flex; align-items:center; border:1px solid var(--rule-2); border-radius:999px; background:var(--sunk)}
+.qty__b{
+  width:42px; height:42px; border:0; border-radius:999px; background:transparent; color:var(--ink);
+  font-family:var(--font-display); font-size:20px; line-height:1; cursor:pointer;
+}
+.qty__b:disabled{color:var(--ink-3); opacity:.45; cursor:not-allowed}
+.qty__b:focus-visible{outline:2px solid var(--jade); outline-offset:-2px}
+.qty__n{min-width:24px; text-align:center; font-family:var(--font-mono); font-size:15px; font-weight:600; color:var(--ink)}
+.ware__buy{
+  background:var(--ink); color:var(--paper); border:0; font-size:14.5px;
+  padding:10px 16px; min-height:44px; display:inline-flex; align-items:center; justify-content:center;
+}
+.ware__buy:hover:not(:disabled){filter:brightness(1.12)}
+
+.pay{border:1.5px solid var(--signal); border-radius:14px; background:var(--signal-wash); padding:16px 15px; text-align:center}
+.pay[data-state="expired"]{border-color:var(--rule-2); background:var(--sunk)}
+.pay__t{font-size:14px; font-weight:600; color:var(--signal)}
+.pay[data-state="expired"] .pay__t{color:var(--ink); font-size:17px}
+.pay__amt{font-size:clamp(2.2rem,10vw,2.8rem); font-weight:800; letter-spacing:-.035em; line-height:1.05; margin-top:4px; color:var(--ink)}
+.pay__amt small{font-size:.4em; font-weight:700; letter-spacing:.02em; color:var(--ink-3); margin-left:6px}
+.pay__sub{font-size:15px; color:var(--ink-2); margin:4px 0 14px}
+.pay .fold{text-align:left}
+.pay .ticker,.pay .retry{justify-content:center}
+.pay .clock{margin-left:0}
+.pay__fine{font-size:13px; color:var(--ink-3); margin:12px 0 0}
+
+.receipt{border:1.5px solid var(--jade); border-radius:14px; background:var(--surface); padding:15px 15px 14px; text-align:center}
+.receipt--new{animation:land .55s cubic-bezier(.2,.85,.25,1) both}
+.receipt[data-state="collected"]{border-color:var(--rule-2)}
+.receipt__hd{display:flex; justify-content:space-between; align-items:center; gap:10px}
+.receipt__stamp{font-size:13px; font-weight:700; color:var(--jade); background:var(--jade-wash); padding:3px 11px; border-radius:999px}
+.receipt[data-state="collected"] .receipt__stamp{color:var(--ink-3); background:var(--sunk)}
+.receipt__time{font-size:13px; font-weight:600; color:var(--ink-3)}
+.receipt__code{
+  font-family:var(--font-mono); font-size:clamp(2.5rem,13vw,3.3rem); font-weight:600;
+  letter-spacing:.12em; line-height:1.1; color:var(--ink); margin:14px 0 4px;
+}
+.receipt__what{font-size:18px; font-weight:700; letter-spacing:-.014em; color:var(--ink)}
+.receipt__say{font-size:14.5px; color:var(--ink-2); margin:6px 0 0}
+.receipt .crumbs{margin-top:14px; text-align:left}
+.receipt .retry{justify-content:center}
+
+.orders{border-top:1px solid var(--rule); padding:15px 17px 10px}
+.orders__t{font-size:15px; font-weight:700; letter-spacing:-.012em; margin:0 0 2px}
+.oline{
+  display:flex; align-items:center; gap:12px; width:100%; text-align:left;
+  background:none; border:0; border-bottom:1px dotted var(--rule); padding:11px 0;
+  font:inherit; color:inherit;
+}
+.oline:last-child{border-bottom:0}
+button.oline{cursor:pointer}
+button.oline:hover .oline__what{color:var(--jade)}
+button.oline:focus-visible{outline:2px solid var(--jade); outline-offset:2px; border-radius:6px}
+.oline__main{display:grid; gap:2px; min-width:0; flex:1}
+.oline__what{font-size:15px; color:var(--ink); overflow-wrap:anywhere}
+.oline__who{font-size:13px; font-weight:600; color:var(--ink-3)}
+.oline__side{display:grid; gap:4px; justify-items:end; flex:none}
+.oline__amt{font-family:var(--font-mono); font-size:13px; color:var(--ink)}
+.ochip{font-size:12px; font-weight:600; padding:2px 9px; border-radius:999px; white-space:nowrap}
+.ochip--ready{color:var(--jade); background:var(--jade-wash)}
+.ochip--done{color:var(--ink-3); background:var(--sunk)}
+.ochip--wait{color:var(--signal); background:var(--signal-wash)}
+@media (min-width:560px){
+  .shop__hd{padding:24px 26px 18px}
+  .shop__slot{padding:0 26px 18px}
+  .stall{padding:17px 26px 8px}
+  .orders{padding:17px 26px 12px}
+}
+
 /* ---- breadcrumb ----------------------------------------------------------
    Every page in the product carries the same trail, so "where am I and how do
    I get out" has one answer everywhere. Before this, these pages had no link
@@ -1058,6 +1165,26 @@ a{color:var(--jade)}
         <span class="bal" id="stub-bal">—</span>
       </div>
       <p class="stub__note" id="stub-note"></p>
+    </div>
+  </section>
+
+  <!-- ============ the store: what the XRP from the event can buy ============ -->
+  <section class="shop" id="shop" hidden aria-labelledby="shop-t">
+    <div class="shop__hd">
+      <h2 class="shop__t" id="shop-t">Spend your XRP</h2>
+      <div class="purse">
+        <span class="purse__n" id="purse-n">—</span>
+        <span class="purse__k" id="purse-k">to spend</span>
+      </div>
+      <p class="purse__note" id="purse-note" hidden></p>
+    </div>
+    <div class="shop__slot" id="shop-banner"></div>
+    <div class="shop__slot" id="shop-pay"></div>
+    <div class="shop__slot" id="shop-err"></div>
+    <div id="shop-stalls"></div>
+    <div class="orders" id="shop-orders" hidden>
+      <h3 class="orders__t">Your orders</h3>
+      <div id="shop-orders-list"></div>
     </div>
   </section>
 
@@ -1629,6 +1756,7 @@ a{color:var(--jade)}
     app.look = null; app.done = null; app.sawActivated = null;
     app.lastBalance = null; app.qrFor = null; app.pollFails = 0;
     app.hunting = false; app.huntTries = 0;
+    resetShop();
   }
 
   /* ---- tiny DOM helpers, the same shapes as the other two pages ---- */
@@ -2015,6 +2143,7 @@ a{color:var(--jade)}
     paintDock();
     /* Never leave a poll running for a face that is not on screen. */
     restartPolling();
+    if (name !== "done") closeShop();
     if (changed) window.scrollTo({ top: 0, behavior: "auto" });
   }
 
@@ -3364,6 +3493,7 @@ a{color:var(--jade)}
     paintArt("art-hero", "art-hero-img");
     paintStub();          /* the stub's "can this wallet receive a badge" line is spent */
     showFace("done");
+    openShop();
   }
 
 
@@ -3438,6 +3568,560 @@ a{color:var(--jade)}
     a.appendChild(num);
     if (e.description) a.appendChild(node("p", "pick__desc", String(e.description)));
     return a;
+  }
+
+
+  /* ======================================================================
+     N. THE STORE
+
+     Once the badge is theirs, the XRP the event gave them is theirs to spend
+     at the vendors, or to keep.
+
+     GET  /api/events/{eventId}/store                    who sells what, and what is left
+     GET  /api/events/{eventId}/store/wallets/{address}  what this wallet can spend, and its orders
+     POST /api/events/{eventId}/purchases                an order, and a Payment to approve
+     GET  /api/purchases/{purchaseId}                    has it been paid?
+
+     Nothing here moves money. An order asks the attendee to pay; only the
+     Payment they approve in their own Xaman does, and an order counts as paid
+     only once the ledger says so.
+     ====================================================================== */
+
+  var SHOP_REFRESH_MS = 6000;
+  var ORDER_POLL_MS = 2500;
+  var MAX_QTY = 20;
+
+  var shop = {
+    open: false,       /* the card belongs on screen: the done face, with a wallet */
+    store: null,       /* GET .../store */
+    wallet: null,      /* GET .../store/wallets/{address} */
+    qty: {},           /* itemId -> the quantity picked */
+    order: null,       /* {purchase, xaman}: the order being paid right now */
+    receipt: null,     /* a paid order, shown large so a counter can read it */
+    justPaid: null,
+    busyItem: null,    /* the item an order is being placed for */
+    timer: null,
+    orderTimer: null,
+    clock: null,
+    inFlight: false,
+    orderInFlight: false,
+    sig: null
+  };
+
+  function orderCode(id) { return String(id || "").replace(/-/g, "").slice(0, 6).toUpperCase(); }
+
+  /** Decimal XRP to drops, as a Number: exact below nine billion XRP. */
+  function toDrops(v) {
+    var m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(String(v == null ? "" : v).trim());
+    if (!m) return null;
+    return parseInt(m[1], 10) * 1000000 + parseInt(((m[2] || "") + "000000").slice(0, 6), 10);
+  }
+  function dropsXrp(d) {
+    var whole = Math.floor(d / 1000000);
+    var frac = ("000000" + (d % 1000000)).slice(-6).replace(/0+$/, "");
+    return frac ? whole + "." + frac : String(whole);
+  }
+
+  function storePath() { return "/api/events/" + encodeURIComponent(String(app.eventId)) + "/store"; }
+  function walletPath() { return storePath() + "/wallets/" + encodeURIComponent(String(app.address)); }
+
+  function openShop() {
+    if (!app.address || app.eventId === null) return;
+    shop.open = true;
+    if (!shop.order) {
+      /* Back from Xaman: the order this phone was paying for. */
+      var saved = ssJson(ssKey("order"));
+      if (saved && saved.purchase && saved.purchase.id) shop.order = saved;
+    }
+    loadShop();
+    startShopTimers();
+  }
+
+  function closeShop() {
+    if (!shop.open) return;
+    shop.open = false;
+    stopShopTimers();
+    shop.sig = null;
+    show("shop", false);
+  }
+
+  function resetShop() {
+    closeShop();
+    shop.store = null;
+    shop.wallet = null;
+    shop.qty = {};
+    shop.order = null;
+    shop.receipt = null;
+    shop.busyItem = null;
+    ssDel(ssKey("order"));
+  }
+
+  function startShopTimers() {
+    stopShopTimers();
+    if (!shop.open || document.hidden) return;
+    shop.timer = setInterval(loadShop, SHOP_REFRESH_MS);
+    if (shop.order && shop.order.purchase.status === "reserved") startOrderPoll();
+  }
+  function stopShopTimers() {
+    if (shop.timer) { clearInterval(shop.timer); shop.timer = null; }
+    stopOrderPoll();
+  }
+  function startOrderPoll() {
+    stopOrderPoll();
+    if (!shop.open || document.hidden || !shop.order) return;
+    pollOrder();
+    shop.orderTimer = setInterval(pollOrder, ORDER_POLL_MS);
+    shop.clock = setInterval(paintOrderClock, 1000);
+  }
+  function stopOrderPoll() {
+    if (shop.orderTimer) { clearInterval(shop.orderTimer); shop.orderTimer = null; }
+    if (shop.clock) { clearInterval(shop.clock); shop.clock = null; }
+  }
+
+  function loadShop() {
+    if (!shop.open || shop.inFlight || !app.address) return;
+    shop.inFlight = true;
+    Promise.all([call("GET", storePath()), call("GET", walletPath())]).then(function (both) {
+      shop.inFlight = false;
+      if (!shop.open) return;
+      var st = both[0], w = both[1];
+      if (st.status === 404 || w.status === 404) {
+        /* No store on this server, or none for this event: the card stays away. */
+        shop.store = null;
+        shop.wallet = null;
+      } else {
+        if (st.ok && st.json) shop.store = st.json;
+        if (w.ok && w.json) {
+          shop.wallet = w.json;
+          adoptFromWallet();
+        }
+      }
+      paintShop();
+    });
+  }
+
+  /** The wallet read carries every order, settled: bring the ones on screen up to date. */
+  function adoptFromWallet() {
+    var list = (shop.wallet && shop.wallet.purchases) || [];
+    for (var i = 0; i < list.length; i++) {
+      if (shop.order && list[i].id === shop.order.purchase.id) settleOrder(list[i], false);
+      if (shop.receipt && list[i].id === shop.receipt.id) shop.receipt = list[i];
+    }
+  }
+
+  function settleOrder(p, reload) {
+    if (!shop.order || !p || p.id !== shop.order.purchase.id) return;
+    shop.order.purchase = p;
+    if (p.status === "paid") {
+      stopOrderPoll();
+      shop.order = null;
+      ssDel(ssKey("order"));
+      shop.receipt = p;
+      shop.justPaid = p.id;
+      /* The balance just moved; read the wallet again to show it. */
+      if (reload) loadShop();
+      return;
+    }
+    if (p.status === "expired") stopOrderPoll();
+    ssSet(ssKey("order"), JSON.stringify(shop.order));
+  }
+
+  function pollOrder() {
+    if (!shop.order || shop.orderInFlight) return;
+    var id = shop.order.purchase.id;
+    if (shop.order.purchase.status !== "reserved") { stopOrderPoll(); return; }
+    shop.orderInFlight = true;
+    call("GET", "/api/purchases/" + encodeURIComponent(id)).then(function (r) {
+      shop.orderInFlight = false;
+      if (!shop.order || shop.order.purchase.id !== id) return;
+      if (r.status === 404) {
+        stopOrderPoll();
+        shop.order = null;
+        ssDel(ssKey("order"));
+        paintShop();
+        return;
+      }
+      if (!r.ok || !r.json || !r.json.purchase) return;   /* the next tick asks again */
+      settleOrder(r.json.purchase, true);
+      paintShop();
+    });
+  }
+
+  function placeOrder(item) {
+    if (shop.busyItem || shop.order || !app.address) return;
+    var qty = qtyFor(item);
+    shop.busyItem = item.id;
+    clearError("shop-err");
+    paintShop();
+    call("POST", "/api/events/" + encodeURIComponent(String(app.eventId)) + "/purchases", {
+      address: app.address,
+      itemId: String(item.id),
+      quantity: qty,
+      returnUrl: location.origin + location.pathname
+    }).then(function (r) {
+      shop.busyItem = null;
+      if (r.ok && r.json && r.json.purchase && r.json.xaman) {
+        shop.order = { purchase: r.json.purchase, xaman: r.json.xaman };
+        shop.receipt = null;
+        shop.qty[item.id] = 1;
+        ssSet(ssKey("order"), JSON.stringify(shop.order));
+        paintShop();
+        startOrderPoll();
+        /* One tap into Xaman, the same as the badge: a phone goes straight
+           there, a laptop shows the code to scan. */
+        var href = safeDeeplink(r.json.xaman.deeplink);
+        if (href && app.coarse) { window.location.assign(href); return; }
+        var pay = $("shop-pay");
+        if (pay && pay.scrollIntoView) pay.scrollIntoView({ block: "nearest" });
+        return;
+      }
+      paintShop();
+      showError("shop-err", r, { warn: r.status === 403 || r.status === 409 });
+      loadShop();
+    });
+  }
+
+  function spendableDrops() {
+    var a = shop.wallet && shop.wallet.account;
+    return a && a.activated ? toDrops(a.spendableXrp) : null;
+  }
+  /** The most of one item this wallet could order now: stock, money and the per-order cap. */
+  function maxFor(item) {
+    var price = toDrops(item.priceXrp);
+    var cap = MAX_QTY;
+    if (item.remaining !== null && item.remaining !== undefined) cap = Math.min(cap, item.remaining);
+    var spend = spendableDrops();
+    if (spend === null) return 0;
+    if (price) cap = Math.min(cap, Math.floor(spend / price));
+    return Math.max(0, cap);
+  }
+  function qtyFor(item) {
+    var q = shop.qty[item.id] || 1;
+    var max = maxFor(item);
+    if (max >= 1 && q > max) q = max;
+    return Math.max(1, q);
+  }
+
+  function paintShop() {
+    var host = $("shop");
+    if (!host) return;
+    var st = shop.store, w = shop.wallet;
+    var vendors = (st && st.vendors) || [];
+    var al = w && w.allowance;
+    var orders = (w && w.purchases) || [];
+    var visible = shop.open && !!st && !!w &&
+      (vendors.length > 0 || orders.length > 0 || !!shop.order || !!(al && toDrops(al.allowanceXrp) > 0));
+
+    /* Every poll lands here. Rebuilding an unchanged card would take a thumb's
+       target out from under it mid-tap, so an unchanged card is left alone. */
+    var sig = JSON.stringify([visible, st, w, shop.qty, shop.order, shop.receipt, shop.busyItem, app.coarse]);
+    if (sig === shop.sig) return;
+    shop.sig = sig;
+
+    host.hidden = !visible;
+    if (!visible) return;
+    setText("shop-t", vendors.length ? "Spend your XRP" : "Your XRP");
+    paintPurse();
+    paintShopBanner();
+    paintPay();
+    paintStalls();
+    paintOrders();
+  }
+
+  function paintPurse() {
+    var w = shop.wallet, a = w && w.account;
+    var n = $("purse-n");
+    clear(n);
+    if (a && a.activated) {
+      n.appendChild(document.createTextNode(fmtXrp(a.spendableXrp)));
+      n.appendChild(node("small", null, "XRP"));
+      setText("purse-k", "to spend");
+    } else {
+      n.appendChild(document.createTextNode("—"));
+      setText("purse-k", a ? "nothing to spend yet" : "reading your wallet");
+    }
+
+    var al = w && w.allowance;
+    var from = app.event && app.event.name ? app.event.name : "the organiser";
+    var note = "";
+    if (al && toDrops(al.allowanceXrp) > 0) {
+      if (al.status === "paid") note = al.allowanceXrp + " XRP from " + from + " is in your wallet. Spend it here, or keep it.";
+      else if (al.status === "in_flight") note = al.allowanceXrp + " XRP from " + from + " is on its way to your wallet.";
+      else note = "The " + al.allowanceXrp + " XRP from " + from + " has not reached your wallet yet. The desk can send it again.";
+    }
+    setText("purse-note", note);
+    show("purse-note", !!note);
+  }
+
+  function paintShopBanner() {
+    var host = $("shop-banner");
+    clear(host);
+    var st = shop.store, w = shop.wallet;
+    var selling = !!(st && (st.vendors || []).length);
+    var msg = "", tone = "quiet";
+    if (selling && !st.open) {
+      msg = st.status === "closed"
+        ? "The event is over, so the counters are closed. Your XRP stays yours."
+        : "The counters open when the event starts.";
+    } else if (selling && w && w.eligible === false) {
+      msg = w.reason || "This wallet cannot buy at this event.";
+      tone = "warn";
+    } else if (w && !w.account) {
+      msg = "We could not read your wallet just now. Trying again.";
+    }
+    if (!msg) return;
+    var b = node("div", "banner banner--" + tone);
+    var inner = node("div");
+    inner.appendChild(node("p", null, msg));
+    b.appendChild(inner);
+    host.appendChild(b);
+  }
+
+  function paintPay() {
+    var host = $("shop-pay");
+    clear(host);
+    if (shop.order) host.appendChild(orderSheet(shop.order));
+    else if (shop.receipt) host.appendChild(receiptCard(shop.receipt));
+  }
+
+  function orderSheet(o) {
+    var p = o.purchase, x = o.xaman || {};
+    var box = node("div", "pay");
+
+    if (p.status === "expired") {
+      box.setAttribute("data-state", "expired");
+      box.appendChild(node("div", "pay__t", "That order lapsed"));
+      box.appendChild(node("p", "pay__sub", "Nothing was paid, and " + p.itemName + " went back on sale."));
+      var done = node("button", "btn btn--quiet", "Close");
+      done.type = "button";
+      done.addEventListener("click", function () {
+        shop.order = null;
+        ssDel(ssKey("order"));
+        paintShop();
+      });
+      var dbar = node("div", "retry");
+      dbar.appendChild(done);
+      box.appendChild(dbar);
+      return box;
+    }
+
+    box.setAttribute("data-state", "waiting");
+    box.appendChild(node("div", "pay__t", "Pay " + p.vendorName));
+    var amt = node("div", "pay__amt");
+    amt.appendChild(document.createTextNode(fmtXrp(p.amountXrp)));
+    amt.appendChild(node("small", null, "XRP"));
+    box.appendChild(amt);
+    box.appendChild(node("p", "pay__sub", p.quantity + " × " + p.itemName));
+
+    var href = safeDeeplink(x.deeplink);
+    var qr = safeImage(x.qrPng);
+    if (app.coarse && href) {
+      var open = node("a", "btn btn--act", "Open Xaman to pay");
+      open.href = href;
+      open.rel = "noopener noreferrer";
+      box.appendChild(open);
+    }
+    if (qr) {
+      var holder = node(app.coarse ? "details" : "div", app.coarse ? "fold" : "");
+      if (app.coarse) holder.appendChild(node("summary", null, "Paying from another device? Show the code"));
+      var inner = node("div", app.coarse ? "fold__body" : "");
+      var scan = node("div", "scan");
+      var plate = node("div", "plate plate--png is-live");
+      var img = document.createElement("img");
+      img.src = qr;
+      img.alt = "A QR code holding the Xaman payment for this order";
+      img.width = 272;
+      img.height = 272;
+      plate.appendChild(img);
+      ["tl", "tr", "bl", "br"].forEach(function (c) { plate.appendChild(node("span", "bracket bracket--" + c)); });
+      scan.appendChild(plate);
+      scan.appendChild(node("p", "scan__cap", app.coarse
+        ? "Open Xaman on the other device and scan this."
+        : "Open Xaman on your phone and scan this. This page updates by itself."));
+      inner.appendChild(scan);
+      holder.appendChild(inner);
+      box.appendChild(holder);
+    }
+
+    var ticker = node("div", "ticker");
+    var watching = node("span", "watching");
+    watching.appendChild(node("span", "dot"));
+    watching.appendChild(node("span", null, "waiting for your payment"));
+    ticker.appendChild(watching);
+    var clock = node("span", "clock");
+    clock.id = "pay-clock";
+    ticker.appendChild(clock);
+    box.appendChild(ticker);
+
+    var bar = node("div", "retry");
+    if (!app.coarse && href) {
+      var here = node("a", "btn btn--quiet", "Xaman on this machine? Open it");
+      here.href = href;
+      here.target = "_blank";
+      here.rel = "noopener noreferrer";
+      bar.appendChild(here);
+    }
+    var cancel = node("button", "btn btn--quiet", "Cancel");
+    cancel.type = "button";
+    cancel.addEventListener("click", function () {
+      stopOrderPoll();
+      shop.order = null;
+      ssDel(ssKey("order"));
+      paintShop();
+    });
+    bar.appendChild(cancel);
+    box.appendChild(bar);
+    box.appendChild(node("p", "pay__fine", "Nothing is paid until you approve it in Xaman."));
+    setTimeout(paintOrderClock, 0);
+    return box;
+  }
+
+  function paintOrderClock() {
+    var el = $("pay-clock");
+    if (!el || !shop.order) return;
+    var exp = Date.parse((shop.order.xaman && shop.order.xaman.expiresAt) || shop.order.purchase.expiresAt);
+    clear(el);
+    if (!isFinite(exp)) return;
+    var left = Math.max(0, Math.round((exp - Date.now()) / 1000));
+    el.appendChild(node("b", null, Math.floor(left / 60) + ":" + ("0" + (left % 60)).slice(-2)));
+    el.appendChild(document.createTextNode(" left"));
+  }
+
+  function receiptCard(p) {
+    var collected = !!p.handedOverAt;
+    var box = node("div", "receipt" + (shop.justPaid === p.id ? " receipt--new" : ""));
+    shop.justPaid = null;
+    box.setAttribute("data-state", collected ? "collected" : "paid");
+
+    var hd = node("div", "receipt__hd");
+    hd.appendChild(node("span", "receipt__stamp", collected ? "Collected" : "Paid"));
+    hd.appendChild(node("span", "receipt__time", fmtStamp(collected ? p.handedOverAt : p.paidAt)));
+    box.appendChild(hd);
+    box.appendChild(node("div", "receipt__code", orderCode(p.id)));
+    box.appendChild(node("div", "receipt__what", p.quantity + " × " + p.itemName));
+    box.appendChild(node("p", "receipt__say", collected
+      ? "Handed over at the " + p.vendorName + " counter."
+      : "Show this at the " + p.vendorName + " counter."));
+
+    var rows = node("div", "crumbs");
+    rows.appendChild(row("Paid", fmtXrp(p.amountXrp) + " XRP to " + p.vendorName, { prose: true }));
+    if (p.txHash) rows.appendChild(row("Payment", p.txHash, { copy: true, explore: true, ok: true }));
+    rows.appendChild(row("order id", p.id, { dev: true }));
+    box.appendChild(rows);
+
+    var close = node("button", "btn btn--quiet", "Close");
+    close.type = "button";
+    close.addEventListener("click", function () {
+      shop.receipt = null;
+      paintShop();
+    });
+    var bar = node("div", "retry");
+    bar.appendChild(close);
+    box.appendChild(bar);
+    return box;
+  }
+
+  function paintStalls() {
+    var host = $("shop-stalls");
+    clear(host);
+    var st = shop.store, w = shop.wallet;
+    var vendors = (st && st.vendors) || [];
+    var canBuy = !!(st && st.open && w && w.eligible && w.account && w.account.activated);
+    for (var i = 0; i < vendors.length; i++) {
+      var v = vendors[i];
+      var stall = node("section", "stall");
+      stall.appendChild(node("h3", "stall__n", v.name));
+      for (var k = 0; k < v.items.length; k++) stall.appendChild(wareRow(v.items[k], canBuy));
+      host.appendChild(stall);
+    }
+  }
+
+  function wareRow(item, canBuy) {
+    var price = toDrops(item.priceXrp) || 0;
+    var max = maxFor(item);
+    var q = qtyFor(item);
+    var afford = max >= 1;
+    var row0 = node("div", "ware");
+    row0.setAttribute("data-off", (item.soldOut || !canBuy || !afford) ? "1" : "0");
+
+    var top = node("div", "ware__top");
+    top.appendChild(node("span", "ware__n", item.name));
+    top.appendChild(node("span", "ware__p", fmtXrp(item.priceXrp) + " XRP"));
+    row0.appendChild(top);
+
+    var bottom = node("div", "ware__bottom");
+    var note = item.soldOut ? "Sold out"
+      : (canBuy && !afford) ? "More than you have"
+      : (item.remaining !== null && item.remaining !== undefined) ? item.remaining + " left"
+      : "";
+    bottom.appendChild(node("span", "ware__note" + (item.soldOut ? " ware__note--out" : ""), note));
+
+    if (!item.soldOut && canBuy && afford) {
+      var locked = !!shop.order || !!shop.busyItem;
+      var stepper = node("div", "qty");
+      var minus = node("button", "qty__b", "−");
+      minus.type = "button";
+      minus.setAttribute("aria-label", "One fewer");
+      minus.disabled = locked || q <= 1;
+      minus.addEventListener("click", function () { shop.qty[item.id] = Math.max(1, q - 1); paintShop(); });
+      var count = node("span", "qty__n", String(q));
+      count.setAttribute("aria-label", q + " " + item.name);
+      var plus = node("button", "qty__b", "+");
+      plus.type = "button";
+      plus.setAttribute("aria-label", "One more");
+      plus.disabled = locked || q >= max;
+      plus.addEventListener("click", function () { shop.qty[item.id] = Math.min(max, q + 1); paintShop(); });
+      stepper.appendChild(minus);
+      stepper.appendChild(count);
+      stepper.appendChild(plus);
+      bottom.appendChild(stepper);
+
+      var busy = shop.busyItem === item.id;
+      var buy = node("button", "btn ware__buy", busy ? "One moment…" : "Buy · " + dropsXrp(price * q) + " XRP");
+      buy.type = "button";
+      buy.disabled = locked;
+      buy.setAttribute("aria-busy", busy ? "true" : "false");
+      buy.addEventListener("click", function () { placeOrder(item); });
+      bottom.appendChild(buy);
+    }
+    row0.appendChild(bottom);
+    return row0;
+  }
+
+  function paintOrders() {
+    var list = $("shop-orders-list");
+    clear(list);
+    var orders = ((shop.wallet && shop.wallet.purchases) || []).filter(function (p) {
+      if (shop.order && p.id === shop.order.purchase.id) return false;   /* already on screen above */
+      return p.status !== "expired";
+    });
+    show("shop-orders", orders.length > 0);
+    for (var i = 0; i < orders.length; i++) list.appendChild(orderLine(orders[i]));
+  }
+
+  function orderLine(p) {
+    var paid = p.status === "paid";
+    var el = node(paid ? "button" : "div", "oline");
+    if (paid) {
+      el.type = "button";
+      el.addEventListener("click", function () {
+        shop.receipt = p;
+        paintShop();
+        var pay = $("shop-pay");
+        if (pay && pay.scrollIntoView) pay.scrollIntoView({ block: "nearest" });
+      });
+    }
+    var main = node("span", "oline__main");
+    main.appendChild(node("span", "oline__what", p.quantity + " × " + p.itemName));
+    main.appendChild(node("span", "oline__who", p.vendorName + (paid ? " · " + orderCode(p.id) : "")));
+    el.appendChild(main);
+    var side = node("span", "oline__side");
+    side.appendChild(node("span", "oline__amt", fmtXrp(p.amountXrp) + " XRP"));
+    var tone = !paid ? "wait" : p.handedOverAt ? "done" : "ready";
+    side.appendChild(node("span", "ochip ochip--" + tone,
+      !paid ? "Waiting for payment" : p.handedOverAt ? "Collected" : "Ready to collect"));
+    el.appendChild(side);
+    return el;
   }
 
 
@@ -3631,9 +4315,11 @@ a{color:var(--jade)}
     if (document.hidden) {
       if (app.timer) { clearInterval(app.timer); app.timer = null; }
       if (app.tick) { clearInterval(app.tick); app.tick = null; }
+      stopShopTimers();
       paintWatching();
     } else {
       restartPolling();
+      if (shop.open) { loadShop(); startShopTimers(); }
     }
   });
 

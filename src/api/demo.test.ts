@@ -19,7 +19,7 @@ import { Wallet } from "xrpl";
 import { describe, expect, it, vi } from "vitest";
 import { MockGateway } from "../../test/helpers/mock-gateway.js";
 import type { AppConfig } from "../config.js";
-import { AccountNotFoundError, ConfigError, SponsorshipDeniedError } from "../errors.js";
+import { AccountNotFoundError, ConfigError } from "../errors.js";
 import { renderBadgeArt } from "../metadata/badge-art.js";
 import { artLabel } from "../metadata/badge-uri-resolver.js";
 import {
@@ -30,9 +30,6 @@ import {
   type ClaimRecord,
   type ClaimRepository,
   type EventId,
-  type SponsorLedger,
-  type SponsorReservation,
-  type SponsorReserveInput,
 } from "../types.js";
 import {
   BASE_RESERVE_XRP,
@@ -100,7 +97,6 @@ const DEMO_ROUTES = [
   ["GET", `/demo/wallet/${ISSUER}/status`],
   ["POST", `/demo/wallet/${ISSUER}/accept`],
   ["GET", `/demo/lookup?address=${ISSUER}`],
-  ["POST", "/demo/sponsor"],
   ["GET", `/demo/art?address=${ISSUER}`],
 ] as const;
 
@@ -111,7 +107,7 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     network: "testnet",
     issuerAddress: ISSUER,
     issuerSeed: "sEdV6Xn3bRq9J2wY4tK8mZpL1cH7dQa",
-    sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" },
+    reward: { maxPerAttendeeXrp: "10", feeBufferXrp: "0.01" },
     pinata: { gateway: "https://gateway.pinata.cloud" },
     xumm: {},
     demoEnabled: false,
@@ -213,20 +209,6 @@ class FakeAttendanceRepository implements AttendanceRepository {
   }
 }
 
-class FakeSponsorLedger implements SponsorLedger {
-  async hasSponsored(_eventId: EventId, _address: string): Promise<boolean> {
-    return false;
-  }
-  async sponsoredTodayXrp(): Promise<string> {
-    return "0";
-  }
-  async reserve(_input: SponsorReserveInput): Promise<SponsorReservation | null> {
-    return null;
-  }
-  async confirm(_reservationId: string, _txHash: string): Promise<void> {}
-  async release(_reservationId: string): Promise<void> {}
-}
-
 /**
  * The real ledger operations, wired to explode. The demo must reach the chain
  * only through its own injected ops; anything that leaks into ChainOps fails
@@ -243,7 +225,11 @@ function unusedChainOps(): ChainOps {
     createClaimOffer: unused("createClaimOffer"),
     accountExists: unused("accountExists"),
     getAccountBalanceXrp: unused("getAccountBalanceXrp"),
-    sponsorWallet: unused("sponsorWallet"),
+    readAccount: unused("readAccount"),
+    payAllowance: unused("payAllowance"),
+    sweepTreasury: unused("sweepTreasury"),
+    verifyPurchasePayment: unused("verifyPurchasePayment"),
+    findPurchasePayment: unused("findPurchasePayment"),
     verifyClaim: unused("verifyClaim"),
     getRoster: unused("getRoster"),
   };
@@ -329,7 +315,6 @@ function makeDeps(
     gateway: new MockGateway({ issuerAddress: ISSUER }),
     attendance,
     claims,
-    sponsorLedger: new FakeSponsorLedger(),
     chain: { ...unusedChainOps(), ...options.chain },
     rateLimit: { enabled: false },
     // The real logger configuration from buildDeps(), pointed at an array, so
@@ -1424,8 +1409,8 @@ describe("GET /demo/lookup", () => {
       balanceXrp: "0",
       needsSponsorship: true,
       reserveShortfallXrp: "1.2",
-      // What the sponsor would actually send, from the real SponsorConfig.
-      sponsorAmountXrp: "1.5",
+      // The demo's own event is not an event row, so it has no allowance to show.
+      allowance: null,
       claim: null,
       attended: false,
       alreadyHasBadge: false,
@@ -1497,120 +1482,6 @@ describe("GET /demo/lookup", () => {
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ valid: true, activated: true, balanceXrp: ISSUER_BALANCE });
-  });
-});
-
-// ---------------------------------------------------------------------------
-// POST /demo/sponsor
-// ---------------------------------------------------------------------------
-
-/** A sponsorWallet that answers however the test wants, and records its input. */
-function sponsorOps(impl: ChainOps["sponsorWallet"]) {
-  return { sponsorWallet: vi.fn<ChainOps["sponsorWallet"]>(impl) };
-}
-
-describe("POST /demo/sponsor", () => {
-  it("calls the REAL sponsorWallet, with the real config and the real ledger", async () => {
-    const chain = sponsorOps(async (_gateway, input) => ({
-      sponsored: true,
-      alreadyActivated: false,
-      address: input.address,
-      amountXrp: "1.5",
-      txHash: ACCEPT_TX,
-      ledgerIndex: 4_242_002,
-    }));
-    const h = harness({ chain });
-    const { address } = await newWallet(h);
-
-    const res = await h.app.inject({
-      method: "POST",
-      url: "/demo/sponsor",
-      payload: { address, eventId: h.state.eventId },
-    });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sponsored: true, alreadyActivated: false, amountXrp: "1.5", txHash: ACCEPT_TX });
-
-    // The guards are only real if the real ledger is passed: without it there
-    // is no duplicate check and no daily cap.
-    const call = chain.sponsorWallet.mock.calls[0]?.[1];
-    expect(call?.address).toBe(address);
-    expect(call?.eventId).toBe(h.state.eventId);
-    expect(call?.config).toBe(h.deps.config.sponsor);
-    expect(call?.ledger).toBe(h.deps.sponsorLedger);
-  });
-
-  it("reports an already-activated wallet without spending anything", async () => {
-    const chain = sponsorOps(async (_gateway, input) => ({
-      sponsored: false,
-      alreadyActivated: true,
-      address: input.address,
-    }));
-    const h = harness({ chain });
-
-    const res = await h.app.inject({
-      method: "POST",
-      url: "/demo/sponsor",
-      payload: { address: ISSUER, eventId: h.state.eventId },
-    });
-
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sponsored: false, alreadyActivated: true });
-  });
-
-  it("surfaces a refusal as a 403, with the kind the page needs", async () => {
-    for (const kind of ["duplicate", "disabled", "already_activated"] as const) {
-      const chain = sponsorOps(async () => {
-        throw new SponsorshipDeniedError(`refused: ${kind}`, kind, { address: ISSUER });
-      });
-      const h = harness({ chain });
-
-      const res = await h.app.inject({
-        method: "POST",
-        url: "/demo/sponsor",
-        payload: { address: ISSUER, eventId: h.state.eventId },
-      });
-
-      expect(res.statusCode, kind).toBe(403);
-      expect(res.json().error.code, kind).toBe("SPONSORSHIP_DENIED");
-      expect(res.json().error.details.kind, kind).toBe(kind);
-    }
-  });
-
-  it("surfaces the daily cap as a 429, because tomorrow it may pass", async () => {
-    const chain = sponsorOps(async () => {
-      throw new SponsorshipDeniedError("Daily sponsorship cap of 50 XRP would be exceeded", "daily_cap", {
-        amountXrp: "1.5",
-        dailyCapXrp: "50",
-        spentTodayXrp: "49",
-      });
-    });
-    const h = harness({ chain });
-
-    const res = await h.app.inject({
-      method: "POST",
-      url: "/demo/sponsor",
-      payload: { address: ISSUER, eventId: h.state.eventId },
-    });
-
-    // A throttle, not a refusal — and never a generic 500, or the volunteer
-    // learns nothing from watching the cap work.
-    expect(res.statusCode).toBe(429);
-    expect(res.json().error.code).toBe("SPONSORSHIP_DENIED");
-    expect(res.json().error.details).toMatchObject({ kind: "daily_cap", spentTodayXrp: "49" });
-  });
-
-  it("400s an address or event id that is not one", async () => {
-    const h = harness();
-
-    for (const payload of [
-      { address: NOT_AN_ADDRESS, eventId: 900_001 },
-      { address: ISSUER },
-      {},
-    ]) {
-      const res = await h.app.inject({ method: "POST", url: "/demo/sponsor", payload });
-      expect(res.statusCode, JSON.stringify(payload)).toBe(400);
-    }
   });
 });
 

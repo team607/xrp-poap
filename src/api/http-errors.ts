@@ -90,6 +90,8 @@ export const SENSITIVE_KEY_SUFFIXES = [
   "sessiontoken",
   // Xaman push credential; arrives in webhook bodies.
   "usertoken",
+  // TREASURY_MASTER_KEY, which opens every event's treasury.
+  "masterkey",
 ] as const;
 
 /** Sensitive on its own, but never as a suffix (see `nftokenId`). */
@@ -161,7 +163,10 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
   METADATA_INVALID: 400,
   NOT_FOUND: 404,
   DUPLICATE_CLAIM: 409,
-  SPONSORSHIP_DENIED: 403,
+  CONFLICT: 409,
+  // A payment the treasury will not make right now: already on its way, out of
+  // budget, or over the ceiling. See statusForXrplError for the one exception.
+  ALLOWANCE_DENIED: 409,
   TX_FAILED: 502,
   LEDGER_QUERY_FAILED: 502,
   CONNECTION_FAILED: 502,
@@ -173,10 +178,10 @@ const STATUS_BY_CODE: Record<ErrorCode, number> = {
 };
 
 export function statusForXrplError(error: XrplLayerError): number {
-  if (error.code === "SPONSORSHIP_DENIED") {
-    // The daily cap is a throttle, not a refusal: the same request may succeed
-    // tomorrow, so it is a 429 rather than a 403.
-    return error.details?.kind === "daily_cap" ? 429 : 403;
+  if (error.code === "ALLOWANCE_DENIED") {
+    // No treasury to pay from is a fact about the deployment, not about the
+    // request: nothing the caller changes makes it work, so it is a 503.
+    return error.details?.kind === "unavailable" ? 503 : 409;
   }
   return STATUS_BY_CODE[error.code] ?? 500;
 }

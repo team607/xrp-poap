@@ -1,6 +1,8 @@
 /**
  * In-memory stand-ins for every store in this layer: the attendance index, the
- * sponsor ledger, the claim slots, events, registrations and admin sessions.
+ * claim slots, events, registrations and admin sessions. The treasury and
+ * allowance stores keep their memory twins beside their Postgres versions, and
+ * are wired in by createMemoryStores() at the bottom of this file.
  *
  * These exist so the API layer and local dev run with no Postgres at all, and
  * so the unit suite never needs a database. They are not a toy: the observable
@@ -34,7 +36,7 @@
  * The same caveat as the real tables applies: the ledger is the source of
  * truth, this is only an index — and this one also dies with the process.
  */
-import { NotFoundError, SponsorshipDeniedError, XrplLayerError } from "../errors.js";
+import { NotFoundError, XrplLayerError } from "../errors.js";
 import type {
   AttendanceRecord,
   AttendanceRepository,
@@ -48,10 +50,8 @@ import type {
   RegistrationRepository,
   SessionRecord,
   SessionStore,
-  SponsorLedger,
-  SponsorReservation,
-  SponsorReserveInput,
 } from "../types.js";
+import { MemoryAllowanceLedger } from "./allowance-ledger.js";
 import { normalizePaging } from "./attendance-repo.js";
 import {
   assertNotRenumbering,
@@ -61,6 +61,7 @@ import {
   assertValidStatus,
   duplicateEventError,
   EVENT_PATCH_COLUMNS,
+  normalizeEventAmounts,
 } from "./event-repo.js";
 import {
   assertRegistrationAddress,
@@ -74,7 +75,10 @@ import {
   newSessionId,
   normalizeTtlMs,
 } from "./session-store.js";
-import { dropsToXrpString, xrpToDropsBigInt } from "./sponsor-ledger.js";
+import { MemoryPurchaseRepository } from "./purchase-repo.js";
+import { MemoryTreasuryRepository } from "./treasury-repo.js";
+import { MemoryVendorRepository } from "./vendor-repo.js";
+import { MemoryVendorSessionStore } from "./vendor-session-store.js";
 
 /** Mirrors ORDER BY claimed_at ASC, id ASC. */
 function byClaimedAtThenId(a: StoredAttendance, b: StoredAttendance): number {
@@ -210,135 +214,6 @@ export class MemoryAttendanceRepository implements AttendanceRepository {
   /** Test/dev affordance. Not part of AttendanceRepository. */
   clear(): void {
     this.rows.length = 0;
-    this.nextId = 1;
-  }
-}
-
-interface StoredSponsorship {
-  id: string;
-  eventId: EventId;
-  address: string;
-  drops: bigint;
-  /** Null until confirm() attaches the hash of a Payment that validated. */
-  txHash: string | null;
-  status: "reserved" | "confirmed";
-  sponsoredAt: Date;
-}
-
-/** Midnight UTC today, matching date_trunc('day', now() at time zone 'utc'). */
-function startOfUtcDay(now: Date): Date {
-  return new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
-  );
-}
-
-export class MemorySponsorLedger implements SponsorLedger {
-  private readonly entries: StoredSponsorship[] = [];
-  private nextId = 1;
-
-  /** Injectable clock so a cap-rollover test does not have to wait for midnight. */
-  constructor(private readonly now: () => Date = () => new Date()) {}
-
-  /** Reserved rows count: an in-flight sponsorship already owns the slot. */
-  async hasSponsored(eventId: EventId, address: string): Promise<boolean> {
-    return this.findSlot(eventId, address) !== undefined;
-  }
-
-  async sponsoredTodayXrp(): Promise<string> {
-    return dropsToXrpString(this.spentTodayDrops());
-  }
-
-  /**
-   * Books a spend. Mirrors PgSponsorLedger.reserve(), including the part that
-   * matters: the duplicate check, the cap sum and the insert happen in one
-   * synchronous run.
-   *
-   * The two `xrpToDropsBigInt` calls are deliberately hoisted above the check —
-   * they are synchronous, but keeping every input conversion before the
-   * critical section makes it obvious that nothing between the check and the
-   * push can yield.
-   */
-  async reserve(input: SponsorReserveInput): Promise<SponsorReservation | null> {
-    const drops = xrpToDropsBigInt(input.amountXrp);
-    const capDrops = xrpToDropsBigInt(input.dailyCapXrp);
-
-    // ---- no await from here to the push ------------------------------------
-    if (this.findSlot(input.eventId, input.address)) return null;
-    if (this.spentTodayDrops() + drops > capDrops) return null;
-
-    const id = String(this.nextId++);
-    this.entries.push({
-      id,
-      eventId: input.eventId,
-      address: input.address,
-      drops,
-      txHash: null,
-      status: "reserved",
-      sponsoredAt: this.now(),
-    });
-    // ---- end of critical section -------------------------------------------
-
-    return {
-      id,
-      eventId: input.eventId,
-      address: input.address,
-      amountXrp: dropsToXrpString(drops),
-    };
-  }
-
-  async confirm(reservationId: string, txHash: string): Promise<void> {
-    const row = this.entries.find((e) => e.id === reservationId);
-
-    if (row?.status === "reserved") {
-      // Stands in for the UNIQUE (tx_hash) index: one Payment is one
-      // sponsorship, across every event.
-      if (this.entries.some((e) => e.id !== reservationId && e.txHash === txHash)) {
-        throw new SponsorshipDeniedError(
-          `Payment ${txHash} is already recorded as a sponsorship.`,
-          "duplicate",
-          { constraint: "tx_hash", txHash, reservationId },
-        );
-      }
-      row.status = "confirmed";
-      row.txHash = txHash;
-      return;
-    }
-
-    // Confirming the same hash twice is a no-op, not a fault.
-    if (row?.status === "confirmed" && row.txHash === txHash) return;
-
-    throw new NotFoundError(
-      `Sponsorship reservation ${reservationId} is not open for confirmation. ` +
-        `Payment ${txHash} has landed and is no longer accounted for by the daily cap.`,
-      { reservationId, txHash },
-    );
-  }
-
-  /** Only ever deletes a reservation. A confirmed spend stays on the books. */
-  async release(reservationId: string): Promise<void> {
-    const at = this.entries.findIndex(
-      (e) => e.id === reservationId && e.status === "reserved",
-    );
-    if (at >= 0) this.entries.splice(at, 1);
-  }
-
-  private findSlot(eventId: EventId, address: string): StoredSponsorship | undefined {
-    return this.entries.find((e) => e.eventId === eventId && e.address === address);
-  }
-
-  /** Reserved and confirmed alike: money in flight is money spent. */
-  private spentTodayDrops(): bigint {
-    const cutoff = startOfUtcDay(this.now()).getTime();
-    let total = 0n;
-    for (const e of this.entries) {
-      if (e.sponsoredAt.getTime() >= cutoff) total += e.drops;
-    }
-    return total;
-  }
-
-  /** Test/dev affordance. Not part of SponsorLedger. */
-  clear(): void {
-    this.entries.length = 0;
     this.nextId = 1;
   }
 }
@@ -508,6 +383,10 @@ export class MemoryEventRepository implements EventRepository {
   async create(input: Omit<EventRecord, "createdAt" | "updatedAt">): Promise<EventRecord> {
     const status = input.status ?? "draft";
     assertValidEvent({ ...input, status });
+    const amounts = normalizeEventAmounts({
+      allowanceXrp: input.allowanceXrp ?? "0",
+      budgetXrp: input.budgetXrp ?? "0",
+    });
 
     // ---- no await from here to the set --------------------------------------
     if (this.rows.has(input.eventId)) throw duplicateEventError(input.eventId);
@@ -521,6 +400,8 @@ export class MemoryEventRepository implements EventRepository {
       venue: input.venue ?? null,
       metadataUri: input.metadataUri ?? null,
       status,
+      allowanceXrp: amounts.allowanceXrp,
+      budgetXrp: amounts.budgetXrp,
       createdAt: at,
       updatedAt: at,
     };
@@ -546,7 +427,8 @@ export class MemoryEventRepository implements EventRepository {
     // casts are the price of indexing two nominally different shapes — the
     // record and the patch — by one shared key.
     const target = row as unknown as Record<string, unknown>;
-    const source = patch as unknown as Record<string, unknown>;
+    // The same spelling Postgres reads back: "2.50" is stored as "2.5".
+    const source = normalizeEventAmounts(patch) as unknown as Record<string, unknown>;
     let touched = false;
     for (const key of Object.keys(EVENT_PATCH_COLUMNS)) {
       const value = source[key];
@@ -889,11 +771,15 @@ export class MemorySessionStore implements SessionStore {
 
 export interface MemoryStores {
   attendance: MemoryAttendanceRepository;
-  sponsor: MemorySponsorLedger;
   claims: MemoryClaimRepository;
   events: MemoryEventRepository;
   registrations: MemoryRegistrationRepository;
   sessions: MemorySessionStore;
+  treasuries: MemoryTreasuryRepository;
+  allowances: MemoryAllowanceLedger;
+  vendors: MemoryVendorRepository;
+  purchases: MemoryPurchaseRepository;
+  vendorSessions: MemoryVendorSessionStore;
 }
 
 /**
@@ -908,12 +794,24 @@ export interface MemoryStores {
 export function createMemoryStores(now: () => Date = () => new Date()): MemoryStores {
   const attendance = new MemoryAttendanceRepository();
   const events = new MemoryEventRepository(attendance, now);
+  // Purchases read an item's stock from the vendor store, and the vendor store
+  // asks purchases whether a row has orders before deleting it: the two
+  // foreign keys between vendor_items and purchases, in both directions.
+  const vendors = new MemoryVendorRepository(events, now);
+  const purchases = new MemoryPurchaseRepository(vendors, now);
+  vendors.bindOrders(purchases);
   return {
+    vendors,
+    purchases,
+    vendorSessions: new MemoryVendorSessionStore(now),
     attendance,
-    sponsor: new MemorySponsorLedger(now),
     claims: new MemoryClaimRepository(),
     events,
     registrations: new MemoryRegistrationRepository(events, now),
     sessions: new MemorySessionStore(now),
+    // Both carry a foreign key to events in 011, so both are handed the event
+    // store to check against.
+    treasuries: new MemoryTreasuryRepository(events, now),
+    allowances: new MemoryAllowanceLedger({ events, now }),
   };
 }

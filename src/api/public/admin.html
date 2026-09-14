@@ -315,7 +315,7 @@ code,pre,.mono{font-family:var(--font-mono)}
 
 /* ---------- forms ---------------------------------------------------------- */
 .form{display:grid; gap:clamp(13px,1.8vw,17px)}
-.field{display:grid; gap:5px; min-width:0}
+.field{display:grid; gap:5px; min-width:0; align-content:start}
 .field>label{ font-size:13px; color:var(--ink-3); font-weight:600}
 .field .req{color:var(--signal)}
 .in{
@@ -554,6 +554,81 @@ tr[data-draft="1"] .taxonno{color:var(--ink-3)}
 .j-bool{color:var(--j-bool)} .j-null{color:var(--j-null)}
 
 
+/* ---- the event picker ----------------------------------------------------
+   A text box in front of the event <select> on the cross-event lists. The
+   list opens under it and narrows as you type part of a name or an id.
+   ------------------------------------------------------------------------- */
+.pick{position:relative; display:inline-block; max-width:100%}
+.pick__in{
+  width:min(360px,100%); font-family:var(--font-display); text-overflow:ellipsis;
+  background-image:linear-gradient(45deg,transparent 50%,var(--ink-3) 50%),linear-gradient(135deg,var(--ink-3) 50%,transparent 50%);
+  background-position:calc(100% - 16px) calc(50% + 1px),calc(100% - 11px) calc(50% + 1px);
+  background-size:5px 5px,5px 5px; background-repeat:no-repeat; padding-right:32px;
+}
+.pick__list{
+  position:absolute; z-index:40; top:calc(100% + 6px); left:0;
+  min-width:100%; width:max-content; max-width:min(520px,calc(100vw - 40px));
+  max-height:min(340px,52vh); overflow-y:auto; margin:0; padding:6px; list-style:none;
+  background:var(--surface); border:1px solid var(--rule-2); border-radius:12px;
+  box-shadow:0 20px 44px -22px rgba(28,27,26,.42);
+}
+.pick__opt{display:flex; align-items:baseline; gap:14px; padding:8px 10px; border-radius:8px; cursor:pointer; font-size:14px; color:var(--ink-2)}
+.pick__opt.is-active{background:var(--surface-2); color:var(--ink)}
+.pick__opt[aria-selected="true"]{color:var(--ink); font-weight:600}
+.pick__n{min-width:0; overflow-wrap:anywhere}
+.pick__id{margin-left:auto; font-family:var(--font-mono); font-size:12px; font-weight:400; color:var(--ink-3)}
+.pick__none{padding:9px 10px; font-size:13.5px; color:var(--ink-3)}
+
+/* ---- money ---------------------------------------------------------------
+   An event's treasury, its vendors, and what they sold. Amounts sit in the
+   count face because they are the thing being read; everything around them
+   is the same card, table and pill vocabulary as the rest of the console.
+   ------------------------------------------------------------------------- */
+.treas{display:grid; gap:clamp(12px,1.6vw,16px)}
+.counts--money{grid-template-columns:repeat(auto-fit,minmax(150px,1fr))}
+.treas .counts--money{border:1px solid var(--rule); border-radius:12px; overflow:hidden}
+.counts--money .count__n{font-size:1.5rem; overflow-wrap:anywhere}
+.count__s{font-size:12px; color:var(--ink-3); margin-top:3px; min-height:1.2em}
+.tr-state{font-size:12.5px; font-weight:600; padding:3px 11px; border-radius:999px; white-space:nowrap; display:inline-block}
+.tr-state--ok{color:var(--jade); background:var(--jade-wash)}
+.tr-state--warn{color:var(--signal); background:var(--signal-wash)}
+.tr-state--bad{color:var(--vermilion); background:var(--vermilion-wash)}
+.tr-state--idle{color:var(--ink-3); background:var(--sunk)}
+table.t-allow{min-width:720px}
+.ostatus{font-family:var(--font-display); font-size:12.5px; font-weight:600; padding:3px 10px; border-radius:999px; white-space:nowrap; display:inline-block}
+.ostatus--paid{color:var(--jade); background:var(--jade-wash)}
+.ostatus--reserved{color:var(--signal); background:var(--signal-wash)}
+.ostatus--expired{color:var(--ink-3); background:var(--sunk)}
+.ocode{font-family:var(--font-mono); font-size:13px; font-weight:600; letter-spacing:.08em; color:var(--ink)}
+/* The second press of a two-step button. Loud on purpose: it is the moment
+   before something is removed or money leaves. */
+.btn[data-armed="1"]{background:var(--vermilion); border-color:var(--vermilion); color:var(--on-signal)}
+
+.vendor{border:1px solid var(--rule); border-radius:12px; background:var(--surface); overflow:hidden}
+.vendor + .vendor{margin-top:12px}
+.vendor__hd{display:flex; gap:8px 10px; align-items:center; flex-wrap:wrap; padding:10px 13px; background:var(--surface-2); border-bottom:1px solid var(--rule)}
+.vendor__n{font-size:15.5px; font-weight:700; letter-spacing:-.012em; color:var(--ink); overflow-wrap:anywhere}
+.vendor[data-active="0"] .vendor__n{color:var(--ink-3)}
+.vendor__edit,.additem{display:grid; gap:9px; align-items:end; padding:11px 13px}
+.vendor__edit{grid-template-columns:minmax(0,1fr) minmax(0,1.5fr) auto; background:var(--sunk); border-bottom:1px solid var(--rule)}
+.additem{grid-template-columns:minmax(0,1.6fr) minmax(0,.8fr) minmax(0,.8fr) auto; border-top:1px dashed var(--rule-2)}
+.vendor__acts,.additem__go{display:flex; gap:7px; align-items:center; padding-bottom:4px}
+.mini{display:grid; gap:4px; min-width:0}
+.mini__k{font-size:12.5px; font-weight:600; color:var(--ink-3)}
+.mini .in{padding:7px 10px; font-size:13px}
+.mini[data-bad="1"] .in{border-color:var(--vermilion); background:var(--vermilion-wash)}
+.in--text{font-family:var(--font-display); font-size:14px}
+@media (max-width:700px){ .vendor__edit,.additem{grid-template-columns:minmax(0,1fr)} }
+table.t-items{min-width:620px}
+.t-items td{vertical-align:middle}
+.t-items .td-name{font-size:14.5px}
+.t-items tr[data-active="0"] td{color:var(--ink-3)}
+.t-items .editrow td{background:var(--sunk)}
+.t-items .editrow .in{padding:6px 9px; font-size:13px}
+.td-sold{color:var(--vermilion); font-weight:600}
+table.t-sales{min-width:640px}
+table.t-orders{min-width:980px}
+
 /* ---- Ledger --------------------------------------------------------------
    The last word on type and accent. Plus Jakarta Sans carries less colour on
    the page than the serif it replaced, so headings take more weight and tighter
@@ -595,6 +670,7 @@ a{color:var(--jade)}
     <button type="button" id="nav-events" data-sect="events" aria-current="page"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Events</button>
     <button type="button" id="nav-regs" data-sect="regs"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M16 20v-2a4 4 0 00-4-4H7a4 4 0 00-4 4v2"/><circle cx="9.5" cy="7" r="3.5"/><path d="M19 8v6M22 11h-6"/></svg>Registrations</button>
     <button type="button" id="nav-badges" data-sect="badges"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 12l3 3 5-6"/></svg>Badges</button>
+    <button type="button" id="nav-sales" data-sect="sales"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M5 8h14l-1.2 12.2a1 1 0 01-1 .8H7.2a1 1 0 01-1-.8L5 8z"/><path d="M9 8V6.5a3 3 0 016 0V8"/></svg>Sales</button>
     <button type="button" id="nav-set" data-sect="set"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M17.7 6.3l-1.4 1.4M7.7 16.3l-1.4 1.4"/></svg>Settings</button>
   </div>
 
@@ -727,7 +803,7 @@ a{color:var(--jade)}
           event is minted under.</p>
       </div>
       <div class="head__act">
-        <button class="btn btn--tiny" id="btn-events-refresh" type="button">Refresh</button>
+        <button class="btn btn--ghost" id="btn-events-refresh" type="button">Refresh</button>
         <a class="btn btn--go" id="btn-new" href="#/new">New event</a>
       </div>
     </div>
@@ -873,6 +949,90 @@ a{color:var(--jade)}
     </div>
   </section>
 
+  <!-- ============ SALES — what the vendors took ============
+       Paid orders added up per counter, and every order under them. The event
+       picker narrows both, the same way it does on Registrations and Badges. -->
+  <section id="view-sales" hidden>
+    <div class="head">
+      <div style="min-width:0">
+        <h1 class="head__t" tabindex="-1" id="sales-h">Sales</h1>
+        <p class="sub">What attendees bought from the vendors. Every payment went straight to the vendor&rsquo;s own wallet.</p>
+      </div>
+      <div class="head__act">
+        <button class="btn btn--ghost" id="btn-sales-refresh" type="button">Refresh</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card__hd">
+        <span class="label">Filter</span>
+        <select class="in in--inline" id="sales-event" aria-label="Filter sales by event">
+          <option value="">All events</option>
+        </select>
+      </div>
+      <div class="counts counts--money">
+        <div class="count"><div class="count__n" id="sales-orders">&mdash;</div><div class="count__k">paid orders</div></div>
+        <div class="count"><div class="count__n" id="sales-units">&mdash;</div><div class="count__k">items</div></div>
+        <div class="count count--good"><div class="count__n" id="sales-xrp">&mdash;</div><div class="count__k">XRP to vendors</div></div>
+        <div class="count"><div class="count__n" id="sales-handed">&mdash;</div><div class="count__k">handed over</div></div>
+      </div>
+      <div class="tablebox" style="border-top:1px solid var(--rule)">
+        <table class="t-sales">
+          <thead>
+            <tr>
+              <th>vendor</th>
+              <th>event</th>
+              <th>orders</th>
+              <th>items</th>
+              <th>taken</th>
+              <th>handed over</th>
+            </tr>
+          </thead>
+          <tbody id="sales-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="sales-empty" hidden></p>
+    </div>
+
+    <div class="card" style="margin-top:clamp(13px,1.8vw,20px)">
+      <div class="card__hd">
+        <span class="label">Orders</span>
+        <div class="tabs" role="group" aria-label="Filter orders">
+          <button class="tab" type="button" data-ofilter="paid" aria-pressed="true">Paid</button>
+          <button class="tab" type="button" data-ofilter="reserved" aria-pressed="false">Waiting</button>
+          <button class="tab" type="button" data-ofilter="expired" aria-pressed="false">Lapsed</button>
+          <button class="tab" type="button" data-ofilter="" aria-pressed="false">All</button>
+        </div>
+        <span class="label" id="orders-count" style="margin-left:auto">&mdash;</span>
+      </div>
+      <div class="tablebox">
+        <table class="t-orders">
+          <thead>
+            <tr>
+              <th>order</th>
+              <th>event</th>
+              <th>vendor</th>
+              <th>item</th>
+              <th>amount</th>
+              <th>buyer</th>
+              <th>status</th>
+              <th>payment</th>
+              <th>when</th>
+            </tr>
+          </thead>
+          <tbody id="orders-rows"></tbody>
+        </table>
+      </div>
+      <p class="empty" id="orders-empty" hidden></p>
+      <div class="card__ft" style="display:flex; gap:9px; align-items:center; flex-wrap:wrap">
+        <span class="label" id="orders-pager">&mdash;</span>
+        <span style="flex:1"></span>
+        <button class="btn btn--tiny" id="btn-orders-prev" type="button" disabled>Prev</button>
+        <button class="btn btn--tiny" id="btn-orders-next" type="button" disabled>Next</button>
+      </div>
+    </div>
+  </section>
+
   <!-- ============ SETTINGS ============
        Not a preferences screen. It is the four facts that decide what every
        button in this console actually does: which account is signed in, which
@@ -999,6 +1159,23 @@ a{color:var(--jade)}
             <div class="bad" id="e-metadataUri" hidden></div>
           </div>
 
+          <div class="row2">
+            <div class="field" id="f-allowanceXrp">
+              <label for="in-allowanceXrp">Allowance per attendee (XRP)</label>
+              <input class="in" id="in-allowanceXrp" name="allowanceXrp" type="text" inputmode="decimal"
+                     spellcheck="false" autocomplete="off" placeholder="0">
+              <p class="help">Sent to each attendee from the event&rsquo;s treasury when their badge is issued.</p>
+              <div class="bad" id="e-allowanceXrp" hidden></div>
+            </div>
+            <div class="field" id="f-budgetXrp">
+              <label for="in-budgetXrp">Budget (XRP)</label>
+              <input class="in" id="in-budgetXrp" name="budgetXrp" type="text" inputmode="decimal"
+                     spellcheck="false" autocomplete="off" placeholder="0">
+              <p class="help">The most the treasury pays out for this event, everyone together.</p>
+              <div class="bad" id="e-budgetXrp" hidden></div>
+            </div>
+          </div>
+
           <div class="field" id="f-status">
             <span class="field__lbl" id="status-lbl">Status</span>
             <!-- Four choices, all four visible. A dropdown hides three of them
@@ -1050,7 +1227,7 @@ a{color:var(--jade)}
         </div>
       </div>
       <div class="head__act">
-        <button class="btn btn--tiny" id="btn-detail-refresh" type="button">Refresh</button>
+        <button class="btn btn--ghost" id="btn-detail-refresh" type="button">Refresh</button>
         <a class="btn" id="btn-edit" href="#/">Edit event</a>
       </div>
     </div>
@@ -1120,9 +1297,126 @@ a{color:var(--jade)}
         </section>
       </div>
 
-      <div class="card" style="margin-top:clamp(13px,1.8vw,20px)">
+      <div class="card" id="treasury-card" style="margin-top:clamp(13px,1.8vw,20px); scroll-margin-top:20px">
         <div class="card__hd">
           <span class="card__n">2</span>
+          <span class="label">Treasury</span>
+          <span id="tr-state" style="margin-left:auto"></span>
+        </div>
+        <div class="card__body treas">
+          <div id="tr-flash"></div>
+          <div class="share">
+            <div class="share__hd">
+              <span class="label" style="color:var(--signal)">Event wallet</span>
+              <span class="help" style="margin-left:auto">fund it to pay attendees</span>
+            </div>
+            <div class="share__url">
+              <code class="mono" id="tr-address">&mdash;</code>
+              <span id="tr-copy"></span>
+            </div>
+            <p class="share__warn" id="tr-warn" hidden></p>
+          </div>
+          <div class="counts counts--money">
+            <div class="count"><div class="count__n" id="tr-spendable">&mdash;</div><div class="count__k">can pay out</div><div class="count__s" id="tr-balance"></div></div>
+            <div class="count"><div class="count__n" id="tr-left">&mdash;</div><div class="count__k">budget left</div><div class="count__s" id="tr-budget"></div></div>
+            <div class="count count--good"><div class="count__n" id="tr-paid">&mdash;</div><div class="count__k">paid out</div><div class="count__s" id="tr-paid-n"></div></div>
+            <div class="count"><div class="count__n" id="tr-each">&mdash;</div><div class="count__k">each attendee</div><div class="count__s" id="tr-largest"></div></div>
+          </div>
+        </div>
+        <div class="tablebox">
+          <table class="t-allow">
+            <thead>
+              <tr>
+                <th>attendee</th>
+                <th>sent</th>
+                <th>status</th>
+                <th>payment</th>
+                <th>when</th>
+              </tr>
+            </thead>
+            <tbody id="tr-rows"></tbody>
+          </table>
+        </div>
+        <p class="empty" id="tr-empty" hidden></p>
+        <div class="card__ft">
+          <span class="pager" id="tr-pager"></span>
+          <span class="spacer"></span>
+          <button class="btn btn--tiny" id="btn-tr-prev" type="button" disabled>Prev</button>
+          <button class="btn btn--tiny" id="btn-tr-next" type="button" disabled>Next</button>
+          <button class="btn btn--tiny" id="btn-tr-retry" type="button" disabled>Pay everyone still owed</button>
+        </div>
+        <div class="card__body" style="border-top:1px solid var(--rule)">
+          <form class="form" id="sweep-form" novalidate style="gap:10px">
+            <div class="row2">
+              <div class="field" id="f-sweepTo">
+                <label for="in-sweepTo">Send what is left to</label>
+                <input class="in" id="in-sweepTo" type="text" spellcheck="false" autocomplete="off"
+                       autocapitalize="off" autocorrect="off" placeholder="r&hellip;">
+                <div class="bad" id="e-sweepTo" hidden></div>
+              </div>
+              <div class="field" id="f-sweepTag">
+                <label for="in-sweepTag">Destination tag <span class="help">if that wallet needs one</span></label>
+                <input class="in" id="in-sweepTag" type="text" inputmode="numeric" autocomplete="off">
+                <div class="bad" id="e-sweepTag" hidden></div>
+              </div>
+            </div>
+            <div style="display:flex; gap:9px; align-items:center; flex-wrap:wrap">
+              <button class="btn btn--stop" id="btn-sweep" type="submit" disabled>Sweep what is left</button>
+              <button class="btn btn--ghost" id="btn-sweep-cancel" type="button" hidden>Cancel</button>
+              <span class="label" id="sweep-hint"></span>
+            </div>
+          </form>
+        </div>
+      </div>
+
+      <div class="card" id="vendors-card" style="margin-top:clamp(13px,1.8vw,20px); scroll-margin-top:20px">
+        <div class="card__hd">
+          <span class="card__n">3</span>
+          <span class="label">Vendors</span>
+          <span class="label" id="vendors-count" style="margin-left:auto">&mdash;</span>
+          <a class="btn btn--tiny btn--ghost" id="btn-vendors-sales" href="#/sales">Sales</a>
+        </div>
+        <div class="card__body" style="display:grid; gap:14px">
+          <div class="share">
+            <div class="share__hd">
+              <span class="label" style="color:var(--signal)">Vendor counter</span>
+              <span class="help" style="margin-left:auto">vendors sign in here with their wallet</span>
+            </div>
+            <div class="share__url">
+              <code class="mono" id="vendor-url">&mdash;</code>
+              <span id="vendor-url-copy"></span>
+              <a class="link" href="/vendor" target="_blank" rel="noopener noreferrer">open</a>
+            </div>
+          </div>
+
+          <form class="form" id="vendor-form" novalidate style="gap:10px">
+            <div class="row2">
+              <div class="field" id="f-vendorName">
+                <label for="in-vendorName">Vendor</label>
+                <input class="in" id="in-vendorName" type="text" maxlength="120" autocomplete="off" placeholder="Dominos">
+                <div class="bad" id="e-vendorName" hidden></div>
+              </div>
+              <div class="field" id="f-vendorWallet">
+                <label for="in-vendorWallet">Wallet they are paid into</label>
+                <input class="in" id="in-vendorWallet" type="text" spellcheck="false" autocomplete="off"
+                       autocapitalize="off" autocorrect="off" placeholder="r&hellip;">
+                <div class="bad" id="e-vendorWallet" hidden></div>
+              </div>
+            </div>
+            <div style="display:flex; gap:9px; align-items:center; flex-wrap:wrap">
+              <button class="btn btn--go" id="btn-vendor-add" type="submit">Add vendor</button>
+              <span class="label" id="vendor-hint"></span>
+            </div>
+          </form>
+
+          <div id="vendor-flash"></div>
+          <div id="vendor-list"></div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:clamp(13px,1.8vw,20px)">
+        <div class="card__hd">
+          <span class="card__n">4</span>
           <span class="label">Photographs</span>
           <span class="label" id="photos-src" style="margin-left:auto">GET /api/events/&hellip;/photos</span>
         </div>
@@ -1160,7 +1454,7 @@ a{color:var(--jade)}
 
       <div class="card" id="regs-wrap" style="margin-top:clamp(13px,1.8vw,20px); scroll-margin-top:20px">
         <div class="card__hd">
-          <span class="card__n">3</span>
+          <span class="card__n">5</span>
           <span class="label">Registrations</span>
           <div class="tabs" role="group" aria-label="Filter registrations">
             <button class="tab" type="button" data-filter="" aria-pressed="true">All <b id="tab-all">&mdash;</b></button>
@@ -1340,6 +1634,14 @@ a{color:var(--jade)}
     return m ? m[0] : String(s);
   }
   function isIsoDay(s) { return /^\d{4}-\d{2}-\d{2}$/.test(String(s || "")); }
+  /** A plain XRP amount: whole XRP, and at most six decimal places. */
+  function isXrpAmount(s) { return /^\d+(\.\d{1,6})?$/.test(String(s || "")); }
+  /** Decimal XRP to integer drops, as a Number: exact below nine billion XRP. */
+  function xrpDrops(s) {
+    var m = /^(\d+)(?:\.(\d{1,6}))?$/.exec(String(s == null ? "" : s).trim());
+    if (!m) return NaN;
+    return parseInt(m[1], 10) * 1000000 + parseInt(((m[2] || "") + "000000").slice(0, 6), 10);
+  }
 
   function now() { return (window.performance && performance.now) ? performance.now() : Date.now(); }
 
@@ -1514,6 +1816,7 @@ a{color:var(--jade)}
     "view-events",
     "view-registrations",
     "view-badges",
+    "view-sales",
     "view-settings",
     "view-form",
     "view-detail",
@@ -1528,6 +1831,8 @@ a{color:var(--jade)}
     var regs = $("nav-regs"), badges = $("nav-badges");
     if (regs) regs.title = "Everyone who has signed up, across every event";
     if (badges) badges.title = "Every badge this deployment has recorded";
+    var salesBtn = $("nav-sales");
+    if (salesBtn) salesBtn.title = "What attendees bought from the vendors";
   }
 
   function markRail(sect) {
@@ -1542,6 +1847,7 @@ a{color:var(--jade)}
     if (sect === "events") { location.hash = "#/"; return; }
     if (sect === "regs") { location.hash = "#/registrations"; return; }
     if (sect === "badges") { location.hash = "#/badges"; return; }
+    if (sect === "sales") { location.hash = "#/sales"; return; }
     showView("view-settings", "settings-h");
     markRail("set");
   }
@@ -1890,7 +2196,7 @@ a{color:var(--jade)}
   var formMode = "create";   // "create" | "edit"
   var formEvent = null;
 
-  var FIELDS = ["eventId", "name", "description", "eventDate", "venue", "metadataUri", "status"];
+  var FIELDS = ["eventId", "name", "description", "eventDate", "venue", "metadataUri", "allowanceXrp", "budgetXrp", "status"];
 
   function clearFieldErrors() {
     for (var i = 0; i < FIELDS.length; i++) {
@@ -1950,6 +2256,8 @@ a{color:var(--jade)}
     $("in-description").value = editing ? (ev.description || "") : "";
     $("in-venue").value = editing ? (ev.venue || "") : "";
     $("in-metadataUri").value = editing ? (ev.metadataUri || "") : "";
+    $("in-allowanceXrp").value = editing ? (ev.allowanceXrp || "0") : "";
+    $("in-budgetXrp").value = editing ? (ev.budgetXrp || "0") : "";
     $("in-status").value = editing ? ev.status : "draft";
     paintChoices();
     paintStatusHelp();
@@ -1999,6 +2307,8 @@ a{color:var(--jade)}
     var venue = trimmed("in-venue");
     var metadataUri = trimmed("in-metadataUri");
     var status = $("in-status").value;
+    var allowanceXrp = trimmed("in-allowanceXrp");
+    var budgetXrp = trimmed("in-budgetXrp");
 
     var body;
     var method;
@@ -2019,16 +2329,21 @@ a{color:var(--jade)}
       }
       if (!name) { fieldError("name", "A name is required."); $("in-name").focus(); return; }
 
+      if (!amountsOk(allowanceXrp, budgetXrp)) return;
+
       body = { eventId: idNum, name: name, status: status };
       if (description) body.description = description;
       if (eventDate) body.eventDate = eventDate;
       if (venue) body.venue = venue;
       if (metadataUri) body.metadataUri = metadataUri;
+      if (allowanceXrp) body.allowanceXrp = allowanceXrp;
+      if (budgetXrp) body.budgetXrp = budgetXrp;
       method = "POST";
       path = "/admin/api/events";
     } else {
       if (!formEvent) { route(true); return; }
       if (!name) { fieldError("name", "A name is required."); $("in-name").focus(); return; }
+      if (!amountsOk(allowanceXrp, budgetXrp)) return;
 
       // Only what changed, and `null` where a value was cleared — the PATCH
       // schema uses presence, not truthiness, so null is how a venue is
@@ -2039,6 +2354,8 @@ a{color:var(--jade)}
       diff(body, "eventDate", eventDate, formEvent.eventDate);
       diff(body, "venue", venue, formEvent.venue);
       diff(body, "metadataUri", metadataUri, formEvent.metadataUri);
+      moneyDiff(body, "allowanceXrp", allowanceXrp, formEvent.allowanceXrp);
+      moneyDiff(body, "budgetXrp", budgetXrp, formEvent.budgetXrp);
       if (status !== formEvent.status) body.status = status;
 
       if (!Object.keys(body).length) {
@@ -2116,6 +2433,28 @@ a{color:var(--jade)}
     body[key] = value === "" ? null : value;
   }
 
+  /* Amounts compare in drops, so "1.50" over "1.5" is not a change, and an
+     emptied field means zero rather than "leave it alone". */
+  function moneyDiff(body, key, value, was) {
+    var next = value === "" ? "0" : value;
+    if (xrpDrops(next) === xrpDrops(was == null ? "0" : String(was))) return;
+    body[key] = next;
+  }
+
+  function amountsOk(allowanceXrp, budgetXrp) {
+    if (allowanceXrp && !isXrpAmount(allowanceXrp)) {
+      fieldError("allowanceXrp", "An amount in XRP, like 1.5");
+      $("in-allowanceXrp").focus();
+      return false;
+    }
+    if (budgetXrp && !isXrpAmount(budgetXrp)) {
+      fieldError("budgetXrp", "An amount in XRP, like 250");
+      $("in-budgetXrp").focus();
+      return false;
+    }
+    return true;
+  }
+
   function upsertEvent(ev) {
     var found = false;
     for (var i = 0; i < events.length; i++) {
@@ -2140,6 +2479,7 @@ a{color:var(--jade)}
     regs = { rows: [], total: 0, checkedIn: 0, limit: REG_PAGE, offset: 0, filter: "", more: false };
     attendTotal = null;
     paintRail();
+    resetMoney(eventId);
 
     clearFlash("detail-flash");
     clear($("detail-missing"));
@@ -2193,6 +2533,9 @@ a{color:var(--jade)}
       current = ev;
       paintRail();
       paintDetailHead(ev);
+      loadTreasury();
+      loadAllowances(0);
+      loadVendors();
       loadPhotos();
       loadRegs(0);
       loadAttendance();
@@ -2750,12 +3093,193 @@ a{color:var(--jade)}
       var o = document.createElement("option");
       o.value = String(events[i].eventId);
       o.textContent = events[i].name + "  ·  " + events[i].eventId;
+      o.setAttribute("data-name", events[i].name);
+      o.setAttribute("data-id", String(events[i].eventId));
       sel.appendChild(o);
     }
     sel.value = keep;
     // A remembered filter for an event that has since gone falls back to all
     // of them rather than silently showing nothing.
     if (sel.value !== keep) sel.value = "";
+    if (pickers[id]) pickers[id].sync();
+  }
+
+  /* =====================================================================
+     A searchable event picker
+
+     Registrations, Badges and Sales narrow by event with a <select>, and a
+     deployment with forty events is forty rows to scroll for one name. A text
+     box goes in front of the same <select>: type part of a name or an id and
+     pick from what matches. The <select> stays the source of truth — it holds
+     the value and fires the change event those lists already listen for — so
+     nothing that reads it had to change.
+     ===================================================================== */
+  var pickers = {};
+
+  function searchablePicker(selectId) {
+    var sel = $(selectId);
+    if (!sel || pickers[selectId]) return;
+
+    var wrap = node("div", "pick");
+    var input = node("input", "in in--inline pick__in");
+    input.type = "text";
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    input.placeholder = "All events";
+    input.setAttribute("role", "combobox");
+    input.setAttribute("aria-autocomplete", "list");
+    input.setAttribute("aria-expanded", "false");
+    input.setAttribute("aria-label", sel.getAttribute("aria-label") || "Filter by event");
+    var list = node("ul", "pick__list");
+    list.id = selectId + "-options";
+    list.setAttribute("role", "listbox");
+    list.hidden = true;
+    input.setAttribute("aria-controls", list.id);
+
+    sel.parentNode.insertBefore(wrap, sel);
+    wrap.appendChild(input);
+    wrap.appendChild(list);
+    wrap.appendChild(sel);
+    sel.hidden = true;
+    sel.tabIndex = -1;
+    sel.setAttribute("aria-hidden", "true");
+
+    var shown = [];    // the choices on screen, in order
+    var active = -1;   // index into shown
+
+    function choices() {
+      var out = [];
+      for (var i = 0; i < sel.options.length; i++) {
+        var o = sel.options[i];
+        out.push({
+          value: o.value,
+          name: o.getAttribute("data-name") || o.textContent,
+          id: o.getAttribute("data-id") || ""
+        });
+      }
+      return out;
+    }
+
+    function label(value) {
+      var all = choices();
+      for (var i = 0; i < all.length; i++) {
+        if (all[i].value === value) return all[i].id ? all[i].name + "  ·  " + all[i].id : all[i].name;
+      }
+      return "All events";
+    }
+
+    function sync() { input.value = label(sel.value); }
+
+    function paint(query) {
+      var q = String(query || "").trim().toLowerCase();
+      shown = choices().filter(function (c) {
+        return !q || c.name.toLowerCase().indexOf(q) !== -1 || c.id.indexOf(q) !== -1;
+      });
+      clear(list);
+      if (!shown.length) list.appendChild(node("li", "pick__none", "No event matches “" + String(query).trim() + "”"));
+      for (var i = 0; i < shown.length; i++) {
+        (function (c, at) {
+          var li = node("li", "pick__opt");
+          li.id = list.id + "-" + at;
+          li.setAttribute("role", "option");
+          li.setAttribute("aria-selected", c.value === sel.value ? "true" : "false");
+          li.appendChild(node("span", "pick__n", c.name));
+          if (c.id) li.appendChild(node("span", "pick__id", c.id));
+          li.addEventListener("click", function () { choose(c.value); });
+          li.addEventListener("mousemove", function () { if (active !== at) setActive(at); });
+          list.appendChild(li);
+        })(shown[i], i);
+      }
+    }
+
+    function setActive(at) {
+      var rows = list.querySelectorAll(".pick__opt");
+      if (active >= 0 && rows[active]) rows[active].classList.remove("is-active");
+      active = at;
+      var row = active >= 0 ? rows[active] : null;
+      if (!row) { input.removeAttribute("aria-activedescendant"); return; }
+      row.classList.add("is-active");
+      input.setAttribute("aria-activedescendant", row.id);
+      if (row.offsetTop < list.scrollTop) list.scrollTop = row.offsetTop;
+      else if (row.offsetTop + row.offsetHeight > list.scrollTop + list.clientHeight) {
+        list.scrollTop = row.offsetTop + row.offsetHeight - list.clientHeight;
+      }
+    }
+
+    function open(query) {
+      paint(query);
+      list.hidden = false;
+      input.setAttribute("aria-expanded", "true");
+      var at = -1;
+      if (query) at = shown.length ? 0 : -1;
+      else for (var i = 0; i < shown.length; i++) if (shown[i].value === sel.value) at = i;
+      setActive(at);
+    }
+
+    function close() {
+      list.hidden = true;
+      input.setAttribute("aria-expanded", "false");
+      input.removeAttribute("aria-activedescendant");
+      input.placeholder = "All events";
+      active = -1;
+      sync();
+    }
+
+    /* Into searching: the box empties so typing starts a fresh search, and
+       the current choice waits in the placeholder until something is picked
+       or the search is abandoned. Selecting the text instead lost a race with
+       the click that focused the box, and typing added to the old name. */
+    function startSearch() {
+      if (!list.hidden) return;
+      input.placeholder = label(sel.value);
+      input.value = "";
+      open("");
+    }
+
+    function choose(value) {
+      var changed = sel.value !== value;
+      sel.value = value;
+      close();
+      if (changed) sel.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+
+    // Keeps focus in the box while a row or the scrollbar is pressed, so the
+    // click lands before a blur closes the list.
+    list.addEventListener("mousedown", function (e) { e.preventDefault(); });
+
+    input.addEventListener("focus", startSearch);
+    input.addEventListener("click", startSearch);
+    input.addEventListener("input", function () { open(input.value); });
+    input.addEventListener("keydown", function (e) {
+      // With the list shut, a key that edits the text starts a search from
+      // empty rather than editing the name of what is picked.
+      if (list.hidden && !e.ctrlKey && !e.metaKey && !e.altKey &&
+          (e.key.length === 1 || e.key === "Backspace" || e.key === "Delete")) {
+        startSearch();
+        if (e.key.length !== 1) e.preventDefault();
+        return;
+      }
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+        e.preventDefault();
+        if (list.hidden) { startSearch(); return; }
+        if (!shown.length) return;
+        var next = e.key === "ArrowDown" ? active + 1 : active - 1;
+        setActive(Math.max(0, Math.min(shown.length - 1, next)));
+      } else if (e.key === "Enter") {
+        if (list.hidden) return;
+        e.preventDefault();
+        if (active >= 0 && shown[active]) choose(shown[active].value);
+      } else if (e.key === "Escape") {
+        if (list.hidden) return;
+        e.preventDefault();
+        close();
+        input.select();
+      }
+    });
+    input.addEventListener("blur", close);
+
+    pickers[selectId] = { sync: sync };
+    sync();
   }
 
   /** The name for an event id, for a list that spans several. */
@@ -2975,6 +3499,970 @@ a{color:var(--jade)}
   }
 
   /* =====================================================================
+     Money: an event's treasury, its vendors, and what they sold.
+
+     Amounts stay the decimal strings the server sent. The only arithmetic on
+     this page is comparing two of them, and that happens in drops, so "1.50"
+     and "1.5" are the same amount.
+     ===================================================================== */
+
+  function orderCode(id) { return String(id || "").replace(/-/g, "").slice(0, 6).toUpperCase(); }
+  function isClassicAddress(s) { return /^r[1-9A-HJ-NP-Za-km-z]{24,34}$/.test(String(s || "")); }
+  function chipState(tone, text) { return node("span", "tr-state tr-state--" + tone, text); }
+  function clearField(name) {
+    var f = $("f-" + name), e = $("e-" + name);
+    if (f) f.removeAttribute("data-bad");
+    if (e) { e.textContent = ""; e.hidden = true; }
+  }
+  function firstIssue(r) {
+    var is = issuesOf(r);
+    return is.length ? String(is[0].message || "") : "";
+  }
+  function hashCell(hash) {
+    var td = node("td");
+    if (!hash) { td.appendChild(node("span", "td-dim", "—")); return td; }
+    var h = node("code", "val", short(hash, 8, 6));
+    h.title = hash;
+    td.appendChild(h);
+    td.appendChild(document.createTextNode(" "));
+    td.appendChild(copyBtn(hash));
+    return td;
+  }
+
+  /** A button that asks twice: the second press within four seconds does it. */
+  function twoStep(btn, confirmLabel, run) {
+    var idle = btn.textContent;
+    var timer = 0;
+    btn.addEventListener("click", function () {
+      if (btn.getAttribute("data-armed") === "1") {
+        clearTimeout(timer);
+        btn.removeAttribute("data-armed");
+        btn.textContent = idle;
+        run();
+        return;
+      }
+      btn.setAttribute("data-armed", "1");
+      btn.textContent = confirmLabel;
+      timer = setTimeout(function () {
+        btn.removeAttribute("data-armed");
+        btn.textContent = idle;
+      }, 4000);
+    });
+    return btn;
+  }
+
+  // ---- treasury -------------------------------------------------------------
+
+  var treasury = null;       // GET /admin/api/events/:id/treasury
+  var trGen = 0;
+  var TR_PAGE = 10;
+  var allow = { rows: [], total: 0, offset: 0, gen: 0 };
+  var sweepArmed = false;
+
+  var moneyEvent = null;
+
+  /** Every money card back to blank, before a different event fills them. */
+  function resetMoney(eventId) {
+    treasury = null;
+    trGen++;
+    allow = { rows: [], total: 0, offset: 0, gen: allow.gen + 1 };
+    vendorRows = [];
+    vendorGen++;
+    vendorEditing = null;
+    clearFlash("tr-flash");
+    clearFlash("vendor-flash");
+    clear($("tr-rows"));
+    show($("tr-empty"), false);
+    setText("tr-pager", "");
+    clear($("vendor-list"));
+    setText("vendors-count", "—");
+    disarmSweep();
+    /* What was typed into the vendor and sweep forms belongs to the event it
+       was typed on. Refresh keeps it; opening another event does not, or a
+       vendor meant for one event lands on the next. */
+    if (eventId !== moneyEvent) {
+      moneyEvent = eventId;
+      ["vendorName", "vendorWallet", "sweepTo", "sweepTag"].forEach(function (name) {
+        clearField(name);
+        var input = $("in-" + name);
+        if (input) input.value = "";
+      });
+    }
+    paintTreasury();
+  }
+
+  function loadTreasury() {
+    if (!current) return Promise.resolve();
+    var gen = ++trGen;
+    var id = current.eventId;
+    return api("GET", "/admin/api/events/" + encodeURIComponent(id) + "/treasury").then(function (r) {
+      if (gen !== trGen) return;
+      if (!r.ok) {
+        treasury = null;
+        paintTreasury();
+        var host = $("tr-flash");
+        clear(host);
+        host.appendChild(errBox(r, "Press Refresh to read it again."));
+        return;
+      }
+      treasury = r.json || null;
+      paintTreasury();
+    });
+  }
+
+  function paintTreasury() {
+    var t = treasury;
+    var addr = t && t.address;
+    setText("tr-address", addr || "—");
+    var cp = $("tr-copy");
+    clear(cp);
+    if (addr) cp.appendChild(copyBtn(addr));
+
+    var each = t ? xrpDrops(t.allowanceXrp) : 0;
+    var need = t && t.fundingNeededXrp != null && xrpDrops(t.fundingNeededXrp) > 0 ? t.fundingNeededXrp : null;
+
+    var st = $("tr-state");
+    clear(st);
+    var warn = "";
+    if (!t) {
+      // Not read yet, or the read failed and says so above.
+    } else if (!t.configured) {
+      st.appendChild(chipState("bad", "Not set up"));
+      warn = "This server has no treasury key, so no event on it can pay attendees.";
+    } else if (!addr) {
+      st.appendChild(chipState("bad", "No wallet"));
+      warn = "This event has no treasury wallet yet.";
+    } else if (!(each > 0)) {
+      st.appendChild(chipState("idle", "No allowance"));
+    } else if (!(xrpDrops(t.budgetXrp) > 0)) {
+      st.appendChild(chipState("warn", "No budget"));
+      warn = "The budget is 0, so nobody will be paid. Set one with Edit event.";
+    } else if (need) {
+      st.appendChild(chipState("warn", "Needs " + need + " XRP"));
+      warn = "Send " + need + " XRP to this wallet to cover the rest of the budget.";
+    } else {
+      st.appendChild(chipState("ok", "Funded"));
+    }
+    if (t && t.ledgerError) warn = t.ledgerError + (warn ? " " + warn : "");
+    var w = $("tr-warn");
+    w.textContent = warn;
+    w.hidden = !warn;
+
+    var a = t && t.account;
+    setText("tr-spendable", a ? a.spendableXrp : "—");
+    setText("tr-balance", !t ? "" : !a ? "balance unknown" : a.activated ? "balance " + a.balanceXrp : "not on the ledger yet");
+    setText("tr-left", t ? t.remainingBudgetXrp : "—");
+    setText("tr-budget", t ? "of " + t.budgetXrp : "");
+    setText("tr-paid", t ? t.paidXrp : "—");
+    setText("tr-paid-n", !t ? "" :
+      (t.paidCount === 1 ? "1 attendee" : t.paidCount + " attendees") +
+      (t.inFlightCount ? " · " + t.inFlightCount + " on the way" : ""));
+    setText("tr-each", t ? t.allowanceXrp : "—");
+    setText("tr-largest", t && each > 0 && t.largestPaymentXrp && xrpDrops(t.largestPaymentXrp) !== each
+      ? "up to " + t.largestPaymentXrp + " for an empty wallet" : "");
+
+    $("btn-tr-retry").disabled = !t || !t.configured || !addr || !(each > 0) || !current || current.status === "draft";
+    paintSweep();
+  }
+
+  function loadAllowances(offset) {
+    if (!current) return Promise.resolve();
+    var gen = ++allow.gen;
+    allow.offset = offset || 0;
+    var id = current.eventId;
+    return api("GET", "/admin/api/events/" + encodeURIComponent(id) + "/allowances?limit=" + TR_PAGE +
+      "&offset=" + allow.offset).then(function (r) {
+      if (gen !== allow.gen) return;
+      var body = $("tr-rows");
+      var empty = $("tr-empty");
+      clear(body);
+      clear(empty);
+      if (!r.ok) {
+        allow.rows = [];
+        allow.total = 0;
+        empty.appendChild(errBox(r, "Press Refresh to try again."));
+        show(empty, true);
+        paintAllowPager();
+        return;
+      }
+      allow.rows = (r.json && r.json.allowances) || [];
+      allow.total = (r.json && r.json.total) || 0;
+      for (var i = 0; i < allow.rows.length; i++) body.appendChild(allowRow(allow.rows[i]));
+      if (!allow.rows.length) {
+        empty.appendChild(document.createTextNode("Nobody has been paid yet."));
+        show(empty, true);
+      } else {
+        show(empty, false);
+      }
+      paintAllowPager();
+    });
+  }
+
+  function allowRow(a) {
+    var tr = node("tr");
+
+    var who = node("td");
+    var code = node("code", "val", short(a.address, 10, 8));
+    code.title = a.address;
+    who.appendChild(code);
+    who.appendChild(document.createTextNode(" "));
+    who.appendChild(copyBtn(a.address));
+    tr.appendChild(who);
+
+    var sent = node("td", "td-num");
+    sent.appendChild(document.createTextNode(a.amountXrp + " XRP"));
+    if (xrpDrops(a.topupXrp) > 0) {
+      sent.appendChild(node("span", "taxonk", a.allowanceXrp + " + " + a.topupXrp + " to hold the badge"));
+    }
+    tr.appendChild(sent);
+
+    var st = node("td");
+    st.appendChild(node("span", "ostatus " + (a.status === "paid" ? "ostatus--paid" : "ostatus--reserved"),
+      a.status === "paid" ? "Paid" : "On the way"));
+    tr.appendChild(st);
+
+    tr.appendChild(hashCell(a.txHash));
+    var at = a.confirmedAt || a.reservedAt;
+    tr.appendChild(node("td", at ? "" : "td-dim", at ? fmtStamp(at) : "—"));
+    return tr;
+  }
+
+  function paintAllowPager() {
+    var n = allow.rows.length;
+    setText("tr-pager", n === 0 ? "" : "showing " + (allow.offset + 1) + "–" + (allow.offset + n) + " of " + allow.total);
+    $("btn-tr-prev").disabled = allow.offset <= 0;
+    $("btn-tr-next").disabled = allow.offset + TR_PAGE >= allow.total;
+  }
+
+  var STOP_WORDS = {
+    budget: "It stopped because the budget is used up. Raise it with Edit event, then press again.",
+    ceiling: "It stopped because the allowance is more than this server may pay one attendee.",
+    unavailable: "It stopped because this server cannot open the treasury.",
+    unfunded: "It stopped because the treasury ran out of XRP. Fund it, then press again."
+  };
+
+  function retryAllowances() {
+    if (!current) return;
+    var b = $("btn-tr-retry");
+    b.disabled = true;
+    b.setAttribute("aria-busy", "true");
+    var id = current.eventId;
+    api("POST", "/admin/api/events/" + encodeURIComponent(id) + "/allowances/retry").then(function (r) {
+      b.removeAttribute("aria-busy");
+      if (!current || current.eventId !== id) return;
+      if (!r.ok) {
+        b.disabled = false;
+        flash("tr-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r));
+        return;
+      }
+      var j = r.json || {};
+      var parts = [(j.paid || 0) + " paid"];
+      if (j.alreadyPaid) parts.push(j.alreadyPaid + " already had theirs");
+      if (j.nothingOwed) parts.push(j.nothingOwed + " owed nothing");
+      if (j.failed) parts.push(j.failed + " failed");
+      var sub = j.stoppedBecause ? (STOP_WORDS[j.stoppedBecause] || null)
+        : j.more ? "More are still owed. Press again to carry on."
+        : (j.failures && j.failures.length ? j.failures[0].message : null);
+      flash("tr-flash", j.failed ? "warn" : "ok", j.failed ? "partly paid" : "paid", parts.join(" · ") + ".", sub);
+      loadTreasury();
+      loadAllowances(0);
+    });
+  }
+
+  function paintSweep() {
+    var t = treasury;
+    var why = "";
+    if (!t) why = "";
+    else if (!t.configured || !t.address) why = "There is no treasury to sweep.";
+    else if (current && current.status === "live") why = "The event is live. Close it to sweep.";
+    else if (t.inFlightCount > 0) why = "Payments are still on the way.";
+    else if (!t.account || !t.account.activated || !(xrpDrops(t.account.spendableXrp) > 0)) why = "Nothing to sweep.";
+    $("btn-sweep").disabled = !t || Boolean(why);
+    if (why && sweepArmed) disarmSweep();
+    if (!sweepArmed) setText("sweep-hint", why);
+  }
+
+  function disarmSweep() {
+    sweepArmed = false;
+    var b = $("btn-sweep");
+    b.textContent = "Sweep what is left";
+    b.removeAttribute("aria-busy");
+    show($("btn-sweep-cancel"), false);
+    setText("sweep-hint", "");
+  }
+
+  function onSweepInput() {
+    if (!sweepArmed) return;
+    disarmSweep();
+    paintSweep();
+  }
+
+  function submitSweep(e) {
+    e.preventDefault();
+    if (!current || !treasury) return;
+    clearField("sweepTo");
+    clearField("sweepTag");
+    var to = trimmed("in-sweepTo");
+    var tagRaw = trimmed("in-sweepTag");
+    if (!isClassicAddress(to)) {
+      fieldError("sweepTo", "A wallet address, starting with r.");
+      $("in-sweepTo").focus();
+      return;
+    }
+    if (to === treasury.address) {
+      fieldError("sweepTo", "That is the treasury itself.");
+      $("in-sweepTo").focus();
+      return;
+    }
+    var body = { destination: to };
+    if (tagRaw) {
+      if (!/^\d{1,10}$/.test(tagRaw) || Number(tagRaw) > 4294967295) {
+        fieldError("sweepTag", "A whole number, up to 4294967295.");
+        $("in-sweepTag").focus();
+        return;
+      }
+      body.destinationTag = Number(tagRaw);
+    }
+
+    var btn = $("btn-sweep");
+    if (!sweepArmed) {
+      sweepArmed = true;
+      btn.textContent = "Send it to " + short(to, 6, 4);
+      show($("btn-sweep-cancel"), true);
+      setText("sweep-hint", "about " + (treasury.account ? treasury.account.spendableXrp : "?") +
+        " XRP · press again to send");
+      return;
+    }
+
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    var id = current.eventId;
+    api("POST", "/admin/api/events/" + encodeURIComponent(id) + "/treasury/sweep", body).then(function (r) {
+      disarmSweep();
+      if (!current || current.eventId !== id) return;
+      if (r.ok && r.json) {
+        var j = r.json;
+        flash("tr-flash", "ok", "swept", "Sent " + j.amountXrp + " XRP to " + short(j.destination, 8, 6) + ".",
+          j.txHash ? "Payment " + short(j.txHash, 8, 6) : null);
+        $("in-sweepTo").value = "";
+        $("in-sweepTag").value = "";
+        loadTreasury();
+        return;
+      }
+      var issues = issuesOf(r);
+      var placed = 0;
+      for (var i = 0; i < issues.length; i++) {
+        var p = String(issues[i].path || "");
+        if (p === "destination" && fieldError("sweepTo", String(issues[i].message || "Invalid."))) placed++;
+        if (p === "destinationTag" && fieldError("sweepTag", String(issues[i].message || "Invalid."))) placed++;
+      }
+      if (!placed) flash("tr-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r), "Nothing was sent.");
+      paintSweep();
+    });
+  }
+
+  // ---- vendors --------------------------------------------------------------
+
+  var vendorRows = [];
+  var vendorGen = 0;
+  /* "v:<id>" while a vendor's name and wallet are open for editing, "i:<id>"
+     for an item. One at a time: opening a second closes the first. */
+  var vendorEditing = null;
+
+  function vendorUrl() { return location.origin + "/vendor"; }
+
+  function loadVendors() {
+    if (!current) return Promise.resolve();
+    var gen = ++vendorGen;
+    var id = current.eventId;
+    setText("vendor-url", vendorUrl());
+    var vc = $("vendor-url-copy");
+    clear(vc);
+    vc.appendChild(copyBtn(vendorUrl(), "copied"));
+    return api("GET", "/admin/api/events/" + encodeURIComponent(id) + "/vendors").then(function (r) {
+      if (gen !== vendorGen) return;
+      if (!r.ok) {
+        var host = $("vendor-list");
+        clear(host);
+        host.appendChild(errBox(r, "Press Refresh to try again."));
+        return;
+      }
+      vendorRows = (r.json && r.json.vendors) || [];
+      paintVendors();
+    });
+  }
+
+  function paintVendors() {
+    var host = $("vendor-list");
+    clear(host);
+    var n = vendorRows.length;
+    setText("vendors-count", n === 1 ? "1 vendor" : n + " vendors");
+    if (!n) {
+      var p = node("p", "help", "No vendors yet.");
+      p.style.margin = "0";
+      host.appendChild(p);
+      return;
+    }
+    for (var i = 0; i < vendorRows.length; i++) host.appendChild(vendorBlock(vendorRows[i]));
+  }
+
+  function tinyBtn(text, cls) {
+    var b = node("button", "btn btn--tiny" + (cls ? " " + cls : ""), text);
+    b.type = "button";
+    return b;
+  }
+
+  function vendorBlock(v) {
+    var box = node("section", "vendor");
+    box.setAttribute("data-active", v.active ? "1" : "0");
+    box.setAttribute("data-id", v.id);
+
+    var hd = node("div", "vendor__hd");
+    hd.appendChild(node("span", "vendor__n", v.name));
+    if (!v.active) hd.appendChild(node("span", "tag-hidden", "Hidden"));
+    var wallet = node("code", "val", short(v.walletAddress, 8, 6));
+    wallet.title = v.walletAddress;
+    hd.appendChild(wallet);
+    hd.appendChild(copyBtn(v.walletAddress));
+    hd.appendChild(node("span", "spacer"));
+
+    var edit = tinyBtn("Edit", "btn--ghost");
+    edit.addEventListener("click", function () {
+      vendorEditing = vendorEditing === "v:" + v.id ? null : "v:" + v.id;
+      paintVendors();
+    });
+    hd.appendChild(edit);
+
+    var toggle = tinyBtn(v.active ? "Hide" : "Show");
+    toggle.title = v.active ? "Take this vendor off the store" : "Put this vendor back on the store";
+    toggle.addEventListener("click", function () {
+      toggle.disabled = true;
+      patchVendor(v, { active: !v.active }, null);
+    });
+    hd.appendChild(toggle);
+
+    var del = tinyBtn("Remove", "btn--stop");
+    twoStep(del, "Remove " + v.name + "?", function () {
+      del.disabled = true;
+      api("DELETE", "/admin/api/vendors/" + encodeURIComponent(v.id)).then(function (r) {
+        if (!r.ok) {
+          del.disabled = false;
+          flash("vendor-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r),
+            r.status === 409 ? "Hide the vendor instead. Their orders stay on record." : null);
+          return;
+        }
+        clearFlash("vendor-flash");
+        loadVendors();
+      });
+    });
+    hd.appendChild(del);
+    box.appendChild(hd);
+
+    if (vendorEditing === "v:" + v.id) box.appendChild(vendorEditor(v));
+
+    var tb = node("div", "tablebox");
+    var table = node("table", "t-items");
+    var thead = node("thead");
+    var hr = node("tr");
+    hr.appendChild(node("th", null, "item"));
+    hr.appendChild(node("th", null, "price"));
+    hr.appendChild(node("th", null, "stock"));
+    var soldTh = node("th", null, "sold");
+    soldTh.title = "Paid, plus orders still waiting to be paid";
+    hr.appendChild(soldTh);
+    hr.appendChild(node("th", null, "left"));
+    hr.appendChild(node("th"));
+    thead.appendChild(hr);
+    table.appendChild(thead);
+
+    var tbody = node("tbody");
+    if (!v.items.length) {
+      var er = node("tr");
+      var ec = node("td", "td-dim", "Nothing on sale yet.");
+      ec.colSpan = 6;
+      er.appendChild(ec);
+      tbody.appendChild(er);
+    }
+    for (var i = 0; i < v.items.length; i++) {
+      var it = v.items[i];
+      tbody.appendChild(vendorEditing === "i:" + it.id ? itemEditor(it) : itemRow(it));
+    }
+    table.appendChild(tbody);
+    tb.appendChild(table);
+    box.appendChild(tb);
+
+    box.appendChild(itemAdder(v));
+    return box;
+  }
+
+  /** A label, an input and an error line, for the small forms inside a card. */
+  function inlineField(label, value, opts) {
+    opts = opts || {};
+    var wrap = node("label", "mini");
+    wrap.appendChild(node("span", "mini__k", label));
+    var input = node("input", "in" + (opts.text ? " in--text" : ""));
+    input.type = "text";
+    input.value = value == null ? "" : String(value);
+    if (opts.maxlength) input.maxLength = opts.maxlength;
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    if (opts.inputmode) input.setAttribute("inputmode", opts.inputmode);
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    wrap.appendChild(input);
+    var bad = node("span", "bad");
+    bad.hidden = true;
+    wrap.appendChild(bad);
+    return {
+      wrap: wrap,
+      input: input,
+      error: function (msg) {
+        bad.textContent = msg || "";
+        bad.hidden = !msg;
+        wrap.setAttribute("data-bad", msg ? "1" : "0");
+      }
+    };
+  }
+
+  function vendorEditor(v) {
+    var form = node("form", "vendor__edit");
+    form.noValidate = true;
+    var name = inlineField("Name", v.name, { maxlength: 120, text: true });
+    var wallet = inlineField("Wallet they are paid into", v.walletAddress, {});
+    form.appendChild(name.wrap);
+    form.appendChild(wallet.wrap);
+    var acts = node("div", "vendor__acts");
+    var save = node("button", "btn btn--go btn--tiny", "Save");
+    save.type = "submit";
+    var cancel = tinyBtn("Cancel", "btn--ghost");
+    cancel.addEventListener("click", function () { vendorEditing = null; paintVendors(); });
+    acts.appendChild(save);
+    acts.appendChild(cancel);
+    form.appendChild(acts);
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      name.error("");
+      wallet.error("");
+      var n = name.input.value.trim();
+      var w = wallet.input.value.trim();
+      if (!n) { name.error("A name is required."); name.input.focus(); return; }
+      if (!isClassicAddress(w)) { wallet.error("A wallet address, starting with r."); wallet.input.focus(); return; }
+      var patch = {};
+      if (n !== v.name) patch.name = n;
+      if (w !== v.walletAddress) patch.walletAddress = w;
+      if (!Object.keys(patch).length) { vendorEditing = null; paintVendors(); return; }
+      save.disabled = true;
+      save.setAttribute("aria-busy", "true");
+      patchVendor(v, patch, { name: name, wallet: wallet, save: save });
+    });
+    setTimeout(function () { name.input.focus(); }, 0);
+    return form;
+  }
+
+  function patchVendor(v, patch, ui) {
+    return api("PATCH", "/admin/api/vendors/" + encodeURIComponent(v.id), patch).then(function (r) {
+      if (ui && ui.save) {
+        ui.save.disabled = false;
+        ui.save.removeAttribute("aria-busy");
+      }
+      if (r.ok) {
+        clearFlash("vendor-flash");
+        vendorEditing = null;
+        loadVendors();
+        return;
+      }
+      if (ui && r.status === 409) { ui.wallet.error(messageOf(r)); return; }
+      if (ui && r.status === 400) {
+        var issues = issuesOf(r), placed = false;
+        for (var i = 0; i < issues.length; i++) {
+          if (issues[i].path === "name") { ui.name.error(String(issues[i].message || "Invalid.")); placed = true; }
+          if (issues[i].path === "walletAddress") { ui.wallet.error(String(issues[i].message || "Invalid.")); placed = true; }
+        }
+        if (placed) return;
+      }
+      flash("vendor-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r));
+      if (!ui) paintVendors();
+    });
+  }
+
+  function itemRow(it) {
+    var tr = node("tr");
+    tr.setAttribute("data-active", it.active ? "1" : "0");
+
+    var tdName = node("td", "td-name");
+    tdName.appendChild(document.createTextNode(it.name));
+    if (!it.active) {
+      tdName.appendChild(document.createTextNode(" "));
+      tdName.appendChild(node("span", "tag-hidden", "Hidden"));
+    }
+    tr.appendChild(tdName);
+    tr.appendChild(node("td", "td-num", it.priceXrp + " XRP"));
+    tr.appendChild(node("td", it.stock == null ? "td-dim" : "", it.stock == null ? "no limit" : String(it.stock)));
+    tr.appendChild(node("td", it.taken ? "" : "td-dim", String(it.taken || 0)));
+    tr.appendChild(node("td", it.remaining === 0 ? "td-sold" : it.remaining == null ? "td-dim" : "",
+      it.remaining == null ? "—" : it.remaining === 0 ? "sold out" : String(it.remaining)));
+
+    var acts = node("td", "acts-cell");
+    var edit = tinyBtn("Edit", "btn--ghost");
+    edit.addEventListener("click", function () { vendorEditing = "i:" + it.id; paintVendors(); });
+
+    var toggle = tinyBtn(it.active ? "Hide" : "Show");
+    toggle.addEventListener("click", function () {
+      toggle.disabled = true;
+      api("PATCH", "/admin/api/items/" + encodeURIComponent(it.id), { active: !it.active }).then(function (r) {
+        if (r.ok) { loadVendors(); return; }
+        toggle.disabled = false;
+        flash("vendor-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r));
+      });
+    });
+
+    var del = tinyBtn("Remove", "btn--stop");
+    twoStep(del, "Sure?", function () {
+      del.disabled = true;
+      api("DELETE", "/admin/api/items/" + encodeURIComponent(it.id)).then(function (r) {
+        if (r.ok) { loadVendors(); return; }
+        del.disabled = false;
+        flash("vendor-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r),
+          r.status === 409 ? "Hide it instead. Its orders stay on record." : null);
+      });
+    });
+
+    acts.appendChild(edit);
+    acts.appendChild(document.createTextNode(" "));
+    acts.appendChild(toggle);
+    acts.appendChild(document.createTextNode(" "));
+    acts.appendChild(del);
+    tr.appendChild(acts);
+    return tr;
+  }
+
+  function cellInput(value, opts) {
+    opts = opts || {};
+    var td = node("td");
+    var input = node("input", "in" + (opts.text ? " in--text" : ""));
+    input.type = "text";
+    input.value = value == null ? "" : String(value);
+    if (opts.maxlength) input.maxLength = opts.maxlength;
+    if (opts.placeholder) input.placeholder = opts.placeholder;
+    if (opts.inputmode) input.setAttribute("inputmode", opts.inputmode);
+    if (opts.label) input.setAttribute("aria-label", opts.label);
+    input.autocomplete = "off";
+    input.spellcheck = false;
+    td.appendChild(input);
+    return { td: td, input: input };
+  }
+
+  function itemEditor(it) {
+    var tr = node("tr", "editrow");
+    var name = cellInput(it.name, { maxlength: 120, text: true, label: "Item name" });
+    var price = cellInput(it.priceXrp, { inputmode: "decimal", label: "Price in XRP" });
+    var stock = cellInput(it.stock == null ? "" : String(it.stock), { inputmode: "numeric", placeholder: "no limit", label: "Stock" });
+    var err = node("div", "bad");
+    err.hidden = true;
+    name.td.appendChild(err);
+    tr.appendChild(name.td);
+    tr.appendChild(price.td);
+    tr.appendChild(stock.td);
+    tr.appendChild(node("td", "td-dim", String(it.taken || 0)));
+    tr.appendChild(node("td", "td-dim", it.remaining == null ? "—" : String(it.remaining)));
+
+    var acts = node("td", "acts-cell");
+    var save = tinyBtn("Save", "btn--go");
+    var cancel = tinyBtn("Cancel", "btn--ghost");
+    acts.appendChild(save);
+    acts.appendChild(document.createTextNode(" "));
+    acts.appendChild(cancel);
+    tr.appendChild(acts);
+
+    function say(msg) { err.textContent = msg || ""; err.hidden = !msg; }
+    function close() { vendorEditing = null; paintVendors(); }
+    function commit() {
+      say("");
+      var n = name.input.value.trim();
+      var p = price.input.value.trim();
+      var s = stock.input.value.trim();
+      if (!n) { say("A name is required."); name.input.focus(); return; }
+      if (!isXrpAmount(p) || !(xrpDrops(p) > 0)) { say("The price is an amount above zero, like 2.5."); price.input.focus(); return; }
+      if (s && !/^\d{1,7}$/.test(s)) { say("Stock is a whole number, or empty for no limit."); stock.input.focus(); return; }
+      var patch = {};
+      if (n !== it.name) patch.name = n;
+      if (xrpDrops(p) !== xrpDrops(it.priceXrp)) patch.priceXrp = p;
+      var nextStock = s === "" ? null : Number(s);
+      if (nextStock !== (it.stock == null ? null : it.stock)) patch.stock = nextStock;
+      if (!Object.keys(patch).length) { close(); return; }
+      save.disabled = true;
+      save.setAttribute("aria-busy", "true");
+      api("PATCH", "/admin/api/items/" + encodeURIComponent(it.id), patch).then(function (r) {
+        save.disabled = false;
+        save.removeAttribute("aria-busy");
+        if (r.ok) { vendorEditing = null; loadVendors(); return; }
+        say(firstIssue(r) || messageOf(r));
+      });
+    }
+    save.addEventListener("click", commit);
+    cancel.addEventListener("click", close);
+    [name.input, price.input, stock.input].forEach(function (input) {
+      input.addEventListener("keydown", function (ev) {
+        if (ev.key === "Enter") { ev.preventDefault(); commit(); }
+        if (ev.key === "Escape") { ev.preventDefault(); close(); }
+      });
+    });
+    setTimeout(function () { name.input.focus(); }, 0);
+    return tr;
+  }
+
+  function itemAdder(v) {
+    var form = node("form", "additem");
+    form.noValidate = true;
+    var name = inlineField("Item", "", { maxlength: 120, text: true, placeholder: "Garlic bread" });
+    var price = inlineField("Price (XRP)", "", { inputmode: "decimal", placeholder: "2.5" });
+    var stock = inlineField("Stock", "", { inputmode: "numeric", placeholder: "no limit" });
+    form.appendChild(name.wrap);
+    form.appendChild(price.wrap);
+    form.appendChild(stock.wrap);
+    var go = node("div", "additem__go");
+    var add = node("button", "btn btn--tiny", "Add item");
+    add.type = "submit";
+    go.appendChild(add);
+    form.appendChild(go);
+
+    form.addEventListener("submit", function (e) {
+      e.preventDefault();
+      name.error("");
+      price.error("");
+      stock.error("");
+      var n = name.input.value.trim();
+      var p = price.input.value.trim();
+      var s = stock.input.value.trim();
+      if (!n) { name.error("A name is required."); name.input.focus(); return; }
+      if (!isXrpAmount(p) || !(xrpDrops(p) > 0)) { price.error("An amount above zero, like 2.5"); price.input.focus(); return; }
+      if (s && !/^\d{1,7}$/.test(s)) { stock.error("A whole number, or empty."); stock.input.focus(); return; }
+      var body = { name: n, priceXrp: p };
+      if (s) body.stock = Number(s);
+      add.disabled = true;
+      add.setAttribute("aria-busy", "true");
+      api("POST", "/admin/api/vendors/" + encodeURIComponent(v.id) + "/items", body).then(function (r) {
+        add.disabled = false;
+        add.removeAttribute("aria-busy");
+        if (r.ok) {
+          loadVendors().then(function () {
+            // Straight back into the same vendor's list, for the next item.
+            var next = document.querySelector('.vendor[data-id="' + v.id + '"] .additem input');
+            if (next) next.focus();
+          });
+          return;
+        }
+        var issues = issuesOf(r), placed = false;
+        for (var i = 0; i < issues.length; i++) {
+          var path = String(issues[i].path || "");
+          var msg = String(issues[i].message || "Invalid.");
+          if (path === "name") { name.error(msg); placed = true; }
+          if (path === "priceXrp") { price.error(msg); placed = true; }
+          if (path === "stock") { stock.error(msg); placed = true; }
+        }
+        if (!placed) flash("vendor-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r));
+      });
+    });
+    return form;
+  }
+
+  function submitVendor(e) {
+    e.preventDefault();
+    if (!current) return;
+    clearField("vendorName");
+    clearField("vendorWallet");
+    var name = trimmed("in-vendorName");
+    var wallet = trimmed("in-vendorWallet");
+    if (!name) { fieldError("vendorName", "A name is required."); $("in-vendorName").focus(); return; }
+    if (!isClassicAddress(wallet)) {
+      fieldError("vendorWallet", "A wallet address, starting with r.");
+      $("in-vendorWallet").focus();
+      return;
+    }
+    var btn = $("btn-vendor-add");
+    btn.disabled = true;
+    btn.setAttribute("aria-busy", "true");
+    setText("vendor-hint", "checking the wallet on the ledger");
+    var id = current.eventId;
+    api("POST", "/admin/api/events/" + encodeURIComponent(id) + "/vendors", { name: name, walletAddress: wallet })
+      .then(function (r) {
+        btn.disabled = false;
+        btn.removeAttribute("aria-busy");
+        setText("vendor-hint", "");
+        if (!current || current.eventId !== id) return;
+        if (r.ok) {
+          $("in-vendorName").value = "";
+          $("in-vendorWallet").value = "";
+          clearFlash("vendor-flash");
+          loadVendors();
+          return;
+        }
+        if (r.status === 409) {
+          fieldError("vendorWallet", messageOf(r));
+          $("in-vendorWallet").focus();
+          return;
+        }
+        var issues = issuesOf(r), placed = 0;
+        for (var i = 0; i < issues.length; i++) {
+          var p = String(issues[i].path || "");
+          if (p === "name" && fieldError("vendorName", String(issues[i].message || "Invalid."))) placed++;
+          if (p === "walletAddress" && fieldError("vendorWallet", String(issues[i].message || "Invalid."))) placed++;
+        }
+        if (!placed) flash("vendor-flash", "bad", codeOf(r) || ("HTTP " + r.status), messageOf(r));
+      });
+  }
+
+  // ---- sales ----------------------------------------------------------------
+
+  var ORDER_PAGE = 50;
+  var sales = { eventId: "", filter: "paid", offset: 0, total: 0, rows: [], gen: 0, sumGen: 0 };
+  var ORDER_WORDS = { paid: "Paid", reserved: "Waiting", expired: "Lapsed" };
+
+  function openSales() {
+    var ready = events.length ? Promise.resolve() : loadEvents(true);
+    return ready.then(function () {
+      fillEventPicker("sales-event", sales.eventId);
+      sales.eventId = $("sales-event").value;
+      showView("view-sales", "sales-h");
+      markRail("sales");
+      loadSales();
+      return loadOrders(0);
+    });
+  }
+
+  function loadSales() {
+    var gen = ++sales.sumGen;
+    var q = sales.eventId ? "?eventId=" + encodeURIComponent(sales.eventId) : "";
+    return api("GET", "/admin/api/sales" + q).then(function (r) {
+      if (gen !== sales.sumGen) return;
+      var body = $("sales-rows");
+      var empty = $("sales-empty");
+      clear(body);
+      clear(empty);
+      if (!r.ok) {
+        paintTotals(null);
+        empty.appendChild(errBox(r, "Press Refresh to try again."));
+        show(empty, true);
+        return;
+      }
+      var j = r.json || {};
+      var rows = j.vendors || [];
+      paintTotals(j.totals || null);
+      for (var i = 0; i < rows.length; i++) {
+        var s = rows[i];
+        var tr = node("tr");
+        tr.appendChild(node("td", "td-name", s.vendorName));
+        tr.appendChild(eventCell(s.eventId));
+        tr.appendChild(node("td", "td-num", String(s.orders)));
+        tr.appendChild(node("td", "td-num", String(s.units)));
+        tr.appendChild(node("td", "td-num td-held", s.totalXrp + " XRP"));
+        tr.appendChild(node("td", "td-num" + (s.handedOver < s.orders ? "" : " td-dim"), s.handedOver + " of " + s.orders));
+        body.appendChild(tr);
+      }
+      if (!rows.length) {
+        empty.appendChild(document.createTextNode("No sales yet."));
+        show(empty, true);
+      } else {
+        show(empty, false);
+      }
+    });
+  }
+
+  function paintTotals(t) {
+    setText("sales-orders", t ? String(t.orders) : "—");
+    setText("sales-units", t ? String(t.units) : "—");
+    setText("sales-xrp", t ? t.totalXrp : "—");
+    setText("sales-handed", t ? t.handedOver + " of " + t.orders : "—");
+  }
+
+  function loadOrders(offset) {
+    var gen = ++sales.gen;
+    sales.offset = offset || 0;
+    var q = "limit=" + ORDER_PAGE + "&offset=" + sales.offset +
+      (sales.eventId ? "&eventId=" + encodeURIComponent(sales.eventId) : "") +
+      (sales.filter ? "&status=" + encodeURIComponent(sales.filter) : "");
+    paintOrderTabs();
+    return api("GET", "/admin/api/purchases?" + q).then(function (r) {
+      if (gen !== sales.gen) return;
+      var body = $("orders-rows");
+      var empty = $("orders-empty");
+      clear(body);
+      clear(empty);
+      if (!r.ok) {
+        sales.rows = [];
+        sales.total = 0;
+        empty.appendChild(errBox(r, "Press Refresh to try again."));
+        show(empty, true);
+        setText("orders-count", "—");
+        paintOrderPager();
+        return;
+      }
+      sales.rows = (r.json && r.json.purchases) || [];
+      sales.total = (r.json && r.json.total) || 0;
+      for (var i = 0; i < sales.rows.length; i++) body.appendChild(orderRow(sales.rows[i]));
+      if (!sales.rows.length) {
+        empty.appendChild(document.createTextNode(
+          sales.filter === "paid" ? "No paid orders yet."
+            : sales.filter === "reserved" ? "Nobody is in the middle of paying."
+            : sales.filter === "expired" ? "No orders have lapsed."
+            : "No orders yet."));
+        show(empty, true);
+      } else {
+        show(empty, false);
+      }
+      setText("orders-count", sales.total === 1 ? "1 order" : sales.total + " orders");
+      paintOrderPager();
+    });
+  }
+
+  function orderRow(o) {
+    var tr = node("tr");
+    var tdCode = node("td");
+    tdCode.appendChild(node("span", "ocode", orderCode(o.id)));
+    tdCode.title = o.id;
+    tr.appendChild(tdCode);
+    tr.appendChild(eventCell(o.eventId));
+    tr.appendChild(node("td", "td-name", o.vendorName));
+
+    var what = node("td");
+    what.appendChild(document.createTextNode(o.quantity + " × " + o.itemName));
+    what.appendChild(node("span", "taxonk", o.unitPriceXrp + " XRP each"));
+    tr.appendChild(what);
+    tr.appendChild(node("td", "td-num", o.amountXrp + " XRP"));
+
+    var buyer = node("td");
+    var code = node("code", "val", short(o.buyerAddress, 8, 6));
+    code.title = o.buyerAddress;
+    buyer.appendChild(code);
+    tr.appendChild(buyer);
+
+    var st = node("td");
+    st.appendChild(node("span", "ostatus ostatus--" + o.status, ORDER_WORDS[o.status] || o.status));
+    if (o.status === "paid") {
+      st.appendChild(node("span", "taxonk", o.handedOverAt ? "handed over " + fmtStamp(o.handedOverAt) : "not handed over yet"));
+    }
+    tr.appendChild(st);
+
+    tr.appendChild(hashCell(o.txHash));
+    tr.appendChild(node("td", null, fmtStamp(o.paidAt || o.createdAt)));
+    return tr;
+  }
+
+  function paintOrderTabs() {
+    var tabs = document.querySelectorAll("[data-ofilter]");
+    for (var i = 0; i < tabs.length; i++) {
+      tabs[i].setAttribute("aria-pressed", (tabs[i].getAttribute("data-ofilter") || "") === sales.filter ? "true" : "false");
+    }
+  }
+
+  function paintOrderPager() {
+    var n = sales.rows.length;
+    setText("orders-pager", n === 0 ? "nothing here"
+      : "showing " + (sales.offset + 1) + "–" + (sales.offset + n) + " of " + sales.total);
+    $("btn-orders-prev").disabled = sales.offset <= 0;
+    $("btn-orders-next").disabled = sales.offset + ORDER_PAGE >= sales.total;
+  }
+
+  /* =====================================================================
      Router. The address bar carries an event id — never an email, never a
      name, never anything an attendee typed.
      ===================================================================== */
@@ -2985,6 +4473,7 @@ a{color:var(--jade)}
     if (parts[0] === "new") return { view: "new" };
     if (parts[0] === "registrations") return { view: "registrations" };
     if (parts[0] === "badges") return { view: "badges" };
+    if (parts[0] === "sales") return { view: "sales" };
     if (parts[0] === "e" && parts[1] !== undefined) {
       var id = Number(parts[1]);
       if (!isFinite(id)) return { view: "list" };
@@ -3032,6 +4521,14 @@ a{color:var(--jade)}
       current = null;
       paintRail();
       openAllList(r.view === "registrations" ? "regs" : "badges");
+      return;
+    }
+    if (r.view === "sales") {
+      setText("hdr-ctx", "sales");
+      detailGen++;
+      current = null;
+      paintRail();
+      openSales();
       return;
     }
     setText("hdr-ctx", "registry");
@@ -3119,6 +4616,10 @@ a{color:var(--jade)}
     loadHealth();
     paintRail();
 
+    searchablePicker("regs-all-event");
+    searchablePicker("badges-all-event");
+    searchablePicker("sales-event");
+
     $("regs-all-event").addEventListener("change", function () {
       regsAll.eventId = $("regs-all-event").value;
       loadRegsAll(0);
@@ -3157,11 +4658,57 @@ a{color:var(--jade)}
     $("btn-disabled-retry").addEventListener("click", function () { checkMe(false); });
     $("btn-events-refresh").addEventListener("click", function () { loadEvents(false); });
     $("btn-detail-refresh").addEventListener("click", function () {
-      if (current) openDetail(current.eventId);
+      if (!current) return;
+      var id = current.eventId;
+      var b = $("btn-detail-refresh");
+      b.disabled = true;
+      b.setAttribute("aria-busy", "true");
+      /* The event itself as well as the cards under it. It used to repaint the
+         name, status and dates from the list read when the console opened, so
+         a change made in another tab never showed up however often this was
+         pressed. The list is only read here, not repainted: going back to it
+         reads it again anyway. */
+      api("GET", "/admin/api/events?limit=200&offset=0").then(function (r) {
+        b.disabled = false;
+        b.removeAttribute("aria-busy");
+        if (r.ok && r.json && r.json.events) events = r.json.events;
+        if (!current || current.eventId !== id) return;
+        openDetail(id);
+      });
     });
     $("btn-chain").addEventListener("click", function () { if (current) loadChain(); });
     $("event-form").addEventListener("submit", submitForm);
     $("photo-form").addEventListener("submit", submitPhoto);
+    $("sweep-form").addEventListener("submit", submitSweep);
+    $("btn-sweep-cancel").addEventListener("click", function () { disarmSweep(); paintSweep(); });
+    $("in-sweepTo").addEventListener("input", onSweepInput);
+    $("in-sweepTag").addEventListener("input", onSweepInput);
+    $("btn-tr-retry").addEventListener("click", retryAllowances);
+    $("btn-tr-prev").addEventListener("click", function () { loadAllowances(Math.max(0, allow.offset - TR_PAGE)); });
+    $("btn-tr-next").addEventListener("click", function () { loadAllowances(allow.offset + TR_PAGE); });
+    $("vendor-form").addEventListener("submit", submitVendor);
+    $("btn-vendors-sales").addEventListener("click", function () {
+      if (current) sales.eventId = String(current.eventId);
+    });
+    $("sales-event").addEventListener("change", function () {
+      sales.eventId = $("sales-event").value;
+      loadSales();
+      loadOrders(0);
+    });
+    var otabs = document.querySelectorAll("[data-ofilter]");
+    for (var oi = 0; oi < otabs.length; oi++) {
+      (function (t) {
+        t.addEventListener("click", function () {
+          var f = t.getAttribute("data-ofilter") || "";
+          if (f === sales.filter) return;
+          sales.filter = f;
+          loadOrders(0);
+        });
+      })(otabs[oi]);
+    }
+    $("btn-orders-prev").addEventListener("click", function () { loadOrders(Math.max(0, sales.offset - ORDER_PAGE)); });
+    $("btn-orders-next").addEventListener("click", function () { loadOrders(sales.offset + ORDER_PAGE); });
+    $("btn-sales-refresh").addEventListener("click", function () { loadSales(); loadOrders(sales.offset); });
     var choices = document.querySelectorAll("#status-choices .choice");
     for (var ci = 0; ci < choices.length; ci++) {
       (function (c) {
@@ -3172,7 +4719,7 @@ a{color:var(--jade)}
       paintChoices();
       paintStatusHelp();
     });
-    var tabEls = document.querySelectorAll(".tab");
+    var tabEls = document.querySelectorAll(".tab[data-filter]");
     for (var ti = 0; ti < tabEls.length; ti++) {
       (function (t) {
         t.addEventListener("click", function () {

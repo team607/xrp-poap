@@ -298,6 +298,43 @@ export class XrplConnection implements XrplGateway {
       );
     }
 
+    const account = (tx as { Account?: unknown }).Account;
+    return this.#oneAtATime(typeof account === "string" ? account : wallet.classicAddress, () =>
+      this.#submitSigned(tx, wallet, options),
+    );
+  }
+
+  /**
+   * One submit at a time PER SIGNING ACCOUNT.
+   *
+   * autofill() reads the account's next Sequence, so two submits from one
+   * account racing through it are handed the same number and the second is
+   * rejected. With one issuer that was two desks minting in the same second;
+   * with a treasury per event it is two desks paying out of one. The queue is
+   * per account, not global: the issuer and every treasury still submit in
+   * parallel with each other.
+   */
+  readonly #queues = new Map<string, Promise<void>>();
+
+  #oneAtATime<T>(account: string, work: () => Promise<T>): Promise<T> {
+    const previous = this.#queues.get(account) ?? Promise.resolve();
+    const run = previous.then(work);
+    const settled = run.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.#queues.set(account, settled);
+    void settled.then(() => {
+      if (this.#queues.get(account) === settled) this.#queues.delete(account);
+    });
+    return run;
+  }
+
+  async #submitSigned(
+    tx: SubmittableTransaction,
+    wallet: Wallet,
+    options: SubmitOptions,
+  ): Promise<SubmitOutcome> {
     // Split deliberately into prepare-and-sign, then send.
     //
     // A dropped socket during PREPARE has put nothing on the wire, so the whole

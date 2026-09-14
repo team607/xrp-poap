@@ -46,6 +46,21 @@ export interface SignInRequestParams {
   returnUrl?: { app?: string; web?: string };
 }
 
+/**
+ * A vendor proving the wallet they are paid into, to open their order screen.
+ * Not tied to an event: one wallet can sell at several.
+ */
+export interface VendorSignInRequestParams {
+  purpose: "vendor";
+  returnUrl?: { app?: string; web?: string };
+}
+
+export function isVendorSignIn(
+  params: SignInRequestParams | VendorSignInRequestParams,
+): params is VendorSignInRequestParams {
+  return (params as { purpose?: unknown }).purpose === "vendor";
+}
+
 /** The envelope posted to POST https://xumm.app/api/v1/platform/payload. */
 export interface XamanSignInRequest {
   /**
@@ -66,11 +81,10 @@ export interface XamanSignInRequest {
   };
 }
 
-/** Ties a resolved payload back to an event. A hint for humans, never evidence. */
-export interface XamanSignInBlob extends Record<string, unknown> {
-  kind: "poap-registration";
-  eventId: EventId;
-}
+/** Ties a resolved payload back to what it was for. A hint for humans, never evidence. */
+export type XamanSignInBlob =
+  | { kind: "poap-registration"; eventId: EventId }
+  | { kind: "poap-vendor" };
 
 /**
  * Build the SignIn envelope for one event's registration page.
@@ -102,6 +116,31 @@ export function buildSignInRequest(params: SignInRequestParams): XamanSignInRequ
     };
   }
 
+  return request;
+}
+
+/** The vendor's version: the same one-field SignIn, saying what it opens. */
+export function buildVendorSignInRequest(
+  params: VendorSignInRequestParams = { purpose: "vendor" },
+): XamanSignInRequest {
+  const request: XamanSignInRequest = {
+    txjson: { TransactionType: "SignIn" },
+    options: { expire: SIGNIN_PAYLOAD_EXPIRE_MINUTES },
+    custom_meta: {
+      identifier: "poap-vendor",
+      blob: { kind: "poap-vendor" },
+      instruction:
+        "Sign in to your vendor counter. This is not a transaction: it costs nothing, moves " +
+        "nothing, and only proves you hold the wallet you are paid into.",
+    },
+  };
+  const { returnUrl } = params;
+  if (returnUrl && (returnUrl.app || returnUrl.web)) {
+    request.options.return_url = {
+      ...(returnUrl.app ? { app: returnUrl.app } : {}),
+      ...(returnUrl.web ? { web: returnUrl.web } : {}),
+    };
+  }
   return request;
 }
 
@@ -139,7 +178,7 @@ export interface SignInResolution {
 }
 
 export interface SignInService {
-  create(params: SignInRequestParams): Promise<SignInHandles>;
+  create(params: SignInRequestParams | VendorSignInRequestParams): Promise<SignInHandles>;
   resolve(uuid: string): Promise<SignInResolution>;
 }
 
@@ -199,8 +238,10 @@ export class XummSignInService implements SignInService {
     this.sdk = sdk ?? new XummSdk(apiKey, apiSecret);
   }
 
-  async create(params: SignInRequestParams): Promise<SignInHandles> {
-    const request = buildSignInRequest(params);
+  async create(params: SignInRequestParams | VendorSignInRequestParams): Promise<SignInHandles> {
+    const vendor = isVendorSignIn(params);
+    const request = vendor ? buildVendorSignInRequest(params) : buildSignInRequest(params);
+    const context = vendor ? { purpose: "vendor" } : { eventId: params.eventId };
 
     let created: XummCreatedPayload | null;
     try {
@@ -209,14 +250,12 @@ export class XummSignInService implements SignInService {
       // The API secret can appear in transport-level errors. Never re-attach it.
       throw new ConnectionError("Xaman rejected the sign-in request", {
         reason: (err as Error).message,
-        eventId: params.eventId,
+        ...context,
       });
     }
 
     if (!created) {
-      throw new ConnectionError("Xaman returned no payload for the sign-in request", {
-        eventId: params.eventId,
-      });
+      throw new ConnectionError("Xaman returned no payload for the sign-in request", context);
     }
 
     return {
@@ -302,7 +341,7 @@ const NOT_CONFIGURED =
  * register — never at startup. buildDeps() says so in one line at boot.
  */
 export class NullSignInService implements SignInService {
-  async create(_params: SignInRequestParams): Promise<SignInHandles> {
+  async create(_params: SignInRequestParams | VendorSignInRequestParams): Promise<SignInHandles> {
     throw new XrplLayerError("CONFIG_INVALID", NOT_CONFIGURED);
   }
 

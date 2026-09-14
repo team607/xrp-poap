@@ -32,7 +32,7 @@ export {
   assertNetworkMatchesEndpoint,
   parseTrustProxy,
   type AppConfig,
-  type SponsorConfig,
+  type RewardConfig,
   type LoadConfigOptions,
 } from "./config.js";
 
@@ -67,8 +67,25 @@ export { burn } from "./xrpl/burn.js";
 export {
   accountExists,
   getAccountBalanceXrp,
-  sponsorWallet,
-} from "./xrpl/sponsor.js";
+  readAccount,
+  type AccountSnapshot,
+} from "./xrpl/account.js";
+
+// --- paying attendees -------------------------------------------------------
+export {
+  payAllowance,
+  quoteAllowance,
+  findAllowancePayment,
+  type PayAllowanceInput,
+  type AllowanceQuote,
+} from "./xrpl/allowance.js";
+export { sweepTreasury, type SweepInput, type SweepResult } from "./xrpl/treasury.js";
+export { TreasuryVault } from "./treasury/vault.js";
+export { TreasuryService, type TreasuryHandle } from "./treasury/service.js";
+export {
+  dropsToXrpString as moneyDropsToXrpString,
+  xrpToDropsBigInt as moneyXrpToDropsBigInt,
+} from "./money.js";
 
 // --- verification -----------------------------------------------------------
 export {

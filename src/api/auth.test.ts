@@ -28,9 +28,6 @@ import type {
   EventId,
   SessionRecord,
   SessionStore,
-  SponsorLedger,
-  SponsorReservation,
-  SponsorReserveInput,
 } from "../types.js";
 import {
   CSRF_COOKIE,
@@ -71,7 +68,7 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     network: "testnet",
     issuerAddress: ISSUER,
     issuerSeed: FAKE_SEED,
-    sponsor: { enabled: false, amountXrp: "1.5", dailyCapXrp: "50" },
+    reward: { maxPerAttendeeXrp: "10", feeBufferXrp: "0.01" },
     pinata: { gateway: "https://gateway.pinata.cloud" },
     xumm: {},
     demoEnabled: false,
@@ -144,19 +141,6 @@ const unusedClaims = {
   async delete(): Promise<void> {},
 } satisfies ClaimRepository;
 
-const unusedSponsorLedger = {
-  async hasSponsored(): Promise<boolean> {
-    return false;
-  },
-  async sponsoredTodayXrp(): Promise<string> {
-    return "0";
-  },
-  async reserve(_input: SponsorReserveInput): Promise<SponsorReservation | null> {
-    return null;
-  },
-  async confirm(): Promise<void> {},
-  async release(): Promise<void> {},
-} satisfies SponsorLedger;
 
 const unusedChain: ChainOps = {
   async mint() {
@@ -171,7 +155,19 @@ const unusedChain: ChainOps = {
   async accountExists() {
     return true;
   },
-  async sponsorWallet() {
+  async readAccount() {
+    throw new XrplLayerError("TX_FAILED", "not used in these tests");
+  },
+  async payAllowance() {
+    throw new XrplLayerError("TX_FAILED", "not used in these tests");
+  },
+  async sweepTreasury() {
+    throw new XrplLayerError("TX_FAILED", "not used in these tests");
+  },
+  async verifyPurchasePayment() {
+    throw new XrplLayerError("TX_FAILED", "not used in these tests");
+  },
+  async findPurchasePayment() {
     throw new XrplLayerError("TX_FAILED", "not used in these tests");
   },
   async verifyClaim() {
@@ -270,7 +266,6 @@ function harness(
     gateway: new MockGateway({ issuerAddress: ISSUER }),
     attendance: unusedRepo,
     claims: unusedClaims,
-    sponsorLedger: unusedSponsorLedger,
     sessions,
     chain: unusedChain,
     rateLimit: { enabled: false },

@@ -8,12 +8,14 @@
 import { isValidClassicAddress } from "xrpl";
 import { z } from "zod";
 import { ValidationError } from "../errors.js";
+import { dropsToXrpString } from "../money.js";
 import {
   MAX_TAXON,
   type AcceptOfferPayload,
   type EventId,
   type NetworkName,
 } from "../types.js";
+import { memo, PURCHASE_MEMO_TYPE, type MemoField } from "../xrpl/memos.js";
 
 /**
  * Minutes the attendee has to approve the request in Xaman. Long enough to dig
@@ -170,6 +172,134 @@ export function buildClaimSignRequest(params: ClaimSignRequestParams): XamanClai
 }
 
 // ---------------------------------------------------------------------------
+// Outgoing: paying a vendor
+// ---------------------------------------------------------------------------
+
+/**
+ * Minutes a buyer has to approve a payment. Short, because the order holds
+ * stock while it waits: a phone that wandered off must not keep the last pizza
+ * from the person behind it for ten minutes.
+ */
+export const PURCHASE_PAYLOAD_EXPIRE_MINUTES = 5;
+
+const ORDER_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+export interface PurchaseSignRequestParams {
+  purchaseId: string;
+  eventId: EventId;
+  buyerAddress: string;
+  vendorAddress: string;
+  /** Integer drops, as a string: the price times the quantity, already multiplied. */
+  amountDrops: string;
+  vendorName: string;
+  itemName: string;
+  quantity: number;
+  /** Attribution tag. Every payment made through this app carries it. */
+  sourceTag?: number;
+  returnUrl?: { app?: string; web?: string };
+}
+
+/**
+ * The Payment a buyer signs. Five fields and the tag: who pays, who is paid,
+ * exactly how much, and the order it settles. No DestinationTag — vendors are
+ * paid into wallets they hold themselves — and no flags, so it can never be a
+ * partial payment.
+ */
+export interface PurchasePaymentTxjson {
+  TransactionType: "Payment";
+  Account: string;
+  Destination: string;
+  Amount: string;
+  Memos: MemoField[];
+  SourceTag?: number;
+}
+
+export interface XamanPurchaseBlob extends Record<string, unknown> {
+  kind: "poap-purchase";
+  eventId: EventId;
+  purchaseId: string;
+}
+
+export interface XamanPurchaseSignRequest {
+  txjson: PurchasePaymentTxjson;
+  options: {
+    submit: true;
+    expire: number;
+    return_url?: { app?: string; web?: string };
+    force_network?: string;
+  };
+  custom_meta: {
+    identifier: string;
+    blob: XamanPurchaseBlob;
+    instruction: string;
+  };
+}
+
+function clip(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, max - 1)}…`;
+}
+
+export function buildPurchaseSignRequest(params: PurchaseSignRequestParams): XamanPurchaseSignRequest {
+  const { purchaseId, eventId, buyerAddress, vendorAddress, amountDrops, quantity, sourceTag, returnUrl } = params;
+  assertEventId(eventId);
+
+  for (const [label, address] of [
+    ["buyer", buyerAddress],
+    ["vendor", vendorAddress],
+  ] as const) {
+    if (!isValidClassicAddress(address)) {
+      throw new ValidationError("INVALID_ADDRESS", `Not a valid XRPL classic address for the ${label}: ${address}`, {
+        address,
+      });
+    }
+  }
+  if (buyerAddress === vendorAddress) {
+    throw new ValidationError("INVALID_INPUT", "A wallet cannot pay itself.", { address: buyerAddress });
+  }
+  if (!ORDER_ID.test(purchaseId)) {
+    throw new ValidationError("INVALID_INPUT", "purchaseId must be a uuid", { purchaseId });
+  }
+  if (!/^[1-9]\d{0,17}$/.test(amountDrops)) {
+    throw new ValidationError("INVALID_INPUT", "amountDrops must be a whole number of drops above zero", {
+      amountDrops,
+    });
+  }
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new ValidationError("INVALID_INPUT", "quantity must be a whole number above zero", { quantity });
+  }
+
+  const amountXrp = dropsToXrpString(BigInt(amountDrops));
+  const request: XamanPurchaseSignRequest = {
+    txjson: {
+      TransactionType: "Payment",
+      Account: buyerAddress,
+      Destination: vendorAddress,
+      Amount: amountDrops,
+      Memos: [memo(PURCHASE_MEMO_TYPE, purchaseId.toLowerCase())],
+      ...(sourceTag === undefined ? {} : { SourceTag: sourceTag }),
+    },
+    options: { submit: true, expire: PURCHASE_PAYLOAD_EXPIRE_MINUTES },
+    custom_meta: {
+      // Xaman caps the identifier and only accepts [A-Za-z0-9-_.].
+      identifier: `poap-buy-${purchaseId.slice(0, 8).toLowerCase()}`,
+      blob: { kind: "poap-purchase", eventId, purchaseId: purchaseId.toLowerCase() },
+      instruction: clip(
+        `Pay ${clip(params.vendorName, 60)} ${amountXrp} XRP for ${quantity} × ${clip(params.itemName, 60)}.`,
+        200,
+      ),
+    },
+  };
+
+  if (returnUrl && (returnUrl.app || returnUrl.web)) {
+    request.options.return_url = {
+      ...(returnUrl.app ? { app: returnUrl.app } : {}),
+      ...(returnUrl.web ? { web: returnUrl.web } : {}),
+    };
+  }
+  return request;
+}
+
+// ---------------------------------------------------------------------------
 // Incoming: the webhook
 // ---------------------------------------------------------------------------
 
@@ -309,6 +439,38 @@ export function parseXamanClaimMeta(body: unknown): XamanClaimHints {
   }
 
   return hints;
+}
+
+/**
+ * The order a purchase payload was for, when a webhook delivery is about one.
+ * Never throws, and never evidence: the id says which order to go and check
+ * against the ledger.
+ */
+export function parseXamanPurchaseMeta(body: unknown): { purchaseId?: string; eventId?: EventId } {
+  const parsed = webhookBodySchema.safeParse(body);
+  if (!parsed.success || !parsed.data.custom_meta) return {};
+
+  let raw: unknown = parsed.data.custom_meta.blob;
+  if (typeof raw === "string") {
+    try {
+      raw = JSON.parse(raw);
+    } catch {
+      return {};
+    }
+  }
+
+  const blob = z
+    .object({
+      kind: z.literal("poap-purchase"),
+      purchaseId: z.string().regex(ORDER_ID),
+      eventId: z.number().int().min(0).max(MAX_TAXON).optional(),
+    })
+    .safeParse(raw);
+  if (!blob.success) return {};
+  return {
+    purchaseId: blob.data.purchaseId.toLowerCase(),
+    ...(blob.data.eventId === undefined ? {} : { eventId: blob.data.eventId }),
+  };
 }
 
 /** Xaman's `force_network` string for one of our networks. */

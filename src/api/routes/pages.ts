@@ -146,6 +146,11 @@ export function registerPageRoutes(
   servePage(app, "/attend", "attend.html", dir);
   servePage(app, "/attend/:eventId", "attend.html", dir);
 
+  // A vendor's order screen. The wallet they are paid into is the login, proven
+  // with a Xaman sign-in, and an order appears on it only once the ledger says
+  // it is paid, so everything it shows can be handed over.
+  servePage(app, "/vendor", "vendor.html", dir);
+
   // The same page as `/`, kept because it is the address people link to and
   // the one the bar's own Events tab points at.
   //

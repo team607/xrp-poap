@@ -21,6 +21,7 @@
  * ---------------------------------------------------------------------------
  */
 import { NotFoundError, ValidationError, XrplLayerError } from "../errors.js";
+import { dropsToXrpString, normalizeXrp, xrpToDropsBigInt } from "../money.js";
 import {
   MAX_TAXON,
   type EventId,
@@ -40,6 +41,9 @@ interface EventRow {
   venue: string | null;
   metadata_uri: string | null;
   status: string;
+  /** bigint columns, cast to text so they never pass through a JS number. */
+  allowance_drops?: string | null;
+  budget_drops?: string | null;
   created_at: Date | string;
   updated_at: Date | string;
 }
@@ -57,7 +61,11 @@ interface EventRow {
  */
 const COLUMNS =
   "event_id, name, description, to_char(event_date, 'YYYY-MM-DD') AS event_date, " +
-  "venue, metadata_uri, status, created_at, updated_at";
+  "venue, metadata_uri, status, allowance_drops::text AS allowance_drops, " +
+  "budget_drops::text AS budget_drops, created_at, updated_at";
+
+/** The two money fields, stored as drops and carried as decimal XRP. */
+const DROPS_COLUMNS: ReadonlySet<string> = new Set(["allowance_drops", "budget_drops"]);
 
 /**
  * Ordered by the primary key.
@@ -151,17 +159,39 @@ export function assertValidEventDate(eventDate: unknown): void {
   }
 }
 
-/** Validates everything 005_events.sql constrains, in one place. */
+/**
+ * The allowance and the budget, as the organiser typed them, in the one
+ * spelling both stores keep: "2.50" becomes "2.5". Throws INVALID_INPUT for
+ * anything that is not a plain XRP amount. Whether an allowance is too large
+ * for this server is a question for the route, which knows the ceiling.
+ */
+export function normalizeEventAmounts<T extends { allowanceXrp?: string; budgetXrp?: string }>(
+  input: T,
+): T {
+  const out = { ...input };
+  if (input.allowanceXrp !== undefined) {
+    out.allowanceXrp = normalizeXrp(input.allowanceXrp, "allowanceXrp");
+  }
+  if (input.budgetXrp !== undefined) {
+    out.budgetXrp = normalizeXrp(input.budgetXrp, "budgetXrp");
+  }
+  return out;
+}
+
+/** Validates everything 005_events.sql and 011 constrain, in one place. */
 export function assertValidEvent(input: {
   eventId: EventId;
   name: unknown;
   status: unknown;
   eventDate?: unknown;
+  allowanceXrp?: string;
+  budgetXrp?: string;
 }): void {
   assertValidEventId(input.eventId);
   assertValidEventName(input.name);
   assertValidStatus(input.status);
   assertValidEventDate(input.eventDate);
+  normalizeEventAmounts(input);
 }
 
 /** The duplicate an operator hits by reusing a taxon that is already an event. */
@@ -202,6 +232,8 @@ export function rowToEvent(row: EventRow): EventRecord {
     venue: row.venue,
     metadataUri: row.metadata_uri,
     status: row.status as EventStatus,
+    allowanceXrp: dropsToXrpString(BigInt(row.allowance_drops ?? "0")),
+    budgetXrp: dropsToXrpString(BigInt(row.budget_drops ?? "0")),
     createdAt: toDate(row.created_at),
     updatedAt: toDate(row.updated_at),
   };
@@ -220,6 +252,8 @@ export const EVENT_PATCH_COLUMNS = {
   venue: "venue",
   metadataUri: "metadata_uri",
   status: "status",
+  allowanceXrp: "allowance_drops",
+  budgetXrp: "budget_drops",
 } as const;
 
 export type EventPatch = Partial<Omit<EventRecord, "eventId" | "createdAt" | "updatedAt">>;
@@ -255,6 +289,7 @@ export function assertValidPatch(patch: UpdatablePatch): void {
   if (patch.name !== undefined) assertValidEventName(patch.name);
   if (patch.status !== undefined) assertValidStatus(patch.status);
   if (patch.eventDate !== undefined) assertValidEventDate(patch.eventDate);
+  normalizeEventAmounts(patch);
 }
 
 export class PgEventRepository implements EventRepository {
@@ -267,8 +302,9 @@ export class PgEventRepository implements EventRepository {
     try {
       const res = await this.db.query(
         `INSERT INTO events
-           (event_id, name, description, event_date, venue, metadata_uri, status)
-         VALUES ($1, $2, $3, $4::date, $5, $6, $7)
+           (event_id, name, description, event_date, venue, metadata_uri, status,
+            allowance_drops, budget_drops)
+         VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8::bigint, $9::bigint)
          RETURNING ${COLUMNS}`,
         [
           input.eventId,
@@ -278,6 +314,9 @@ export class PgEventRepository implements EventRepository {
           input.venue ?? null,
           input.metadataUri ?? null,
           status,
+          // Text, not a JS number: a bigint parameter must not pass through 2^53.
+          xrpToDropsBigInt(input.allowanceXrp ?? "0", "allowanceXrp").toString(),
+          xrpToDropsBigInt(input.budgetXrp ?? "0", "budgetXrp").toString(),
         ],
       );
       const row = res.rows[0] as EventRow | undefined;
@@ -325,10 +364,12 @@ export class PgEventRepository implements EventRepository {
     for (const [key, column] of Object.entries(EVENT_PATCH_COLUMNS)) {
       const value = (patch as Record<string, unknown>)[key];
       if (value === undefined) continue;
-      values.push(value);
-      // event_date is the one column that needs its type spelled out; the rest
-      // are text and pg infers them from the column.
-      sets.push(`${column} = $${values.length}${column === "event_date" ? "::date" : ""}`);
+      const drops = DROPS_COLUMNS.has(column);
+      values.push(drops ? xrpToDropsBigInt(String(value), key).toString() : value);
+      // event_date and the two drops columns need their types spelled out; the
+      // rest are text and pg infers them from the column.
+      const cast = column === "event_date" ? "::date" : drops ? "::bigint" : "";
+      sets.push(`${column} = $${values.length}${cast}`);
     }
 
     // An empty patch is a read. Nothing changed, so updated_at must not move.

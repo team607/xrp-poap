@@ -26,6 +26,10 @@ import { registerEventRoutes } from "./routes/events.js";
 import { registerRegistrationRoutes } from "./routes/registrations.js";
 import { registerRosterRoute } from "./routes/roster.js";
 import { registerRegistryRoutes } from "./routes/registry.js";
+import { registerStoreRoutes } from "./routes/store.js";
+import { registerTreasuryRoutes } from "./routes/treasury.js";
+import { registerVendorPortalRoutes } from "./routes/vendor-portal.js";
+import { registerVendorRoutes } from "./routes/vendors.js";
 import { registerVerifyRoute } from "./routes/verify.js";
 import { registerXamanWebhookRoute } from "./routes/xaman-webhook.js";
 
@@ -136,6 +140,13 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
     registerEventRoutes(scope, deps);
     // The organiser's cross-event lists. Admin-guarded inside the module.
     registerRegistryRoutes(scope, deps);
+    // Each event's treasury: its balance, its budget, retries and the sweep.
+    registerTreasuryRoutes(scope, deps);
+    // The store: vendors and prices for the organiser, ordering for the
+    // attendee, and the vendor's own order screen. Each no-ops without its stores.
+    registerVendorRoutes(scope, deps);
+    registerStoreRoutes(scope, deps);
+    registerVendorPortalRoutes(scope, deps);
     registerRegistrationRoutes(scope, deps);
 
     // Inside the rate-limited scope on purpose: POST /admin/api/login is a

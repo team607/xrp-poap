@@ -27,6 +27,7 @@ const PAGES: ReadonlyArray<{ file: string; routes: readonly string[] }> = [
   { file: "register.html", routes: ["/register", "/register/700010"] },
   { file: "volunteer.html", routes: ["/volunteer"] },
   { file: "attend.html", routes: ["/attend", "/attend/700010"] },
+  { file: "vendor.html", routes: ["/vendor"] },
   // The bare host and /events are the same page: the public record is the
   // landing page.
   { file: "events.html", routes: ["/", "/events", "/events/"] },

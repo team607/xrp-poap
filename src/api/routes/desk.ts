@@ -15,15 +15,17 @@
  *
  *   GET  /admin/api/desk/state
  *   GET  /admin/api/desk/attendees/:address?eventId=<taxon>
- *   POST /admin/api/desk/sponsor  { address, eventId }
+ *   POST /admin/api/desk/allowance  { address, eventId }
+ *   POST /admin/api/desk/reconcile  { address, eventId }
  *
  * WHY UNDER `/admin/api`, and it is not decoration. `registerAdminAuth()` guards
  * that whole prefix with an `onRequest` hook, so a route added there cannot
- * forget to require a session. Both of these need one:
+ * forget to require a session. These need one:
  *
- *   - `sponsor` SPENDS THE ISSUER'S XRP — 1.5 XRP per unactivated attendee, real
- *     money on mainnet. Unauthenticated on a public host it is an open tap on
- *     the issuer's wallet, throttled only by the daily cap.
+ *   - `allowance` SPENDS AN EVENT'S TREASURY — an attendee's whole allowance
+ *     plus whatever their wallet lacks, real money on mainnet. Unauthenticated
+ *     on a public host it is an open tap on the treasury, stopped only when the
+ *     event's budget runs out.
  *   - `attendees` returns a registered attendee's display name, which is
  *     personal data about somebody who is standing in a room.
  *
@@ -40,13 +42,14 @@
 import type { FastifyInstance } from "fastify";
 import { isValidClassicAddress } from "xrpl";
 import { z } from "zod";
-import { SponsorshipDeniedError, XrplLayerError } from "../../errors.js";
+import { AllowanceDeniedError, XrplLayerError } from "../../errors.js";
 import { badgeManifestPath, loadBadgeManifest } from "../../metadata/badge-uri-resolver.js";
 import type { AttendanceRecord, ClaimRecord, EventId } from "../../types.js";
 import { assertValidTaxon } from "../../xrpl/encoding.js";
 import { isClaimOfferOpen } from "../../xrpl/offers.js";
-import { getAccountBalanceXrp } from "../../xrpl/sponsor.js";
+import { getAccountBalanceXrp } from "../../xrpl/account.js";
 import { findAcceptTxHash } from "../../xrpl/verify.js";
+import { payAllowanceFor, readAllowanceStatus } from "../allowance.js";
 import { reserveShortfallXrp } from "../demo-state.js";
 import type { ApiDeps } from "../deps.js";
 import {
@@ -292,8 +295,8 @@ type AttendeeParams = z.infer<typeof attendeeParamsSchema>;
 const attendeeQuerySchema = z.object({ eventId: z.string().optional() });
 type AttendeeQuery = z.infer<typeof attendeeQuerySchema>;
 
-const sponsorBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
-type SponsorBody = z.infer<typeof sponsorBodySchema>;
+const allowanceBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
+type AllowanceBody = z.infer<typeof allowanceBodySchema>;
 
 const reconcileBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
 type ReconcileBody = z.infer<typeof reconcileBodySchema>;
@@ -342,7 +345,12 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
       network: deps.config.network,
       endpoint: deps.gateway.endpoint ?? deps.config.endpoint,
       issuer: { address: issuerAddress, balanceXrp, activated },
-      sponsor: { amountXrp: deps.config.sponsor.amountXrp },
+      // Whether events on this server can pay their attendees at all. What
+      // one event pays is on the scan, because it is per event.
+      reward: {
+        treasuriesConfigured: Boolean(deps.treasuries?.configured),
+        maxPerAttendeeXrp: deps.config.reward.maxPerAttendeeXrp,
+      },
     });
   });
 
@@ -386,7 +394,6 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
       assertValidTaxon(eventId);
 
       const scanned = request.params.address.trim();
-      const sponsorAmountXrp = deps.config.sponsor.amountXrp;
 
       if (!isValidClassicAddress(scanned)) {
         return reply.code(200).send({
@@ -397,7 +404,7 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
           balanceXrp: "0",
           needsSponsorship: false,
           reserveShortfallXrp: "0",
-          sponsorAmountXrp,
+          allowance: null,
           claim: null,
           attended: false,
           alreadyHasBadge: false,
@@ -433,6 +440,11 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
       // who have touched XRP before, and are the least likely to expect this.
       const shortfallXrp = reserveShortfallXrp(balanceXrp);
 
+      // The event's allowance for this person: already sent, on its way, or
+      // what pressing Issue would send them now. Null when the event is not a
+      // row on this server — a scan still answers about the badge.
+      const allowance = await readAllowanceStatus(deps, eventId, scanned, balanceXrp);
+
       return reply.code(200).send({
         address: scanned,
         valid: true,
@@ -441,7 +453,7 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
         balanceXrp,
         needsSponsorship: !activated || shortfallXrp !== "0",
         reserveShortfallXrp: shortfallXrp,
-        sponsorAmountXrp,
+        allowance,
         claim: facts.claim
           ? {
               status: facts.claim.status,
@@ -558,61 +570,59 @@ export function registerDeskRoutes(app: FastifyInstance, deps: ApiDeps): void {
   );
 
   /**
-   * POST /admin/api/desk/sponsor { address, eventId } — activate an empty wallet.
+   * POST /admin/api/desk/allowance { address, eventId } — send their allowance.
    *
-   * THE REAL sponsorWallet(), with the real SponsorConfig and the real
-   * SponsorLedger, so the two-phase reservation and the daily cap genuinely
-   * apply. That is not a detail: this is the only route a person can press that
-   * moves the issuer's XRP on purpose, and those two guards are the whole thing
-   * standing between an issuer wallet and an unbounded drain.
+   * THE SAME PAYMENT the claim route makes on issue, through the same guards:
+   * once per attendee, the event's budget, the per-attendee ceiling. Two uses
+   * at a desk:
    *
-   * The claim route sponsors on its own when it meets an unactivated address.
-   * This exists so the volunteer can do it as a deliberate, visible step BEFORE
-   * issuing, which is what a person at a desk actually does.
+   *   - an empty wallet, topped up as a deliberate, visible step BEFORE the
+   *     badge is issued, which is what a person at a desk actually does;
+   *   - an allowance that did not go through when the badge was issued — the
+   *     treasury was empty, the node dropped — sent again once it can be.
    *
-   * 200 { sponsored, alreadyActivated, amountXrp?, txHash? }
-   * 400 bad address or event id | 401 no session | 403 refused | 429 daily cap
+   * Pressing it twice pays once: the second press answers `already_paid`.
+   *
+   * 200 { outcome, allowanceXrp, topupXrp, amountXrp, txHash? }
+   * 400 bad address or event id | 401 no session
+   * 409 in flight, over budget, over the ceiling | 503 no treasury to pay from
    */
-  app.post<{ Body: SponsorBody }>(
-    `${DESK_PREFIX}/sponsor`,
-    { schema: { body: sponsorBodySchema }, preHandler: requireAdmin },
+  app.post<{ Body: AllowanceBody }>(
+    `${DESK_PREFIX}/allowance`,
+    { schema: { body: allowanceBodySchema }, preHandler: requireAdmin },
     async (request, reply) => {
       const { address, eventId } = request.body;
 
       try {
-        const result = await deps.chain.sponsorWallet(deps.gateway, {
-          address,
-          eventId,
-          config: deps.config.sponsor,
-          ledger: deps.sponsorLedger,
-        });
+        const result = await payAllowanceFor(deps, { eventId, address });
 
-        // Money moved (or did not) at the operator's request. One line, with
-        // who and how much, because the daily cap is only auditable if the
-        // spends that fill it are.
+        // Money moved (or did not) at an operator's request. One line, with
+        // who and how much, because a budget is only auditable if the payments
+        // that fill it are.
         request.log.info(
           {
             address,
             eventId,
-            sponsored: result.sponsored,
+            outcome: result.outcome,
             amountXrp: result.amountXrp,
+            txHash: result.txHash,
             admin: request.admin?.email,
           },
-          "desk sponsorship",
+          "desk allowance",
         );
 
         return reply.code(200).send({
-          sponsored: result.sponsored,
-          alreadyActivated: result.alreadyActivated,
-          ...(result.amountXrp ? { amountXrp: result.amountXrp } : {}),
+          outcome: result.outcome,
+          allowanceXrp: result.allowanceXrp,
+          topupXrp: result.topupXrp,
+          amountXrp: result.amountXrp,
           ...(result.txHash ? { txHash: result.txHash } : {}),
         });
       } catch (err) {
         // Mapped here rather than left to the error handler so the guard is
-        // visible at the route that spends the money: 403 for a refusal that
-        // stays true, 429 for the daily cap, which is a throttle and may pass
-        // tomorrow. `details.kind` tells the page which.
-        if (err instanceof SponsorshipDeniedError) {
+        // visible at the route that spends the money. `details.kind` tells the
+        // page which refusal it was.
+        if (err instanceof AllowanceDeniedError) {
           return sendError(reply, statusForXrplError(err), err.code, err.message, err.details);
         }
         throw err;

@@ -42,7 +42,7 @@ import {
   countPendingIssuerOffers,
   createClaimOffer,
 } from "../src/xrpl/offers.js";
-import { accountExists, getAccountBalanceXrp } from "../src/xrpl/sponsor.js";
+import { accountExists, getAccountBalanceXrp } from "../src/xrpl/account.js";
 import { verifyClaim } from "../src/xrpl/verify.js";
 import type { XrplGateway } from "../src/types.js";
 import {

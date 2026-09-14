@@ -3,7 +3,7 @@
  *
  * `runRepositoryContract()` is exported and takes a factory, so the same
  * assertions can be pointed at anything that claims to be an
- * AttendanceRepository + SponsorLedger + ClaimRepository. It runs against the
+ * AttendanceRepository, ClaimRepository, AllowanceLedger and the rest. It runs against the
  * in-memory stores on every `npm test`, and against a real Postgres when
  * TEST_DATABASE_URL is set:
  *
@@ -19,10 +19,11 @@
  * minted N badges. An implementation that is correct one call at a time and
  * wrong under Promise.all is wrong.
  */
+import { randomUUID } from "node:crypto";
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
-import { dropsToXrp } from "xrpl";
+import { Wallet } from "xrpl";
 import { XrplLayerError } from "../errors.js";
 import {
   MAX_TAXON,
@@ -32,8 +33,14 @@ import {
   type EventRepository,
   type RegistrationRepository,
   type SessionStore,
-  type SponsorLedger,
-  type SponsorReservation,
+  type AllowanceLedger,
+  type AllowanceRecord,
+  type AllowanceReserveInput,
+  type PurchaseRepository,
+  type PurchaseReserveInput,
+  type TreasuryRepository,
+  type VendorRepository,
+  type VendorSessionStore,
 } from "../types.js";
 import { PgAttendanceRepository } from "./attendance-repo.js";
 import { PgClaimRepository } from "./claim-repo.js";
@@ -42,7 +49,12 @@ import { createMemoryStores } from "./memory.js";
 import { closePool, createPool } from "./pool.js";
 import { PgRegistrationRepository } from "./registration-repo.js";
 import { hashSessionId, PgSessionStore } from "./session-store.js";
-import { dropsToXrpString, PgSponsorLedger } from "./sponsor-ledger.js";
+import { dropsToXrpString } from "../money.js";
+import { PgAllowanceLedger } from "./allowance-ledger.js";
+import { PgPurchaseRepository } from "./purchase-repo.js";
+import { PgTreasuryRepository } from "./treasury-repo.js";
+import { PgVendorRepository } from "./vendor-repo.js";
+import { PgVendorSessionStore } from "./vendor-session-store.js";
 
 // XRPL classic addresses: base58, mixed case, and case-SENSITIVE. Nothing in
 // the persistence layer may fold these.
@@ -53,8 +65,18 @@ const CAROL = "rCarolM2xF7bN4qT8sJ1wK6vP9dG3hLyRz";
 const EVENT_A = 4201;
 const EVENT_B = 4202;
 
-/** Big enough to be irrelevant when the test is not about the cap. */
-const NO_CAP = "1000000";
+/**
+ * Real classic addresses. The allowance book validates them, because a
+ * payment is about to be addressed to one.
+ */
+const TREASURY_1 = "rBdhYBA2uaVYG7ia2yusmPu5qMS4hE6oQ";
+const TREASURY_2 = "rLNaPoKeeBjZe2qs6x52yVPZpZ8td4dc6w";
+const PAYEE_1 = "rwPy1pJd3RcHrEaqKk1yUiEGCqz8wewJZm";
+const PAYEE_2 = "ra6pcMuGFgwSefKt4GPy6UCeEXkn2KtaNS";
+const PAYEE_3 = "rPeZcWESwr1Wy64tw6JdVqtKNjhuUzHK2i";
+
+/** Shaped like a seal. The repository stores it and never opens it. */
+const SEALED = "v1.0000abcd.aXZpdg.dGFn.Y2lwaGVy";
 
 function claim(overrides: Partial<AttendanceRecord> = {}): AttendanceRecord {
   return {
@@ -93,7 +115,13 @@ function eventInput(overrides: Partial<Parameters<EventRepository["create"]>[0]>
 
 export interface ContractSubjects {
   repo: AttendanceRepository;
-  ledger: SponsorLedger;
+  treasuries: TreasuryRepository;
+  allowances: AllowanceLedger;
+  vendors: VendorRepository;
+  purchases: PurchaseRepository;
+  vendorSessions: VendorSessionStore;
+  /** Every id the vendor session store persisted. Same purpose as storedSessionIds. */
+  storedVendorSessionIds: () => Promise<string[]>;
   claims: ClaimRepository;
   events: EventRepository;
   registrations: RegistrationRepository;
@@ -135,27 +163,61 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
       return subjects;
     }
 
-    /** reserve() + confirm(), the whole two-phase spend, for tests about totals. */
-    async function spend(
-      ledger: SponsorLedger,
-      over: {
-        eventId?: number;
-        address?: string;
-        amountXrp?: string;
-        dailyCapXrp?: string;
-        txHash?: string;
-      } = {},
-    ): Promise<SponsorReservation | null> {
-      const reservation = await ledger.reserve({
-        eventId: over.eventId ?? EVENT_A,
-        address: over.address ?? ALICE,
-        amountXrp: over.amountXrp ?? "1.5",
-        dailyCapXrp: over.dailyCapXrp ?? NO_CAP,
-      });
-      if (reservation) {
-        await ledger.confirm(reservation.id, over.txHash ?? hash(Number(reservation.id)));
+    /** One event with one vendor selling one item: the smallest store there is. */
+    async function stall(
+      subjects: ContractSubjects,
+      opts: { stock?: number | null; priceXrp?: string; eventId?: number } = {},
+    ) {
+      const eventId = opts.eventId ?? EVENT_A;
+      if (!(await subjects.events.find(eventId))) {
+        await subjects.events.create(eventInput({ eventId, name: `Event ${eventId}` }));
       }
-      return reservation;
+      const vendor = await subjects.vendors.createVendor({
+        eventId,
+        name: "Dominos",
+        walletAddress: eventId === EVENT_A ? TREASURY_2 : PAYEE_3,
+      });
+      const item = await subjects.vendors.createItem({
+        vendorId: vendor.id,
+        name: "Garlic bread",
+        priceXrp: opts.priceXrp ?? "1.5",
+        stock: opts.stock ?? null,
+      });
+      return { vendor, item };
+    }
+
+    function order(
+      s: { vendor: { id: string; eventId: number; walletAddress: string }; item: { id: string; priceXrp: string } },
+      over: Partial<PurchaseReserveInput> = {},
+    ): PurchaseReserveInput {
+      return {
+        id: randomUUID(),
+        eventId: s.vendor.eventId,
+        vendorId: s.vendor.id,
+        itemId: s.item.id,
+        buyerAddress: PAYEE_1,
+        vendorAddress: s.vendor.walletAddress,
+        vendorName: "Dominos",
+        itemName: "Garlic bread",
+        quantity: 1,
+        unitPriceXrp: s.item.priceXrp,
+        expiresAt: new Date(Date.now() + 5 * 60_000),
+        maxOpenPerBuyer: 50,
+        ...over,
+      };
+    }
+
+    /** What a fresh wallet at a 5 XRP event is booked for. */
+    function booking(over: Partial<AllowanceReserveInput> = {}): AllowanceReserveInput {
+      return {
+        eventId: EVENT_A,
+        address: PAYEE_1,
+        allowanceXrp: "5",
+        topupXrp: "1.21",
+        treasuryAddress: TREASURY_1,
+        budgetXrp: "1000",
+        ...over,
+      };
     }
 
     // -----------------------------------------------------------------------
@@ -316,297 +378,6 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
       expect(attended.map((r) => r.txHash)).toEqual([hash(11), hash(12)]);
 
       expect(await repo.listByAddress(CAROL)).toEqual([]);
-    });
-
-    // -----------------------------------------------------------------------
-    // SponsorLedger (brief section 5.4), two-phase
-    // -----------------------------------------------------------------------
-
-    it("hasSponsored goes false then true, scoped per event", async () => {
-      const { ledger } = await fresh();
-
-      expect(await ledger.hasSponsored(EVENT_A, ALICE)).toBe(false);
-
-      await spend(ledger, { txHash: hash(0x5a1) });
-
-      expect(await ledger.hasSponsored(EVENT_A, ALICE)).toBe(true);
-      // One sponsorship per event code per address — a different event is a
-      // different budget line.
-      expect(await ledger.hasSponsored(EVENT_B, ALICE)).toBe(false);
-      expect(await ledger.hasSponsored(EVENT_A, BOB)).toBe(false);
-    });
-
-    it("reserve returns a usable reservation", async () => {
-      const { ledger } = await fresh();
-
-      const reservation = await ledger.reserve({
-        eventId: EVENT_A,
-        address: ALICE,
-        amountXrp: "1.50",
-        dailyCapXrp: NO_CAP,
-      });
-
-      expect(reservation).not.toBeNull();
-      expect(reservation?.id).toBeTruthy();
-      expect(typeof reservation?.id).toBe("string");
-      expect(reservation?.eventId).toBe(EVENT_A);
-      expect(reservation?.address).toBe(ALICE);
-      // Normalised through drops on the way in and out.
-      expect(reservation?.amountXrp).toBe("1.5");
-    });
-
-    it("refuses a second reservation for the same (event, address) with null, not a throw", async () => {
-      const { ledger } = await fresh();
-      await spend(ledger, { txHash: hash(0x5a2) });
-
-      const second = await ledger.reserve({
-        eventId: EVENT_A,
-        address: ALICE,
-        amountXrp: "1.5",
-        dailyCapXrp: NO_CAP,
-      });
-
-      expect(second).toBeNull();
-      // The drain guard held: still one payment's worth.
-      expect(await ledger.sponsoredTodayXrp()).toBe("1.5");
-    });
-
-    it("refuses a repeat sponsorship tx_hash", async () => {
-      const { ledger } = await fresh();
-      await spend(ledger, { txHash: hash(0x5a4) });
-
-      const second = await ledger.reserve({
-        eventId: EVENT_B,
-        address: BOB,
-        amountXrp: "1.5",
-        dailyCapXrp: NO_CAP,
-      });
-      expect(second).not.toBeNull();
-
-      // One Payment is one sponsorship, across every event.
-      await expect(ledger.confirm(second!.id, hash(0x5a4))).rejects.toMatchObject({
-        code: "SPONSORSHIP_DENIED",
-      });
-    });
-
-    it("sums the day's sponsorship as an exact decimal string", async () => {
-      const { ledger } = await fresh();
-      expect(await ledger.sponsoredTodayXrp()).toBe("0");
-
-      await spend(ledger, { address: ALICE, txHash: hash(0x5b1) });
-      expect(await ledger.sponsoredTodayXrp()).toBe("1.5");
-
-      await spend(ledger, { address: BOB, txHash: hash(0x5b2) });
-
-      // The whole point of drops-as-BigInt: exactly "3", not "2.9999999999".
-      const total = await ledger.sponsoredTodayXrp();
-      expect(total).toBe("3");
-      expect(total).not.toContain("9999");
-      expect(Number(total)).toBe(dropsToXrp("3000000"));
-    });
-
-    it("sums fractions that float addition would mangle", async () => {
-      const { ledger } = await fresh();
-
-      // 0.1 + 0.2 is the canonical float trap: 0.30000000000000004.
-      await spend(ledger, { address: ALICE, amountXrp: "0.1", txHash: hash(0x5c1) });
-      await spend(ledger, { address: BOB, amountXrp: "0.2", txHash: hash(0x5c2) });
-
-      expect(await ledger.sponsoredTodayXrp()).toBe("0.3");
-
-      await spend(ledger, { address: CAROL, amountXrp: "0.000001", txHash: hash(0x5c3) });
-      expect(await ledger.sponsoredTodayXrp()).toBe("0.300001");
-    });
-
-    it("rejects an amountXrp that is not money", async () => {
-      const { ledger } = await fresh();
-      await expect(
-        ledger.reserve({
-          eventId: EVENT_A,
-          address: ALICE,
-          amountXrp: "not-a-number",
-          dailyCapXrp: NO_CAP,
-        }),
-      ).rejects.toBeInstanceOf(XrplLayerError);
-      expect(await ledger.sponsoredTodayXrp()).toBe("0");
-    });
-
-    it("enforces the cap inside reserve, to the drop", async () => {
-      const { ledger } = await fresh();
-
-      // 8.5 + 1.5 === the 10 XRP cap exactly. Allowed.
-      expect(
-        await spend(ledger, { address: ALICE, amountXrp: "8.5", dailyCapXrp: "10" }),
-      ).not.toBeNull();
-      expect(
-        await spend(ledger, { address: BOB, amountXrp: "1.5", dailyCapXrp: "10" }),
-      ).not.toBeNull();
-
-      // One drop more is one drop too many.
-      expect(
-        await ledger.reserve({
-          eventId: EVENT_A,
-          address: CAROL,
-          amountXrp: "0.000001",
-          dailyCapXrp: "10",
-        }),
-      ).toBeNull();
-
-      expect(await ledger.sponsoredTodayXrp()).toBe("10");
-    });
-
-    it("counts a reserved but unconfirmed spend against the cap", async () => {
-      const { ledger } = await fresh();
-
-      // Reserved only: the Payment is on the wire and has not landed.
-      const inFlight = await ledger.reserve({
-        eventId: EVENT_A,
-        address: ALICE,
-        amountXrp: "2",
-        dailyCapXrp: "3",
-      });
-      expect(inFlight).not.toBeNull();
-
-      // Money in flight is money spent. If the cap ignored reservations, this
-      // second request would sail through and the day would end at 4 XRP.
-      expect(await ledger.sponsoredTodayXrp()).toBe("2");
-      expect(
-        await ledger.reserve({
-          eventId: EVENT_A,
-          address: BOB,
-          amountXrp: "2",
-          dailyCapXrp: "3",
-        }),
-      ).toBeNull();
-
-      // And the address slot is taken while the Payment is in flight, so a
-      // retry cannot start a second one.
-      expect(await ledger.hasSponsored(EVENT_A, ALICE)).toBe(true);
-    });
-
-    it("release frees both the address slot and the cap headroom", async () => {
-      const { ledger } = await fresh();
-
-      const reservation = await ledger.reserve({
-        eventId: EVENT_A,
-        address: ALICE,
-        amountXrp: "2",
-        dailyCapXrp: "3",
-      });
-      expect(reservation).not.toBeNull();
-
-      await ledger.release(reservation!.id);
-
-      expect(await ledger.sponsoredTodayXrp()).toBe("0");
-      expect(await ledger.hasSponsored(EVENT_A, ALICE)).toBe(false);
-      // Both halves are genuinely free again.
-      expect(
-        await ledger.reserve({
-          eventId: EVENT_A,
-          address: ALICE,
-          amountXrp: "2",
-          dailyCapXrp: "3",
-        }),
-      ).not.toBeNull();
-    });
-
-    it("confirm frees nothing, and release cannot erase a confirmed spend", async () => {
-      const { ledger } = await fresh();
-
-      const reservation = await spend(ledger, { amountXrp: "2", txHash: hash(0x5e1) });
-      expect(reservation).not.toBeNull();
-
-      // A stray release must never delete money that actually left.
-      await ledger.release(reservation!.id);
-
-      expect(await ledger.sponsoredTodayXrp()).toBe("2");
-      expect(await ledger.hasSponsored(EVENT_A, ALICE)).toBe(true);
-    });
-
-    it("release is silent on an id that is already gone", async () => {
-      const { ledger } = await fresh();
-      await expect(ledger.release("999999")).resolves.toBeUndefined();
-      await expect(ledger.release("not-an-id")).resolves.toBeUndefined();
-    });
-
-    it("confirm is idempotent for the same hash and NOT_FOUND for a vanished reservation", async () => {
-      const { ledger } = await fresh();
-
-      const reservation = await ledger.reserve({
-        eventId: EVENT_A,
-        address: ALICE,
-        amountXrp: "1.5",
-        dailyCapXrp: NO_CAP,
-      });
-      await ledger.confirm(reservation!.id, hash(0x5f1));
-      // A retried confirm of the same Payment is a no-op, not a fault.
-      await expect(ledger.confirm(reservation!.id, hash(0x5f1))).resolves.toBeUndefined();
-
-      // A reservation that is gone means a Payment landed with nothing on the
-      // books to account for it. That is an accounting hole and must be loud.
-      await expect(ledger.confirm("999999", hash(0x5f2))).rejects.toMatchObject({
-        code: "NOT_FOUND",
-      });
-      expect(await ledger.sponsoredTodayXrp()).toBe("1.5");
-    });
-
-    // ---- the two races that were measured -----------------------------------
-
-    it("CONCURRENCY: eight simultaneous reserves for ONE address yield exactly one", async () => {
-      const { ledger } = await fresh();
-
-      const results = await Promise.all(
-        Array.from({ length: 8 }, () =>
-          ledger.reserve({
-            eventId: EVENT_A,
-            address: ALICE,
-            amountXrp: "1.5",
-            dailyCapXrp: NO_CAP,
-          }),
-        ),
-      );
-
-      const won = results.filter((r): r is SponsorReservation => r !== null);
-      // Measured against check-then-pay-then-record: eight Payments, one row.
-      expect(won).toHaveLength(1);
-      expect(new Set(won.map((r) => r.id)).size).toBe(1);
-      expect(await ledger.sponsoredTodayXrp()).toBe("1.5");
-    });
-
-    it("CONCURRENCY: twenty simultaneous reserves for DISTINCT addresses stop at the cap", async () => {
-      const { ledger } = await fresh();
-
-      // A 3 XRP cap at 1.5 XRP each admits exactly two.
-      const results = await Promise.all(
-        Array.from({ length: 20 }, (_, i) =>
-          ledger.reserve({
-            eventId: EVENT_A,
-            address: addr(i),
-            amountXrp: "1.5",
-            dailyCapXrp: "3",
-          }),
-        ),
-      );
-
-      const won = results.filter((r): r is SponsorReservation => r !== null);
-      // Measured against the old ordering: twenty Payments, 30 XRP out of a
-      // 3 XRP cap, because every caller read the sum before anyone wrote.
-      expect(won).toHaveLength(2);
-      expect(new Set(won.map((r) => r.address)).size).toBe(2);
-
-      const total = await ledger.sponsoredTodayXrp();
-      expect(total).toBe("3");
-      expect(Number(total)).toBeLessThanOrEqual(3);
-
-      // And the cap holds afterwards too — no phantom headroom left behind.
-      expect(
-        await ledger.reserve({
-          eventId: EVENT_A,
-          address: CAROL,
-          amountXrp: "0.000001",
-          dailyCapXrp: "3",
-        }),
-      ).toBeNull();
     });
 
     // -----------------------------------------------------------------------
@@ -1353,6 +1124,722 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
     });
 
     // -----------------------------------------------------------------------
+    // Events carry an allowance and a budget
+    // -----------------------------------------------------------------------
+
+    it("keeps an event's allowance and budget as exact XRP, defaulting to nothing", async () => {
+      const { events } = await fresh();
+
+      const plain = await events.create(eventInput());
+      expect(plain.allowanceXrp).toBe("0");
+      expect(plain.budgetXrp).toBe("0");
+
+      const paid = await events.create(
+        eventInput({ eventId: EVENT_B, name: "Paid", allowanceXrp: "2.50", budgetXrp: "0.1" }),
+      );
+      // One spelling, whichever way it was typed.
+      expect(paid.allowanceXrp).toBe("2.5");
+      expect(paid.budgetXrp).toBe("0.1");
+      expect((await events.find(EVENT_B))?.allowanceXrp).toBe("2.5");
+      expect((await events.list()).find((e) => e.eventId === EVENT_B)?.budgetXrp).toBe("0.1");
+
+      // Far past 2^53 drops, where a JS number would quietly round.
+      const raised = await events.update(EVENT_B, {
+        allowanceXrp: "3.000001",
+        budgetXrp: "99999999999.999999",
+      });
+      expect(raised.allowanceXrp).toBe("3.000001");
+      expect(raised.budgetXrp).toBe("99999999999.999999");
+
+      // Untouched by a patch that does not mention them.
+      const renamed = await events.update(EVENT_B, { name: "Renamed" });
+      expect(renamed.allowanceXrp).toBe("3.000001");
+      expect(renamed.budgetXrp).toBe("99999999999.999999");
+    });
+
+    it("refuses an allowance or a budget that is not an XRP amount", async () => {
+      const { events } = await fresh();
+
+      for (const bad of ["-1", "1.0000001", "1e3", "one", ""]) {
+        await expect(events.create(eventInput({ allowanceXrp: bad }))).rejects.toMatchObject({
+          code: "INVALID_INPUT",
+        });
+      }
+
+      await events.create(eventInput());
+      await expect(events.update(EVENT_A, { budgetXrp: "0.1234567" })).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+      });
+      expect((await events.find(EVENT_A))?.budgetXrp).toBe("0");
+    });
+
+    // -----------------------------------------------------------------------
+    // TreasuryRepository — one wallet per event, its seed sealed
+    // -----------------------------------------------------------------------
+
+    it("stores a treasury once, and hands the first one back to every later writer", async () => {
+      const { treasuries } = await withEvent(await fresh());
+
+      const first = await treasuries.insertIfAbsent({
+        eventId: EVENT_A,
+        address: TREASURY_1,
+        sealedSeed: SEALED,
+      });
+      expect(first.created).toBe(true);
+      expect(first.record).toMatchObject({ eventId: EVENT_A, address: TREASURY_1, sealedSeed: SEALED });
+      expect(first.record.createdAt).toBeInstanceOf(Date);
+
+      // A second writer — another instance backfilling at boot — gets the row
+      // that is already there, never a second wallet for the same event.
+      const second = await treasuries.insertIfAbsent({
+        eventId: EVENT_A,
+        address: TREASURY_2,
+        sealedSeed: `${SEALED}x`,
+      });
+      expect(second.created).toBe(false);
+      expect(second.record.address).toBe(TREASURY_1);
+      expect((await treasuries.find(EVENT_A))?.address).toBe(TREASURY_1);
+
+      expect(await treasuries.find(EVENT_B)).toBeNull();
+      expect(await treasuries.find(MAX_TAXON + 1)).toBeNull();
+    });
+
+    it("CONCURRENCY: eight simultaneous backfills give an event exactly one treasury", async () => {
+      const { treasuries } = await withEvent(await fresh());
+
+      const results = await Promise.all(
+        Array.from({ length: 8 }, () =>
+          treasuries.insertIfAbsent({
+            eventId: EVENT_A,
+            address: Wallet.generate().classicAddress,
+            sealedSeed: SEALED,
+          }),
+        ),
+      );
+
+      expect(results.filter((r) => r.created)).toHaveLength(1);
+      expect(new Set(results.map((r) => r.record.address)).size).toBe(1);
+    });
+
+    it("refuses an unsealed seed without repeating it, a missing event, and a taken address", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+      const { treasuries } = subjects;
+
+      // A plaintext family seed in that column would undo the whole point of sealing.
+      const plaintext = "sEdV6Xn3bRq9J2wY4tK8mZpL1cH7dQa";
+      const refused = await treasuries
+        .insertIfAbsent({ eventId: EVENT_A, address: TREASURY_1, sealedSeed: plaintext })
+        .catch((err: XrplLayerError) => err);
+      expect(refused).toMatchObject({ code: "INVALID_INPUT" });
+      const said = refused as XrplLayerError;
+      expect(JSON.stringify({ message: said.message, details: said.details })).not.toContain(plaintext);
+      expect(await treasuries.find(EVENT_A)).toBeNull();
+
+      await expect(
+        treasuries.insertIfAbsent({ eventId: 987_654, address: TREASURY_1, sealedSeed: SEALED }),
+      ).rejects.toMatchObject({ code: "NOT_FOUND" });
+
+      await treasuries.insertIfAbsent({ eventId: EVENT_A, address: TREASURY_1, sealedSeed: SEALED });
+      await expect(
+        treasuries.insertIfAbsent({ eventId: EVENT_B, address: TREASURY_1, sealedSeed: SEALED }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+    });
+
+    // -----------------------------------------------------------------------
+    // AllowanceLedger — once per attendee, inside the event's budget
+    // -----------------------------------------------------------------------
+
+    it("books an allowance and reads it back", async () => {
+      const { allowances } = await withEvent(await fresh());
+
+      const row = await allowances.reserve(booking({ allowanceXrp: "5.00" }));
+
+      expect(row).toMatchObject({
+        eventId: EVENT_A,
+        address: PAYEE_1,
+        allowanceXrp: "5",
+        topupXrp: "1.21",
+        amountXrp: "6.21",
+        treasuryAddress: TREASURY_1,
+        status: "reserved",
+        txHash: null,
+        confirmedAt: null,
+      });
+      expect(typeof row?.id).toBe("string");
+      expect(row?.reservedAt).toBeInstanceOf(Date);
+      expect((await allowances.find(EVENT_A, PAYEE_1))?.id).toBe(row?.id);
+      expect(await allowances.find(EVENT_A, PAYEE_2)).toBeNull();
+      // Base58 is case-sensitive; nothing here folds it.
+      expect(await allowances.find(EVENT_A, PAYEE_1.toLowerCase())).toBeNull();
+    });
+
+    it("books one allowance per attendee per event, and says so with null", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+      const { allowances } = subjects;
+
+      expect(await allowances.reserve(booking())).not.toBeNull();
+      // A double tap at the desk is the expected case, not an error.
+      expect(await allowances.reserve(booking())).toBeNull();
+      // Another event is another allowance.
+      expect(await allowances.reserve(booking({ eventId: EVENT_B }))).not.toBeNull();
+    });
+
+    it("enforces the event's budget inside reserve, to the drop, counting what is in flight", async () => {
+      const { allowances } = await withEvent(await fresh());
+
+      // 6.21 + 3.79 === 10 exactly. Allowed, and neither is confirmed.
+      expect(await allowances.reserve(booking({ budgetXrp: "10" }))).not.toBeNull();
+      expect(
+        await allowances.reserve(
+          booking({ address: PAYEE_2, allowanceXrp: "3.78", topupXrp: "0.01", budgetXrp: "10" }),
+        ),
+      ).not.toBeNull();
+
+      // One drop more is one drop too many.
+      expect(
+        await allowances.reserve(
+          booking({ address: PAYEE_3, allowanceXrp: "0", topupXrp: "0.000001", budgetXrp: "10" }),
+        ),
+      ).toBeNull();
+      expect((await allowances.summary(EVENT_A)).committedXrp).toBe("10");
+    });
+
+    it("keeps each event's budget to itself", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+      const { allowances } = subjects;
+
+      expect(await allowances.reserve(booking({ budgetXrp: "6.21" }))).not.toBeNull();
+      // Event A is spent out. Event B has not paid anybody.
+      expect(await allowances.reserve(booking({ address: PAYEE_2, budgetXrp: "6.21" }))).toBeNull();
+      expect(
+        await allowances.reserve(booking({ eventId: EVENT_B, address: PAYEE_2, budgetXrp: "6.21" })),
+      ).not.toBeNull();
+    });
+
+    it("release frees the attendee and the headroom, and never erases a confirmed payment", async () => {
+      const { allowances } = await withEvent(await fresh());
+
+      const inFlight = await allowances.reserve(booking({ budgetXrp: "6.21" }));
+      expect(await allowances.reserve(booking({ address: PAYEE_2, budgetXrp: "6.21" }))).toBeNull();
+
+      await allowances.release(inFlight!.id);
+      expect(await allowances.find(EVENT_A, PAYEE_1)).toBeNull();
+
+      const paid = await allowances.reserve(booking({ address: PAYEE_2, budgetXrp: "6.21" }));
+      expect(paid).not.toBeNull();
+      await allowances.confirm(paid!.id, hash(0xa11));
+
+      // A stray release must never delete money that actually left.
+      await allowances.release(paid!.id);
+      expect(await allowances.find(EVENT_A, PAYEE_2)).toMatchObject({
+        status: "confirmed",
+        txHash: hash(0xa11),
+      });
+      expect((await allowances.summary(EVENT_A)).committedXrp).toBe("6.21");
+
+      await expect(allowances.release("999999")).resolves.toBeUndefined();
+      await expect(allowances.release("not-an-id")).resolves.toBeUndefined();
+    });
+
+    it("confirm is idempotent for one hash, CONFLICT for a hash in use, NOT_FOUND with no booking", async () => {
+      const { allowances } = await withEvent(await fresh());
+      const a = await allowances.reserve(booking());
+      const b = await allowances.reserve(booking({ address: PAYEE_2 }));
+
+      await allowances.confirm(a!.id, hash(0xb01));
+      // A retried confirm of the same Payment is a no-op, not a fault.
+      await expect(allowances.confirm(a!.id, hash(0xb01))).resolves.toBeUndefined();
+      // One Payment is one allowance.
+      await expect(allowances.confirm(b!.id, hash(0xb01))).rejects.toMatchObject({ code: "CONFLICT" });
+      // A Payment with no booking behind it is a hole in the books, and loud.
+      await expect(allowances.confirm("999999", hash(0xb02))).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+
+      const confirmed = await allowances.find(EVENT_A, PAYEE_1);
+      expect(confirmed).toMatchObject({ status: "confirmed", txHash: hash(0xb01) });
+      expect(confirmed?.confirmedAt).toBeInstanceOf(Date);
+      expect((await allowances.find(EVENT_A, PAYEE_2))?.status).toBe("reserved");
+    });
+
+    it("adds an event up exactly, and lists it newest first", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+      const { allowances } = subjects;
+
+      expect(await allowances.summary(EVENT_A)).toEqual({
+        committedXrp: "0",
+        paidXrp: "0",
+        paidCount: 0,
+        inFlightCount: 0,
+      });
+
+      // 0.1 + 0.2 is the float trap. In drops it is exactly 0.3.
+      const a = await allowances.reserve(booking({ address: PAYEE_1, allowanceXrp: "0.09", topupXrp: "0.01" }));
+      const b = await allowances.reserve(booking({ address: PAYEE_2, allowanceXrp: "0.19", topupXrp: "0.01" }));
+      const c = await allowances.reserve(booking({ address: PAYEE_3, allowanceXrp: "0", topupXrp: "0.000001" }));
+      await allowances.reserve(booking({ eventId: EVENT_B }));
+      await allowances.confirm(a!.id, hash(0xc01));
+      await allowances.confirm(b!.id, hash(0xc02));
+
+      expect(await allowances.summary(EVENT_A)).toEqual({
+        committedXrp: "0.300001",
+        paidXrp: "0.3",
+        paidCount: 2,
+        inFlightCount: 1,
+      });
+
+      expect((await allowances.listByEvent(EVENT_A)).map((r) => r.id)).toEqual([c!.id, b!.id, a!.id]);
+      expect((await allowances.listByEvent(EVENT_A, { status: "reserved" })).map((r) => r.id)).toEqual([
+        c!.id,
+      ]);
+      expect((await allowances.listByEvent(EVENT_A, { limit: 1, offset: 1 })).map((r) => r.id)).toEqual([
+        b!.id,
+      ]);
+      expect(await allowances.listByEvent(EVENT_B)).toHaveLength(1);
+    });
+
+    it("refuses a payment of nothing, an address that is not one, and an event that does not exist", async () => {
+      const { allowances } = await withEvent(await fresh());
+
+      await expect(
+        allowances.reserve(booking({ allowanceXrp: "0", topupXrp: "0" })),
+      ).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(allowances.reserve(booking({ address: "rNope" }))).rejects.toMatchObject({
+        code: "INVALID_ADDRESS",
+      });
+      await expect(allowances.reserve(booking({ allowanceXrp: "not money" }))).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+      });
+      await expect(allowances.reserve(booking({ eventId: 987_654 }))).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      expect(await allowances.summary(EVENT_A)).toMatchObject({ paidCount: 0, inFlightCount: 0 });
+    });
+
+    // ---- the two races --------------------------------------------------------
+
+    it("CONCURRENCY: eight simultaneous bookings for ONE attendee yield exactly one", async () => {
+      const { allowances } = await withEvent(await fresh());
+
+      const results = await Promise.all(Array.from({ length: 8 }, () => allowances.reserve(booking())));
+
+      const won = results.filter((r): r is AllowanceRecord => r !== null);
+      expect(won).toHaveLength(1);
+      expect((await allowances.summary(EVENT_A)).committedXrp).toBe("6.21");
+    });
+
+    it("CONCURRENCY: twenty attendees racing for a budget that covers three get exactly three", async () => {
+      const { allowances } = await withEvent(await fresh());
+      const payees = Array.from({ length: 20 }, () => Wallet.generate().classicAddress);
+
+      // 6.21 x 3 = 18.63. A fourth would need 24.84.
+      const results = await Promise.all(
+        payees.map((address) => allowances.reserve(booking({ address, budgetXrp: "18.63" }))),
+      );
+
+      const won = results.filter((r): r is AllowanceRecord => r !== null);
+      expect(won).toHaveLength(3);
+      expect(new Set(won.map((r) => r.address)).size).toBe(3);
+      expect((await allowances.summary(EVENT_A)).committedXrp).toBe("18.63");
+      // And no phantom headroom is left behind.
+      expect(
+        await allowances.reserve(
+          booking({ address: PAYEE_3, allowanceXrp: "0", topupXrp: "0.000001", budgetXrp: "18.63" }),
+        ),
+      ).toBeNull();
+    });
+
+    // -----------------------------------------------------------------------
+    // VendorRepository — who sells what
+    // -----------------------------------------------------------------------
+
+    it("adds vendors and their items, and reads them back in the order they were added", async () => {
+      const subjects = await withEvent(await fresh());
+      await subjects.events.create(eventInput({ eventId: EVENT_B, name: "Other" }));
+      const { vendors } = subjects;
+
+      const dominos = await vendors.createVendor({ eventId: EVENT_A, name: "  Dominos  ", walletAddress: TREASURY_2 });
+      const adidas = await vendors.createVendor({ eventId: EVENT_A, name: "Adidas", walletAddress: PAYEE_3 });
+      expect(dominos).toMatchObject({ eventId: EVENT_A, name: "Dominos", walletAddress: TREASURY_2, active: true });
+      expect(dominos.createdAt).toBeInstanceOf(Date);
+
+      const bread = await vendors.createItem({ vendorId: dominos.id, name: "Garlic bread", priceXrp: "2.50" });
+      const bottle = await vendors.createItem({ vendorId: adidas.id, name: "Bottle", priceXrp: "3", stock: 40 });
+      const pizza = await vendors.createItem({ vendorId: dominos.id, name: "Margherita", priceXrp: "0.000001" });
+
+      // One spelling of every price, and the event copied from the vendor.
+      expect(bread).toMatchObject({ vendorId: dominos.id, eventId: EVENT_A, priceXrp: "2.5", stock: null, active: true });
+      expect(bottle.stock).toBe(40);
+      expect(pizza.priceXrp).toBe("0.000001");
+
+      expect((await vendors.listVendors(EVENT_A)).map((v) => v.name)).toEqual(["Dominos", "Adidas"]);
+      expect((await vendors.listItems(EVENT_A)).map((i) => i.name)).toEqual(["Garlic bread", "Bottle", "Margherita"]);
+      expect(await vendors.listVendors(EVENT_B)).toEqual([]);
+      expect((await vendors.findItem(bottle.id))?.name).toBe("Bottle");
+      expect((await vendors.findVendor(adidas.id))?.walletAddress).toBe(PAYEE_3);
+
+      // One wallet can sell at two events, and signing in finds both.
+      await vendors.createVendor({ eventId: EVENT_B, name: "Dominos again", walletAddress: TREASURY_2 });
+      expect((await vendors.listVendorsByWallet(TREASURY_2)).map((v) => v.eventId)).toEqual([EVENT_A, EVENT_B]);
+      expect(await vendors.listVendorsByWallet(PAYEE_1)).toEqual([]);
+    });
+
+    it("refuses a wallet already selling at the same event", async () => {
+      const { vendors } = await withEvent(await fresh());
+      const first = await vendors.createVendor({ eventId: EVENT_A, name: "Dominos", walletAddress: TREASURY_2 });
+      const other = await vendors.createVendor({ eventId: EVENT_A, name: "Adidas", walletAddress: PAYEE_3 });
+
+      await expect(
+        vendors.createVendor({ eventId: EVENT_A, name: "Dominos two", walletAddress: TREASURY_2 }),
+      ).rejects.toMatchObject({ code: "CONFLICT" });
+      await expect(vendors.updateVendor(other.id, { walletAddress: TREASURY_2 })).rejects.toMatchObject({
+        code: "CONFLICT",
+      });
+      expect((await vendors.findVendor(other.id))?.walletAddress).toBe(PAYEE_3);
+      expect((await vendors.findVendor(first.id))?.walletAddress).toBe(TREASURY_2);
+    });
+
+    it("refuses what the tables would: names, addresses, prices and stock", async () => {
+      const { vendors } = await withEvent(await fresh());
+      await expect(vendors.createVendor({ eventId: EVENT_A, name: "  ", walletAddress: TREASURY_2 })).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+      });
+      await expect(vendors.createVendor({ eventId: EVENT_A, name: "x".repeat(121), walletAddress: TREASURY_2 })).rejects.toMatchObject({
+        code: "INVALID_INPUT",
+      });
+      await expect(vendors.createVendor({ eventId: EVENT_A, name: "Nope", walletAddress: "rNope" })).rejects.toMatchObject({
+        code: "INVALID_ADDRESS",
+      });
+
+      const vendor = await vendors.createVendor({ eventId: EVENT_A, name: "Dominos", walletAddress: TREASURY_2 });
+      for (const priceXrp of ["0", "-1", "1.0000001", "free"]) {
+        await expect(vendors.createItem({ vendorId: vendor.id, name: "Bread", priceXrp })).rejects.toMatchObject({
+          code: "INVALID_INPUT",
+        });
+      }
+      for (const stock of [-1, 1.5, 1_000_001]) {
+        await expect(vendors.createItem({ vendorId: vendor.id, name: "Bread", priceXrp: "1", stock })).rejects.toMatchObject({
+          code: "INVALID_INPUT",
+        });
+      }
+      expect(await vendors.listItems(EVENT_A)).toEqual([]);
+    });
+
+    it("refuses a vendor for an event that does not exist, and an item for a vendor that does not", async () => {
+      const { vendors } = await fresh();
+      await expect(vendors.createVendor({ eventId: 987_654, name: "Ghost", walletAddress: TREASURY_2 })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(vendors.createItem({ vendorId: "999999", name: "Ghost", priceXrp: "1" })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
+      await expect(vendors.updateVendor("999999", { name: "Ghost" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(vendors.updateItem("999999", { name: "Ghost" })).rejects.toMatchObject({ code: "NOT_FOUND" });
+      expect(await vendors.findVendor("not-an-id")).toBeNull();
+      expect(await vendors.findItem("0")).toBeNull();
+      expect(await vendors.deleteVendor("999999")).toBe(false);
+      expect(await vendors.deleteItem("not-an-id")).toBe(false);
+    });
+
+    it("changes only what a patch carries, including clearing stock and hiding", async () => {
+      const { vendors } = await withEvent(await fresh());
+      const vendor = await vendors.createVendor({ eventId: EVENT_A, name: "Dominos", walletAddress: TREASURY_2 });
+      const item = await vendors.createItem({ vendorId: vendor.id, name: "Bread", priceXrp: "2", stock: 10 });
+
+      const renamed = await vendors.updateVendor(vendor.id, { name: "Domino's" });
+      expect(renamed).toMatchObject({ name: "Domino's", walletAddress: TREASURY_2, active: true });
+      expect((await vendors.updateVendor(vendor.id, { active: false })).active).toBe(false);
+
+      const repriced = await vendors.updateItem(item.id, { priceXrp: "2.25" });
+      expect(repriced).toMatchObject({ name: "Bread", priceXrp: "2.25", stock: 10, active: true });
+      expect((await vendors.updateItem(item.id, { stock: null })).stock).toBeNull();
+      expect((await vendors.updateItem(item.id, { active: false, name: "Old bread" }))).toMatchObject({
+        active: false,
+        name: "Old bread",
+        priceXrp: "2.25",
+      });
+    });
+
+    it("deletes an unordered vendor with its items, and refuses once somebody has ordered", async () => {
+      const subjects = await withEvent(await fresh());
+      const { vendors, purchases } = subjects;
+
+      const spare = await vendors.createVendor({ eventId: EVENT_A, name: "Spare", walletAddress: PAYEE_3 });
+      await vendors.createItem({ vendorId: spare.id, name: "Nothing", priceXrp: "1" });
+      expect(await vendors.deleteVendor(spare.id)).toBe(true);
+      expect(await vendors.findVendor(spare.id)).toBeNull();
+      expect(await vendors.listItems(EVENT_A)).toEqual([]);
+
+      const s = await stall(subjects);
+      const untouched = await vendors.createItem({ vendorId: s.vendor.id, name: "Unordered", priceXrp: "1" });
+      expect((await purchases.reserve(order(s))).ok).toBe(true);
+
+      await expect(vendors.deleteItem(s.item.id)).rejects.toMatchObject({ code: "CONFLICT" });
+      await expect(vendors.deleteVendor(s.vendor.id)).rejects.toMatchObject({ code: "CONFLICT" });
+      expect(await vendors.findItem(s.item.id)).not.toBeNull();
+      expect(await vendors.deleteItem(untouched.id)).toBe(true);
+    });
+
+    // -----------------------------------------------------------------------
+    // PurchaseRepository — stock held, then paid by the ledger
+    // -----------------------------------------------------------------------
+
+    it("reserves an order and reads it back", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects, { priceXrp: "1.25" });
+      const input = order(s, { quantity: 3 });
+
+      const outcome = await subjects.purchases.reserve(input);
+
+      expect(outcome.ok).toBe(true);
+      const purchase = outcome.ok ? outcome.purchase : null;
+      expect(purchase).toMatchObject({
+        id: input.id,
+        eventId: EVENT_A,
+        vendorId: s.vendor.id,
+        itemId: s.item.id,
+        buyerAddress: PAYEE_1,
+        vendorAddress: TREASURY_2,
+        quantity: 3,
+        unitPriceXrp: "1.25",
+        amountXrp: "3.75",
+        status: "reserved",
+        xamanUuid: null,
+        txHash: null,
+        paidAt: null,
+        handedOverAt: null,
+      });
+      expect(purchase?.createdAt).toBeInstanceOf(Date);
+      expect(purchase?.expiresAt.getTime()).toBe(input.expiresAt.getTime());
+
+      await subjects.purchases.attachPayload(input.id, "3f2b8c1a-0000-4000-8000-0123456789ab");
+      expect((await subjects.purchases.find(input.id))?.xamanUuid).toBe("3f2b8c1a-0000-4000-8000-0123456789ab");
+      expect(await subjects.purchases.find(randomUUID())).toBeNull();
+      expect(await subjects.purchases.find("not-a-uuid")).toBeNull();
+    });
+
+    it("holds stock to the unit, and says how many are left", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects, { stock: 3 });
+      const { purchases } = subjects;
+
+      expect((await purchases.reserve(order(s, { quantity: 2 }))).ok).toBe(true);
+      expect(await purchases.reserve(order(s, { quantity: 2 }))).toEqual({ ok: false, reason: "sold_out", remaining: 1 });
+      expect((await purchases.reserve(order(s, { quantity: 1 }))).ok).toBe(true);
+      expect(await purchases.reserve(order(s, { quantity: 1 }))).toEqual({ ok: false, reason: "sold_out", remaining: 0 });
+      expect(await purchases.unitsTaken(EVENT_A)).toEqual({ [s.item.id]: 3 });
+    });
+
+    it("stops holding stock when a reservation lapses, but never once it is paid", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects, { stock: 1 });
+      const { purchases } = subjects;
+
+      // Lapsed the moment it was made: it holds nothing.
+      const lapsed = order(s, { expiresAt: new Date(Date.now() - 60_000) });
+      expect((await purchases.reserve(lapsed)).ok).toBe(true);
+      expect(await purchases.unitsTaken(EVENT_A)).toEqual({});
+
+      const live = order(s);
+      expect((await purchases.reserve(live)).ok).toBe(true);
+      await purchases.markPaid(live.id, hash(0xd01));
+      expect((await purchases.reserve(order(s))).ok).toBe(false);
+      expect(await purchases.unitsTaken(EVENT_A)).toEqual({ [s.item.id]: 1 });
+    });
+
+    it("caps how many unpaid orders one buyer may hold at an event", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects);
+      const { purchases } = subjects;
+
+      const first = order(s, { maxOpenPerBuyer: 2 });
+      expect((await purchases.reserve(first)).ok).toBe(true);
+      expect((await purchases.reserve(order(s, { maxOpenPerBuyer: 2 }))).ok).toBe(true);
+      expect(await purchases.reserve(order(s, { maxOpenPerBuyer: 2 }))).toEqual({
+        ok: false,
+        reason: "too_many_open",
+        open: 2,
+      });
+      // Somebody else is somebody else.
+      expect((await purchases.reserve(order(s, { maxOpenPerBuyer: 2, buyerAddress: PAYEE_2 }))).ok).toBe(true);
+      // An order that ends frees a place.
+      await purchases.markExpired(first.id);
+      expect((await purchases.reserve(order(s, { maxOpenPerBuyer: 2 }))).ok).toBe(true);
+    });
+
+    it("marks paid from reserved or expired, once per payment, and never twice with different money", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects);
+      const { purchases } = subjects;
+      const a = order(s);
+      const b = order(s);
+      await purchases.reserve(a);
+      await purchases.reserve(b);
+
+      const paid = await purchases.markPaid(a.id, hash(0xe01));
+      expect(paid).toMatchObject({ status: "paid", txHash: hash(0xe01) });
+      expect(paid.paidAt).toBeInstanceOf(Date);
+      // The same payment, reported again, is not a fault.
+      expect((await purchases.markPaid(a.id, hash(0xe01))).status).toBe("paid");
+      // A different payment for a paid order is.
+      await expect(purchases.markPaid(a.id, hash(0xe02))).rejects.toMatchObject({ code: "CONFLICT" });
+      // One payment pays for one order.
+      await expect(purchases.markPaid(b.id, hash(0xe01))).rejects.toMatchObject({ code: "CONFLICT" });
+
+      // Late money still counts: an expired order that was paid is paid.
+      expect((await purchases.markExpired(b.id))?.status).toBe("expired");
+      expect((await purchases.markPaid(b.id, hash(0xe03))).status).toBe("paid");
+      // And a paid order does not expire.
+      expect(await purchases.markExpired(b.id)).toBeNull();
+      await expect(purchases.markPaid(randomUUID(), hash(0xe04))).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("hands over only a paid order, keeps the first time, and can be undone", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects);
+      const { purchases } = subjects;
+      const input = order(s);
+      await purchases.reserve(input);
+
+      await expect(purchases.setHandedOver(input.id, true)).rejects.toMatchObject({ code: "CONFLICT" });
+      await purchases.markPaid(input.id, hash(0xf01));
+
+      const handed = await purchases.setHandedOver(input.id, true);
+      expect(handed.handedOverAt).toBeInstanceOf(Date);
+      // A double tap is not a second hand-over.
+      const again = await purchases.setHandedOver(input.id, true);
+      expect(again.handedOverAt?.getTime()).toBe(handed.handedOverAt?.getTime());
+
+      expect((await purchases.setHandedOver(input.id, false)).handedOverAt).toBeNull();
+      await expect(purchases.setHandedOver(randomUUID(), true)).rejects.toMatchObject({ code: "NOT_FOUND" });
+    });
+
+    it("lists orders newest first, filtered, and counts the filter", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects);
+      const { purchases } = subjects;
+
+      const ids: string[] = [];
+      for (const buyerAddress of [PAYEE_1, PAYEE_2, PAYEE_1]) {
+        const input = order(s, { buyerAddress });
+        await purchases.reserve(input);
+        ids.push(input.id);
+        // Distinct created_at, so newest-first has one right answer.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+      }
+      await purchases.markPaid(ids[1]!, hash(0xa21));
+
+      expect((await purchases.list()).map((p) => p.id)).toEqual([...ids].reverse());
+      expect((await purchases.list({ buyerAddress: PAYEE_1 })).map((p) => p.id)).toEqual([ids[2], ids[0]]);
+      expect((await purchases.list({ status: "paid" })).map((p) => p.id)).toEqual([ids[1]]);
+      expect((await purchases.list({ vendorId: s.vendor.id, limit: 1, offset: 1 })).map((p) => p.id)).toEqual([ids[1]]);
+      expect(await purchases.count({ eventId: EVENT_A })).toBe(3);
+      expect(await purchases.count({ status: "reserved", buyerAddress: PAYEE_1 })).toBe(2);
+      expect(await purchases.count({ vendorId: "999999" })).toBe(0);
+      expect(await purchases.list({ vendorId: "not-an-id" })).toEqual([]);
+    });
+
+    it("adds paid sales up per vendor, exactly, under the vendor's current name", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects, { priceXrp: "0.1" });
+      const other = await subjects.vendors.createVendor({ eventId: EVENT_A, name: "Adidas", walletAddress: PAYEE_3 });
+      const bottle = await subjects.vendors.createItem({ vendorId: other.id, name: "Bottle", priceXrp: "0.2" });
+      const { purchases } = subjects;
+
+      const a = order(s, { quantity: 2 });
+      const b = order(s);
+      const c = order({ vendor: other, item: bottle }, { vendorName: "Adidas", itemName: "Bottle" });
+      const unpaid = order(s, { quantity: 5 });
+      for (const input of [a, b, c, unpaid]) await purchases.reserve(input);
+      await purchases.markPaid(a.id, hash(0xb21));
+      await purchases.markPaid(b.id, hash(0xb22));
+      await purchases.markPaid(c.id, hash(0xb23));
+      await purchases.setHandedOver(a.id, true);
+      await subjects.vendors.updateVendor(s.vendor.id, { name: "Domino's" });
+
+      expect(await purchases.salesByVendor({ eventId: EVENT_A })).toEqual([
+        { vendorId: other.id, eventId: EVENT_A, vendorName: "Adidas", orders: 1, units: 1, totalXrp: "0.2", handedOver: 0 },
+        // 0.2 + 0.1 without a float in sight.
+        { vendorId: s.vendor.id, eventId: EVENT_A, vendorName: "Domino's", orders: 2, units: 3, totalXrp: "0.3", handedOver: 1 },
+      ]);
+      expect(await purchases.salesByVendor({ eventId: EVENT_B })).toEqual([]);
+    });
+
+    it("refuses an item that is not the vendor's or the event's, and an order that is malformed", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects);
+      const { purchases } = subjects;
+
+      await expect(purchases.reserve(order(s, { vendorId: "999999" }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(purchases.reserve(order(s, { eventId: EVENT_B }))).rejects.toMatchObject({ code: "NOT_FOUND" });
+      await expect(purchases.reserve(order(s, { quantity: 0 }))).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(purchases.reserve(order(s, { quantity: 101 }))).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(purchases.reserve(order(s, { id: "not-a-uuid" }))).rejects.toMatchObject({ code: "INVALID_INPUT" });
+      await expect(purchases.reserve(order(s, { buyerAddress: "rNope" }))).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+      expect(await purchases.count()).toBe(0);
+    });
+
+    it("CONCURRENCY: twenty buyers racing for the last three units get exactly three", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects, { stock: 3 });
+      const buyers = Array.from({ length: 20 }, () => Wallet.generate().classicAddress);
+
+      const results = await Promise.all(
+        buyers.map((buyerAddress) => subjects.purchases.reserve(order(s, { buyerAddress }))),
+      );
+
+      expect(results.filter((r) => r.ok)).toHaveLength(3);
+      expect(await subjects.purchases.unitsTaken(EVENT_A)).toEqual({ [s.item.id]: 3 });
+    });
+
+    it("CONCURRENCY: one buyer firing ten orders at once holds no more than the cap", async () => {
+      const subjects = await fresh();
+      const s = await stall(subjects);
+
+      const results = await Promise.all(
+        Array.from({ length: 10 }, () => subjects.purchases.reserve(order(s, { maxOpenPerBuyer: 3 }))),
+      );
+
+      expect(results.filter((r) => r.ok)).toHaveLength(3);
+      expect(await subjects.purchases.count({ buyerAddress: PAYEE_1 })).toBe(3);
+    });
+
+    // -----------------------------------------------------------------------
+    // VendorSessionStore — a wallet behind a counter
+    // -----------------------------------------------------------------------
+
+    it("creates a vendor session and reads it back, storing a hash and never the cookie", async () => {
+      const { vendorSessions, storedVendorSessionIds } = await fresh();
+
+      const created = await vendorSessions.create(TREASURY_2, 60_000);
+      expect(created.walletAddress).toBe(TREASURY_2);
+      expect(created.expiresAt.getTime()).toBeGreaterThan(created.createdAt.getTime());
+
+      expect((await vendorSessions.get(created.id))?.walletAddress).toBe(TREASURY_2);
+      const stored = await storedVendorSessionIds();
+      expect(stored).not.toContain(created.id);
+      expect(stored).toContain(hashSessionId(created.id));
+      expect(await vendorSessions.get(hashSessionId(created.id))).toBeNull();
+      expect(await vendorSessions.get("")).toBeNull();
+    });
+
+    it("refuses an expired vendor session, and revoke ends one", async () => {
+      const { vendorSessions } = await fresh();
+      const dead = await vendorSessions.create(TREASURY_2, -1_000);
+      const live = await vendorSessions.create(PAYEE_3, 60_000);
+
+      expect(await vendorSessions.get(dead.id)).toBeNull();
+      await vendorSessions.revoke(live.id);
+      expect(await vendorSessions.get(live.id)).toBeNull();
+      await expect(vendorSessions.revoke("never-existed")).resolves.toBeUndefined();
+      await expect(vendorSessions.create("rNope", 60_000)).rejects.toMatchObject({ code: "INVALID_ADDRESS" });
+    });
+
+    // -----------------------------------------------------------------------
     // SessionStore — revocable, hashed, and on the server's clock
     // -----------------------------------------------------------------------
 
@@ -1482,7 +1969,12 @@ runRepositoryContract("memory", () => {
   const stores = createMemoryStores();
   return {
     repo: stores.attendance,
-    ledger: stores.sponsor,
+    treasuries: stores.treasuries,
+    allowances: stores.allowances,
+    vendors: stores.vendors,
+    purchases: stores.purchases,
+    vendorSessions: stores.vendorSessions,
+    storedVendorSessionIds: async () => stores.vendorSessions.storedIds(),
     claims: stores.claims,
     events: stores.events,
     registrations: stores.registrations,
@@ -1555,12 +2047,22 @@ if (!TEST_DATABASE_URL) {
     // makes truncating either alone illegal — which is the schema telling the
     // truth about the relationship.
     await pool.query(
-      "TRUNCATE attendance, sponsorship, claims, registrations, events, sessions RESTART IDENTITY",
+      // CASCADE, because every table added since carries a foreign key to
+      // events, and naming them all here is a list that goes stale.
+      "TRUNCATE attendance, sponsorship, claims, registrations, allowances, event_treasuries, " +
+        "purchases, vendor_items, vendors, vendor_sessions, event_photos, events, sessions " +
+        "RESTART IDENTITY CASCADE",
     );
     const sessions = new PgSessionStore(pool);
+    const vendorSessions = new PgVendorSessionStore(pool);
     return {
       repo: new PgAttendanceRepository(pool),
-      ledger: new PgSponsorLedger(pool),
+      treasuries: new PgTreasuryRepository(pool),
+      allowances: new PgAllowanceLedger(pool),
+      vendors: new PgVendorRepository(pool),
+      purchases: new PgPurchaseRepository(pool),
+      vendorSessions,
+      storedVendorSessionIds: async () => vendorSessions.storedIds(),
       claims: new PgClaimRepository(pool),
       events: new PgEventRepository(pool),
       registrations: new PgRegistrationRepository(pool),

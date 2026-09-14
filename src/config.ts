@@ -6,12 +6,32 @@
  */
 import { config as loadDotenv } from "dotenv";
 import { ConfigError, NetworkGuardError } from "./errors.js";
+import { isXrpAmount, xrpToDropsBigInt } from "./money.js";
+import { decodeMasterKey } from "./treasury/seal.js";
 import type { NetworkName } from "./types.js";
+import { badgeReadyReserveXrp } from "./xrpl/reserve.js";
 
-export interface SponsorConfig {
-  enabled: boolean;
-  amountXrp: string;
-  dailyCapXrp: string;
+/**
+ * The server-wide half of paying attendees. The per-event half — how much, and
+ * how much in total — is set on each event in the console.
+ */
+export interface RewardConfig {
+  /**
+   * Seals every event's treasury seed. Server-side only, exactly like the
+   * issuer seed: never log it, never serialise it, never ship it. Without it
+   * no treasury can be created or opened, and nobody is paid.
+   */
+  treasuryMasterKey?: string;
+  /**
+   * The most one attendee can ever be sent, allowance and top-up together. An
+   * organiser cannot set an allowance that would go past it.
+   */
+  maxPerAttendeeXrp: string;
+  /**
+   * Added to every payment so transaction fees never eat into what the
+   * attendee can spend. Small: 0.01 XRP covers hundreds of transactions.
+   */
+  feeBufferXrp: string;
 }
 
 export interface AppConfig {
@@ -21,7 +41,7 @@ export interface AppConfig {
   issuerAddress: string;
   /** Server-side only. Never log this, never serialise it, never ship it. */
   issuerSeed: string;
-  sponsor: SponsorConfig;
+  reward: RewardConfig;
   pinata: { jwt?: string; gateway: string };
   xumm: { apiKey?: string; apiSecret?: string };
   databaseUrl?: string;
@@ -143,14 +163,6 @@ function bool(key: string, fallback: boolean): boolean {
   throw new ConfigError(`${key} must be a boolean, got "${v}"`, { key });
 }
 
-function decimal(key: string, fallback: string): string {
-  const v = env(key) ?? fallback;
-  if (!/^\d+(\.\d+)?$/.test(v)) {
-    throw new ConfigError(`${key} must be a positive decimal, got "${v}"`, { key });
-  }
-  return v;
-}
-
 /**
  * SOURCE_TAG must fit a uint32 — the ledger rejects anything wider, and it
  * would be rejected at submit time rather than at boot, which is the wrong
@@ -167,6 +179,49 @@ function sourceTag(): number | undefined {
     );
   }
   return n;
+}
+
+/**
+ * REWARD_* and TREASURY_MASTER_KEY.
+ *
+ * Checked here rather than at the first payment, which is in front of an
+ * attendee: a master key that is not 32 bytes, or a ceiling too low to switch
+ * on even an empty wallet, stops the server at boot.
+ */
+function rewardConfig(): RewardConfig {
+  const treasuryMasterKey = env("TREASURY_MASTER_KEY");
+  // Throws ConfigError without ever repeating the value.
+  if (treasuryMasterKey !== undefined) decodeMasterKey(treasuryMasterKey);
+
+  const xrp = (key: string, fallback: string): string => {
+    const v = env(key) ?? fallback;
+    if (!isXrpAmount(v)) {
+      throw new ConfigError(
+        `${key} must be a plain XRP amount with at most six decimal places, got "${v}"`,
+        { key },
+      );
+    }
+    return v;
+  };
+
+  const maxPerAttendeeXrp = xrp("REWARD_MAX_PER_ATTENDEE_XRP", "10");
+  const feeBufferXrp = xrp("REWARD_FEE_BUFFER_XRP", "0.01");
+
+  const floor = xrpToDropsBigInt(badgeReadyReserveXrp()) + xrpToDropsBigInt(feeBufferXrp);
+  if (xrpToDropsBigInt(maxPerAttendeeXrp) < floor) {
+    throw new ConfigError(
+      `REWARD_MAX_PER_ATTENDEE_XRP is ${maxPerAttendeeXrp}, which is less than an empty wallet needs ` +
+        `just to hold a badge (${badgeReadyReserveXrp()} XRP) plus the fee buffer ` +
+        `(${feeBufferXrp} XRP). Nobody could be paid.`,
+      { maxPerAttendeeXrp, feeBufferXrp },
+    );
+  }
+
+  return {
+    ...(treasuryMasterKey === undefined ? {} : { treasuryMasterKey }),
+    maxPerAttendeeXrp,
+    feeBufferXrp,
+  };
 }
 
 function int(key: string, fallback: number): number {
@@ -245,11 +300,7 @@ export function loadConfig(options: LoadConfigOptions = {}): AppConfig {
     network,
     issuerAddress,
     issuerSeed,
-    sponsor: {
-      enabled: bool("SPONSOR_ENABLED", false),
-      amountXrp: decimal("SPONSOR_AMOUNT_XRP", "1.5"),
-      dailyCapXrp: decimal("SPONSOR_DAILY_CAP_XRP", "50"),
-    },
+    reward: rewardConfig(),
     pinata: { jwt: env("PINATA_JWT"), gateway: env("PINATA_GATEWAY") ?? "https://gateway.pinata.cloud" },
     xumm: { apiKey: env("XUMM_API_KEY"), apiSecret: env("XUMM_API_SECRET") },
     databaseUrl: env("DATABASE_URL"),
@@ -287,7 +338,11 @@ export function describeConfig(cfg: AppConfig): Record<string, unknown> {
     network: cfg.network,
     issuerAddress: cfg.issuerAddress,
     issuerSeed: cfg.issuerSeed ? "[redacted]" : "[unset]",
-    sponsor: cfg.sponsor,
+    reward: {
+      treasuryMasterKey: cfg.reward.treasuryMasterKey ? "[redacted]" : "[unset]",
+      maxPerAttendeeXrp: cfg.reward.maxPerAttendeeXrp,
+      feeBufferXrp: cfg.reward.feeBufferXrp,
+    },
     pinata: { jwt: cfg.pinata.jwt ? "[redacted]" : "[unset]", gateway: cfg.pinata.gateway },
     xumm: {
       apiKey: cfg.xumm.apiKey ? "[redacted]" : "[unset]",

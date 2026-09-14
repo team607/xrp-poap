@@ -11,9 +11,12 @@ import type { NetworkName } from "../types.js";
 import { ConnectionError, NotFoundError, XrplLayerError } from "../errors.js";
 import {
   CLAIM_PAYLOAD_EXPIRE_MINUTES,
+  PURCHASE_PAYLOAD_EXPIRE_MINUTES,
   buildClaimSignRequest,
+  buildPurchaseSignRequest,
   xamanForceNetwork,
   type ClaimSignRequestParams,
+  type PurchaseSignRequestParams,
 } from "./payloads.js";
 
 /** Everything the API hands back to a browser so it can show a QR / deeplink. */
@@ -33,10 +36,20 @@ export interface XamanPayloadStatus {
   signed: boolean;
   txHash?: string;
   account?: string;
+  /**
+   * Declined in the app, or expired unanswered: this payload will never be
+   * signed now. Absent is "not known", never "no".
+   */
+  rejected?: boolean;
 }
 
 export interface XamanService {
   createClaimRequest(params: ClaimSignRequestParams): Promise<XamanClaimRequest>;
+  /**
+   * A Payment to a vendor, for the buyer to approve. Xaman submits it; what
+   * happened is still read back off the ledger (src/xrpl/purchase.ts).
+   */
+  createPurchaseRequest(params: PurchaseSignRequestParams): Promise<XamanClaimRequest>;
   getPayload(uuid: string): Promise<XamanPayloadStatus>;
 }
 
@@ -59,7 +72,7 @@ export interface XummCreatedPayload {
 }
 
 export interface XummFetchedPayload {
-  meta: { resolved: boolean; signed: boolean };
+  meta: { resolved: boolean; signed: boolean; expired?: boolean; cancelled?: boolean };
   response: { txid?: string | null; account?: string | null };
 }
 
@@ -137,6 +150,42 @@ export class XummXamanService implements XamanService {
     };
   }
 
+  async createPurchaseRequest(params: PurchaseSignRequestParams): Promise<XamanClaimRequest> {
+    const request = buildPurchaseSignRequest({
+      ...params,
+      ...(params.sourceTag === undefined && this.sourceTag !== undefined
+        ? { sourceTag: this.sourceTag }
+        : {}),
+    });
+    // A testnet payment looked for on mainnet fails as "account not found".
+    if (this.network) {
+      request.options.force_network = xamanForceNetwork(this.network);
+    }
+
+    let created: XummCreatedPayload | null;
+    try {
+      created = await this.sdk.payload.create(request);
+    } catch (err) {
+      throw new ConnectionError("Xaman rejected the payment request", {
+        reason: (err as Error).message,
+        purchaseId: params.purchaseId,
+      });
+    }
+    if (!created) {
+      throw new ConnectionError("Xaman returned no payload for the payment request", {
+        purchaseId: params.purchaseId,
+      });
+    }
+
+    return {
+      uuid: created.uuid,
+      qrPng: created.refs.qr_png,
+      deeplink: created.next.always,
+      websocket: created.refs.websocket_status,
+      expiresAt: new Date(Date.now() + PURCHASE_PAYLOAD_EXPIRE_MINUTES * 60_000).toISOString(),
+    };
+  }
+
   async getPayload(uuid: string): Promise<XamanPayloadStatus> {
     let payload: XummFetchedPayload | null;
     try {
@@ -152,11 +201,15 @@ export class XummXamanService implements XamanService {
 
     const txHash = payload.response.txid ?? undefined;
     const account = payload.response.account ?? undefined;
+    const signed = payload.meta.signed;
     return {
       resolved: payload.meta.resolved,
-      signed: payload.meta.signed,
+      signed,
       ...(txHash ? { txHash } : {}),
       ...(account ? { account } : {}),
+      rejected:
+        !signed &&
+        (payload.meta.resolved || payload.meta.expired === true || payload.meta.cancelled === true),
     };
   }
 }
@@ -178,6 +231,10 @@ const NOT_CONFIGURED =
  */
 export class NullXamanService implements XamanService {
   async createClaimRequest(_params: ClaimSignRequestParams): Promise<XamanClaimRequest> {
+    throw new XrplLayerError("CONFIG_INVALID", NOT_CONFIGURED);
+  }
+
+  async createPurchaseRequest(_params: PurchaseSignRequestParams): Promise<XamanClaimRequest> {
     throw new XrplLayerError("CONFIG_INVALID", NOT_CONFIGURED);
   }
 

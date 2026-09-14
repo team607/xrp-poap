@@ -132,56 +132,119 @@ export interface BurnResult {
 }
 
 // ---------------------------------------------------------------------------
-// Sponsorship
+// Treasuries and allowances
+//
+// Every event has a wallet of its own. The organiser funds it, and the server
+// pays each attendee's allowance out of it when their badge is issued. The
+// issuer never pays attendees.
 // ---------------------------------------------------------------------------
 
-export interface SponsorResult {
-  sponsored: boolean;
-  /** Set when sponsored === false and the account was already activated. */
-  alreadyActivated: boolean;
+export interface TreasuryRecord {
+  eventId: EventId;
+  /** Classic address. Public: it is the address an organiser funds. */
   address: string;
-  amountXrp?: string;
-  txHash?: string;
-  ledgerIndex?: number;
+  /**
+   * The seed, sealed with TREASURY_MASTER_KEY and bound to this event and
+   * address (src/treasury/seal.ts). Server-side only: no route returns it and
+   * nothing logs it.
+   */
+  sealedSeed: string;
+  createdAt?: Date;
 }
 
-export interface SponsorReservation {
+export interface TreasuryRepository {
+  find(eventId: EventId): Promise<TreasuryRecord | null>;
+  /**
+   * Store a treasury unless the event already has one. The first writer wins
+   * and a later call gets the stored row back untouched, so two instances
+   * backfilling at once cannot give one event two wallets.
+   */
+  insertIfAbsent(
+    record: Omit<TreasuryRecord, "createdAt">,
+  ): Promise<{ record: TreasuryRecord; created: boolean }>;
+}
+
+export type AllowanceStatus = "reserved" | "confirmed";
+
+/** One attendee's allowance at one event: what was sent, and whether it landed. */
+export interface AllowanceRecord {
   id: string;
   eventId: EventId;
   address: string;
+  /** What the attendee may spend, as the event had it set at the time. */
+  allowanceXrp: string;
+  /** Reserve shortfall plus fee buffer: what makes the allowance spendable. */
+  topupXrp: string;
+  /** allowanceXrp + topupXrp. The Payment's Amount. */
   amountXrp: string;
+  treasuryAddress: string;
+  status: AllowanceStatus;
+  txHash: string | null;
+  reservedAt: Date;
+  confirmedAt: Date | null;
 }
 
-export interface SponsorReserveInput {
+export interface AllowanceReserveInput {
   eventId: EventId;
   address: string;
-  amountXrp: string;
-  dailyCapXrp: string;
+  allowanceXrp: string;
+  topupXrp: string;
+  treasuryAddress: string;
+  /** Refused when this payment would take the event's committed total past it. */
+  budgetXrp: string;
+}
+
+export interface AllowanceSummary {
+  /** Reserved and confirmed together: money in flight is money spent. */
+  committedXrp: string;
+  paidXrp: string;
+  paidCount: number;
+  inFlightCount: number;
 }
 
 /**
- * Backing store for sponsorship guards. Implemented by the db layer.
+ * The book behind every allowance payment. Implemented by the db layer.
  *
- * TWO-PHASE BY DESIGN. `reserve()` books the spend BEFORE the Payment is
- * submitted, so a lost race can never put XRP on the wire that the daily cap
- * cannot see. Check-then-pay-then-record is the drain the brief warns about in
- * section 5.4: under concurrency it pays N times and records one.
+ * TWO-PHASE BY DESIGN. `reserve()` books the payment BEFORE it is submitted,
+ * atomically against the event's budget, so two desks racing for the last of
+ * a budget lose the race in headroom and never in XRP. Check-then-pay-then-
+ * record pays N times under concurrency and records one.
  */
-export interface SponsorLedger {
-  /** True when this address was already sponsored for this event. */
-  hasSponsored(eventId: EventId, address: string): Promise<boolean>;
-  /** Total XRP sponsored in the current UTC day, as a decimal string. */
-  sponsoredTodayXrp(): Promise<string>;
+export interface AllowanceLedger {
+  find(eventId: EventId, address: string): Promise<AllowanceRecord | null>;
   /**
-   * Atomically books the spend. Returns null when the address is already
-   * sponsored for this event, or when the daily cap would be crossed.
-   * MUST be atomic against concurrent callers, cap included.
+   * Books the payment. Null when this attendee already has a row for this
+   * event, or when the event's budget cannot cover it. MUST be atomic against
+   * concurrent callers, budget included.
    */
-  reserve(input: SponsorReserveInput): Promise<SponsorReservation | null>;
-  /** Attach the validated Payment hash once it lands. */
-  confirm(reservationId: string, txHash: string): Promise<void>;
-  /** Roll back a reservation whose Payment never landed. */
-  release(reservationId: string): Promise<void>;
+  reserve(input: AllowanceReserveInput): Promise<AllowanceRecord | null>;
+  /** Attach the validated Payment's hash. Idempotent for the same hash. */
+  confirm(id: string, txHash: string): Promise<void>;
+  /** Roll back a reservation whose Payment never landed. Never touches a confirmed row. */
+  release(id: string): Promise<void>;
+  summary(eventId: EventId): Promise<AllowanceSummary>;
+  /** Newest first. */
+  listByEvent(
+    eventId: EventId,
+    opts?: { limit?: number; offset?: number; status?: AllowanceStatus },
+  ): Promise<AllowanceRecord[]>;
+}
+
+/** What one attempt to pay an attendee's allowance did. */
+export interface AllowanceResult {
+  /**
+   *   paid          this call sent the Payment
+   *   already_paid  an earlier call did, and nothing was sent now
+   *   nothing_owed  no allowance is set and the wallet can already hold a badge
+   */
+  outcome: "paid" | "already_paid" | "nothing_owed";
+  eventId: EventId;
+  address: string;
+  allowanceXrp: string;
+  topupXrp: string;
+  amountXrp: string;
+  txHash?: string;
+  ledgerIndex?: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -500,6 +563,19 @@ export interface EventRecord {
   /** Event-wide fallback URI, used when per-attendee art is unavailable. */
   metadataUri?: string | null;
   status: EventStatus;
+  /**
+   * What every attendee may spend at this event's vendors, as decimal XRP.
+   * Paid from the event's treasury when their badge is issued, on top of
+   * whatever their wallet needs to hold the badge. "0" means no allowance:
+   * only wallets that cannot hold a badge are topped up. Repositories always
+   * return it; it is optional only so a create may leave it out.
+   */
+  allowanceXrp?: string;
+  /**
+   * The most this event's treasury may pay out, allowances and top-ups
+   * together, as decimal XRP. "0" pays nothing at all.
+   */
+  budgetXrp?: string;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -618,4 +694,207 @@ export interface SessionStore {
   revokeAll(email: string): Promise<void>;
   /** Housekeeping; safe to call on a timer. */
   purgeExpired(now?: Date): Promise<number>;
+}
+
+// ---------------------------------------------------------------------------
+// Vendors and what they sell
+// ---------------------------------------------------------------------------
+
+/**
+ * Somebody selling at an event. Attendees pay `walletAddress` directly: it is
+ * a wallet the vendor holds, and this server never has a key for it.
+ */
+export interface VendorRecord {
+  id: string;
+  eventId: EventId;
+  name: string;
+  walletAddress: string;
+  /** A hidden vendor keeps its order history and takes no new orders. */
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface VendorItemRecord {
+  id: string;
+  vendorId: string;
+  eventId: EventId;
+  name: string;
+  /** Per unit, decimal XRP. Always more than zero. */
+  priceXrp: string;
+  /** Units available in total, or null for no limit. */
+  stock: number | null;
+  active: boolean;
+  createdAt?: Date;
+  updatedAt?: Date;
+}
+
+export interface VendorRepository {
+  createVendor(input: {
+    eventId: EventId;
+    name: string;
+    walletAddress: string;
+    active?: boolean;
+  }): Promise<VendorRecord>;
+  updateVendor(
+    id: string,
+    patch: { name?: string; walletAddress?: string; active?: boolean },
+  ): Promise<VendorRecord>;
+  /** False when there was no such vendor. CONFLICT when it has orders: hide it instead. */
+  deleteVendor(id: string): Promise<boolean>;
+  findVendor(id: string): Promise<VendorRecord | null>;
+  /** In the order they were added. */
+  listVendors(eventId: EventId): Promise<VendorRecord[]>;
+  /** Every vendor, at any event, paid into this wallet. How a vendor signs in. */
+  listVendorsByWallet(walletAddress: string): Promise<VendorRecord[]>;
+  createItem(input: {
+    vendorId: string;
+    name: string;
+    priceXrp: string;
+    stock?: number | null;
+    active?: boolean;
+  }): Promise<VendorItemRecord>;
+  updateItem(
+    id: string,
+    patch: { name?: string; priceXrp?: string; stock?: number | null; active?: boolean },
+  ): Promise<VendorItemRecord>;
+  /** False when there was no such item. CONFLICT when it has orders: hide it instead. */
+  deleteItem(id: string): Promise<boolean>;
+  findItem(id: string): Promise<VendorItemRecord | null>;
+  /** Every item at the event, across its vendors, in the order they were added. */
+  listItems(eventId: EventId): Promise<VendorItemRecord[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Purchases
+// ---------------------------------------------------------------------------
+
+/**
+ *   reserved  stock is held and a Payment has been asked for
+ *   paid      the ledger shows the Payment, so the vendor may hand the item over
+ *   expired   nobody paid in time, and the stock went back
+ */
+export type PurchaseStatus = "reserved" | "paid" | "expired";
+
+export interface PurchaseRecord {
+  /** A random uuid. Also the memo on the Payment that pays for it. */
+  id: string;
+  eventId: EventId;
+  vendorId: string;
+  itemId: string;
+  buyerAddress: string;
+  /** Where the Payment must go: the vendor's wallet when the order was placed. */
+  vendorAddress: string;
+  /** Names as they were at the time, so a later rename does not rewrite a receipt. */
+  vendorName: string;
+  itemName: string;
+  quantity: number;
+  unitPriceXrp: string;
+  amountXrp: string;
+  status: PurchaseStatus;
+  xamanUuid: string | null;
+  txHash: string | null;
+  createdAt: Date;
+  /** After this, an unpaid reservation stops holding stock. */
+  expiresAt: Date;
+  paidAt: Date | null;
+  /** Set by the vendor when the item left the counter. Clearable: people mis-tap. */
+  handedOverAt: Date | null;
+}
+
+export interface PurchaseReserveInput {
+  id: string;
+  eventId: EventId;
+  vendorId: string;
+  itemId: string;
+  buyerAddress: string;
+  vendorAddress: string;
+  vendorName: string;
+  itemName: string;
+  quantity: number;
+  unitPriceXrp: string;
+  expiresAt: Date;
+  /** Unpaid reservations one buyer may hold at once at this event. */
+  maxOpenPerBuyer: number;
+}
+
+export type PurchaseReserveOutcome =
+  | { ok: true; purchase: PurchaseRecord }
+  | { ok: false; reason: "sold_out"; remaining: number }
+  | { ok: false; reason: "too_many_open"; open: number };
+
+export interface PurchaseListOptions {
+  eventId?: EventId;
+  vendorId?: string;
+  buyerAddress?: string;
+  status?: PurchaseStatus;
+  limit?: number;
+  offset?: number;
+}
+
+/** One vendor's paid orders, added up. */
+export interface VendorSales {
+  vendorId: string;
+  eventId: EventId;
+  vendorName: string;
+  orders: number;
+  units: number;
+  totalXrp: string;
+  handedOver: number;
+}
+
+export interface PurchaseRepository {
+  /**
+   * Hold stock and write the order as one decision: the stock check, the
+   * per-buyer cap and the insert cannot interleave with another buyer's, so two
+   * phones cannot both take the last unit. The item's stock is read here, not
+   * passed in.
+   */
+  reserve(input: PurchaseReserveInput): Promise<PurchaseReserveOutcome>;
+  attachPayload(id: string, xamanUuid: string): Promise<void>;
+  /**
+   * The ledger shows the Payment. Allowed from reserved OR expired: money that
+   * arrived late still arrived. Idempotent for the same hash; CONFLICT when the
+   * hash already paid for a different order.
+   */
+  markPaid(id: string, txHash: string): Promise<PurchaseRecord>;
+  /** Only from reserved. Null when the order was not reserved any more. */
+  markExpired(id: string): Promise<PurchaseRecord | null>;
+  find(id: string): Promise<PurchaseRecord | null>;
+  /** Newest first. */
+  list(opts?: PurchaseListOptions): Promise<PurchaseRecord[]>;
+  count(opts?: Omit<PurchaseListOptions, "limit" | "offset">): Promise<number>;
+  /** Only a paid order can be handed over. */
+  setHandedOver(id: string, handedOver: boolean): Promise<PurchaseRecord>;
+  /**
+   * Units spoken for at an event, by item id: paid, plus reservations that
+   * have not expired. Items with nothing taken are absent.
+   */
+  unitsTaken(eventId: EventId): Promise<Record<string, number>>;
+  /** Paid orders only, one row per vendor that has any. */
+  salesByVendor(opts?: { eventId?: EventId }): Promise<VendorSales[]>;
+}
+
+// ---------------------------------------------------------------------------
+// Vendor sessions
+//
+// A vendor signs in by proving their wallet in Xaman. There is no password and
+// no account: the wallet is the identity, and the session says which wallet.
+// Kept apart from admin sessions on purpose — nothing a vendor holds may ever
+// be something the admin guard could be persuaded to read.
+// ---------------------------------------------------------------------------
+
+export interface VendorSessionRecord {
+  /** The raw cookie value, returned by create() and get(). The store keeps only its hash. */
+  id: string;
+  walletAddress: string;
+  createdAt: Date;
+  expiresAt: Date;
+}
+
+export interface VendorSessionStore {
+  create(walletAddress: string, ttlMs: number): Promise<VendorSessionRecord>;
+  /** Null for unknown, expired or revoked. */
+  get(id: string): Promise<VendorSessionRecord | null>;
+  revoke(id: string): Promise<void>;
 }

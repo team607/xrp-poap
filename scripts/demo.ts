@@ -37,7 +37,7 @@ import { buildDeps } from "../src/api/deps.js";
 import { buildServer } from "../src/api/server.js";
 import { loadConfig, type AppConfig } from "../src/config.js";
 import { XrplConnection } from "../src/xrpl/client.js";
-import { getAccountBalanceXrp } from "../src/xrpl/sponsor.js";
+import { getAccountBalanceXrp } from "../src/xrpl/account.js";
 import { createReport, exitWith, explorerAccountUrl, registerSecret } from "./lib/report.js";
 
 // ---------------------------------------------------------------------------
@@ -210,10 +210,6 @@ async function run(): Promise<void> {
     // nothing here is written to .env or anywhere else on disk.
     issuerAddress: issuer.classicAddress,
     issuerSeed: issuer.seed,
-    // Faucet money on a throwaway account, so sponsorship is free — and it is
-    // what makes the "unfunded attendee" branch of the demo real rather than
-    // staged. POST /claims 409s that attendee without it.
-    sponsor: { ...cfg.sponsor, enabled: true },
     // Use Postgres when one is configured, memory otherwise.
     //
     // A demo must stay one command with no database — that is why the memory
@@ -310,7 +306,12 @@ async function run(): Promise<void> {
   r.info("bound to", `${config.api.host}:${port}`);
   r.info("issuer", issuer.classicAddress);
   r.link("issuer on explorer", explorerAccountUrl(config.network, issuer.classicAddress));
-  r.info("sponsorship", `on · ${config.sponsor.amountXrp} XRP, cap ${config.sponsor.dailyCapXrp}/day`);
+  r.info(
+    "allowances",
+    config.reward.treasuryMasterKey
+      ? `paid from each event's treasury · at most ${config.reward.maxPerAttendeeXrp} XRP per attendee`
+      : "TREASURY_MASTER_KEY is unset — events cannot pay attendees",
+  );
   r.info(
     "storage",
     config.databaseUrl

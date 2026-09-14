@@ -16,7 +16,9 @@
  */
 import type { FastifyInstance, FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
+import { isXrpAmount } from "../../money.js";
 import { MAX_TAXON, type EventRecord, type EventStatus } from "../../types.js";
+import { allowanceOverCeiling } from "../allowance.js";
 import { requireAdmin } from "../auth.js";
 import type { ApiDeps } from "../deps.js";
 import { eventIdParamsSchema, sendError, type EventIdParams } from "../http-errors.js";
@@ -140,6 +142,16 @@ const descriptionSchema = z.string().max(2_000);
 const eventDateSchema = z.string().min(1).max(40);
 const venueSchema = z.string().max(200);
 const metadataUriSchema = z.string().min(1).max(256);
+/**
+ * Money, as a decimal string. Never a JSON number: 0.1 arrives as a float and
+ * is compared against a budget. Whether an allowance is too big for this
+ * server is checked in the handler, which knows the ceiling.
+ */
+const xrpAmountSchema = z
+  .string()
+  .trim()
+  .max(24)
+  .refine(isXrpAmount, "A plain XRP amount with at most six decimal places, like 2.5");
 
 const createEventBodySchema = z
   .object({
@@ -151,6 +163,10 @@ const createEventBodySchema = z
     metadataUri: metadataUriSchema.optional(),
     /** Defaults to draft: a new event is not public until someone opens it. */
     status: eventStatusSchema.default("draft"),
+    /** What each attendee may spend at the event's vendors. Defaults to none. */
+    allowanceXrp: xrpAmountSchema.optional(),
+    /** The most the event's treasury may pay out. Defaults to nothing. */
+    budgetXrp: xrpAmountSchema.optional(),
   })
   .strict();
 
@@ -169,10 +185,21 @@ const updateEventBodySchema = z
     venue: venueSchema.nullable().optional(),
     metadataUri: metadataUriSchema.nullable().optional(),
     status: eventStatusSchema.optional(),
+    allowanceXrp: xrpAmountSchema.optional(),
+    budgetXrp: xrpAmountSchema.optional(),
   })
   .strict();
 
-const UPDATABLE_FIELDS = ["name", "description", "eventDate", "venue", "metadataUri", "status"] as const;
+const UPDATABLE_FIELDS = [
+  "name",
+  "description",
+  "eventDate",
+  "venue",
+  "metadataUri",
+  "status",
+  "allowanceXrp",
+  "budgetXrp",
+] as const;
 
 type CreateEventBody = z.infer<typeof createEventBodySchema>;
 type UpdateEventBody = z.infer<typeof updateEventBodySchema>;
@@ -601,6 +628,15 @@ export function registerEventRoutes(app: FastifyInstance, deps: ApiDeps): void {
         );
       }
 
+      if (body.allowanceXrp !== undefined) {
+        const tooBig = allowanceOverCeiling(deps, body.allowanceXrp);
+        if (tooBig) {
+          return sendError(reply, 400, "INVALID_INPUT", tooBig, {
+            issues: [{ path: "allowanceXrp", message: tooBig }],
+          });
+        }
+      }
+
       const created = await events.create({
         eventId: body.eventId,
         name: body.name,
@@ -609,7 +645,23 @@ export function registerEventRoutes(app: FastifyInstance, deps: ApiDeps): void {
         ...(body.eventDate === undefined ? {} : { eventDate: body.eventDate }),
         ...(body.venue === undefined ? {} : { venue: body.venue }),
         ...(body.metadataUri === undefined ? {} : { metadataUri: body.metadataUri }),
+        ...(body.allowanceXrp === undefined ? {} : { allowanceXrp: body.allowanceXrp }),
+        ...(body.budgetXrp === undefined ? {} : { budgetXrp: body.budgetXrp }),
       });
+
+      // The event's own wallet, made now so the organiser can fund it straight
+      // away. Never fails the create: an event with no treasury yet still takes
+      // registrations and issues badges, and the treasury is made on first use.
+      if (deps.treasuries?.configured) {
+        try {
+          await deps.treasuries.ensure(created.eventId);
+        } catch (err) {
+          request.log.warn(
+            { err, eventId: created.eventId },
+            "event created, but its treasury could not be made yet",
+          );
+        }
+      }
 
       return reply.code(201).send({ event: created });
     },
@@ -656,6 +708,21 @@ export function registerEventRoutes(app: FastifyInstance, deps: ApiDeps): void {
       if ("venue" in body) patch.venue = body.venue;
       if ("metadataUri" in body) patch.metadataUri = body.metadataUri;
       if ("status" in body) patch.status = body.status;
+      if (body.allowanceXrp !== undefined) patch.allowanceXrp = body.allowanceXrp;
+      if (body.budgetXrp !== undefined) patch.budgetXrp = body.budgetXrp;
+
+      // An allowance is paid at the moment of issue, not at the moment it is
+      // saved, so raising it mid-event is allowed — but never past what this
+      // server can pay one person.
+      if (patch.allowanceXrp !== undefined) {
+        const tooBig = allowanceOverCeiling(deps, patch.allowanceXrp);
+        if (tooBig) {
+          return sendError(reply, 400, "INVALID_INPUT", tooBig, {
+            eventId,
+            issues: [{ path: "allowanceXrp", message: tooBig }],
+          });
+        }
+      }
 
       if (Object.keys(patch).length === 0) {
         return sendError(

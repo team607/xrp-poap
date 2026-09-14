@@ -11,7 +11,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { FastifyInstance } from "fastify";
 import { MockGateway } from "../../test/helpers/mock-gateway.js";
 import type { AppConfig } from "../config.js";
-import { XrplLayerError } from "../errors.js";
+import { MemoryAllowanceLedger } from "../db/allowance-ledger.js";
+import { MemoryEventRepository } from "../db/memory.js";
+import { MemoryTreasuryRepository } from "../db/treasury-repo.js";
+import { AllowanceDeniedError, XrplLayerError } from "../errors.js";
+import { TreasuryService } from "../treasury/service.js";
+import { TreasuryVault } from "../treasury/vault.js";
+import { payAllowance } from "../xrpl/allowance.js";
 import type {
   AttendanceRecord,
   AttendanceRepository,
@@ -20,9 +26,6 @@ import type {
   ClaimRecord,
   ClaimRepository,
   EventId,
-  SponsorLedger,
-  SponsorReservation,
-  SponsorReserveInput,
   VerificationChecks,
   VerifyClaimResult,
 } from "../types.js";
@@ -50,6 +53,10 @@ const NFTOKEN_ID = "000800008685A6D01DEDD0C4365B0928256424853B9842F30A379442FF96
 const OFFER_ID = "8685A6D01DEDD0C4365B0928256424853B9842F30A379442FF969F9DD0D3AABC";
 const ACCEPT_TX = "B4068EC978F85028EFF92C1D9D48C249A5243E31EE517344378D33413E25EEBD";
 const MINT_TX = "C31F96F645E7BDFDE9D28B2612A8C9442C4CB2DA3B05A5F8EA32F2A1BE2F32B7";
+const PAY_TX = "5".repeat(64);
+
+/** Seals the test treasury. Not a secret: it guards wallets that never hold XRP. */
+const TEST_MASTER_KEY = "0123456789abcdef".repeat(4);
 
 /** Shaped like a real family seed so the value-level scrub has something to bite. */
 const FAKE_SEED = "sEdV6Xn3bRq9J2wY4tK8mZpL1cH7dQa";
@@ -106,7 +113,7 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     network: "testnet",
     issuerAddress: ISSUER,
     issuerSeed: FAKE_SEED,
-    sponsor: { enabled: false, amountXrp: "1.5", dailyCapXrp: "50" },
+    reward: { maxPerAttendeeXrp: "10", feeBufferXrp: "0.01" },
     pinata: { gateway: "https://gateway.pinata.cloud" },
     xumm: {},
     demoEnabled: false,
@@ -175,51 +182,6 @@ class FakeAttendanceRepository implements AttendanceRepository {
   }
   async countAll(): Promise<number> {
     return 0;
-  }
-}
-
-class FakeSponsorLedger implements SponsorLedger {
-  readonly entries: Array<{
-    id: string;
-    eventId: EventId;
-    address: string;
-    amountXrp: string;
-    txHash?: string;
-    released?: boolean;
-  }> = [];
-  private seq = 0;
-
-  async hasSponsored(eventId: EventId, address: string): Promise<boolean> {
-    return this.entries.some(
-      (e) => e.eventId === eventId && e.address === address && e.released !== true,
-    );
-  }
-
-  async sponsoredTodayXrp(): Promise<string> {
-    return "0";
-  }
-
-  async reserve(input: SponsorReserveInput): Promise<SponsorReservation | null> {
-    if (await this.hasSponsored(input.eventId, input.address)) return null;
-    this.seq += 1;
-    const reservation: SponsorReservation = {
-      id: `sponsor-${this.seq}`,
-      eventId: input.eventId,
-      address: input.address,
-      amountXrp: input.amountXrp,
-    };
-    this.entries.push({ ...reservation });
-    return reservation;
-  }
-
-  async confirm(reservationId: string, txHash: string): Promise<void> {
-    const entry = this.entries.find((e) => e.id === reservationId);
-    if (entry) entry.txHash = txHash;
-  }
-
-  async release(reservationId: string): Promise<void> {
-    const entry = this.entries.find((e) => e.id === reservationId);
-    if (entry) entry.released = true;
   }
 }
 
@@ -318,14 +280,30 @@ function makeChainMocks() {
      * that want "this wallet needs funding" set this to a dust balance.
      */
     getAccountBalanceXrp: vi.fn<ChainOps["getAccountBalanceXrp"]>(async () => "100"),
-    sponsorWallet: vi.fn<ChainOps["sponsorWallet"]>(async (_gateway, input) => ({
-      sponsored: true,
-      alreadyActivated: false,
+    readAccount: vi.fn<ChainOps["readAccount"]>(async () => {
+      throw new XrplLayerError("CONFIG_INVALID", "readAccount is not used by these routes");
+    }),
+    /**
+     * Nothing owed, by default: most of these tests are about the badge, and a
+     * test about money swaps the real payAllowance in with mockImplementation.
+     */
+    payAllowance: vi.fn<ChainOps["payAllowance"]>(async (_gateway, input) => ({
+      outcome: "nothing_owed",
+      eventId: input.eventId,
       address: input.address,
-      amountXrp: input.config.amountXrp,
-      txHash: MINT_TX,
-      ledgerIndex: 4_240_999,
+      allowanceXrp: "0",
+      topupXrp: "0",
+      amountXrp: "0",
     })),
+    sweepTreasury: vi.fn<ChainOps["sweepTreasury"]>(async () => {
+      throw new XrplLayerError("CONFIG_INVALID", "sweepTreasury is not used by these routes");
+    }),
+    verifyPurchasePayment: vi.fn<ChainOps["verifyPurchasePayment"]>(async () => {
+      throw new XrplLayerError("CONFIG_INVALID", "verifyPurchasePayment is not used by these routes");
+    }),
+    findPurchasePayment: vi.fn<ChainOps["findPurchasePayment"]>(async () => {
+      throw new XrplLayerError("CONFIG_INVALID", "findPurchasePayment is not used by these routes");
+    }),
     verifyClaim: vi.fn<ChainOps["verifyClaim"]>(async () => attendedResult()),
     getRoster: vi.fn<ChainOps["getRoster"]>(async (_gateway, eventId) => ({
       eventId,
@@ -371,7 +349,10 @@ interface Harness {
   chain: ChainMocks;
   attendance: FakeAttendanceRepository;
   claims: FakeClaimRepository;
-  sponsorLedger: FakeSponsorLedger;
+  allowances: MemoryAllowanceLedger;
+  events: MemoryEventRepository;
+  /** EVENT_ID's treasury, when the harness was given money. */
+  treasuryAddress: string;
   gateway: MockGateway;
 }
 
@@ -392,11 +373,36 @@ const refuseAdmin: NonNullable<ApiDeps["requireAdmin"]> = (_request, reply) =>
     .code(401)
     .send({ error: { code: "UNAUTHORIZED", message: "Not signed in. POST /admin/api/login first." } });
 
-function harness(options: { config?: Partial<AppConfig>; deps?: Partial<ApiDeps> } = {}): Harness {
+function harness(
+  options: {
+    config?: Partial<AppConfig>;
+    deps?: Partial<ApiDeps>;
+    /**
+     * Make EVENT_ID a real event with an allowance, a budget and a treasury.
+     * `key: false` is a server with no TREASURY_MASTER_KEY.
+     */
+    money?: { allowanceXrp?: string; budgetXrp?: string; key?: boolean };
+  } = {},
+): Harness {
   const chain = makeChainMocks();
   const attendance = new FakeAttendanceRepository();
   const claims = new FakeClaimRepository();
-  const sponsorLedger = new FakeSponsorLedger();
+  const events = new MemoryEventRepository(attendance);
+  const allowances = new MemoryAllowanceLedger({ events });
+  const vault = new TreasuryVault(TEST_MASTER_KEY);
+  const treasuryRepo = new MemoryTreasuryRepository();
+  const treasury = vault.create(EVENT_ID);
+  if (options.money) {
+    void events.create({
+      eventId: EVENT_ID,
+      name: "Ledger Days",
+      status: "live",
+      allowanceXrp: options.money.allowanceXrp ?? "0",
+      budgetXrp: options.money.budgetXrp ?? "0",
+    });
+    void treasuryRepo.insertIfAbsent({ eventId: EVENT_ID, ...treasury });
+  }
+  const treasuries = new TreasuryService(treasuryRepo, options.money?.key === false ? undefined : vault);
   // Nothing is queued on it: any route that reaches for the ledger directly
   // fails the test loudly instead of quietly passing.
   const gateway = new MockGateway({ issuerAddress: ISSUER });
@@ -406,15 +412,27 @@ function harness(options: { config?: Partial<AppConfig>; deps?: Partial<ApiDeps>
     gateway,
     attendance,
     claims,
-    sponsorLedger,
     chain,
     metadataUriForEvent: () => METADATA_URI,
+    // Only when asked: an events store registers the event routes too, and
+    // most of this file is about a server that has none.
+    ...(options.money ? { events, allowances, treasuries } : {}),
     rateLimit: { enabled: false },
     requireAdmin: admitAdmin,
     ...options.deps,
   };
 
-  return { app: buildServer(deps), deps, chain, attendance, claims, sponsorLedger, gateway };
+  return {
+    app: buildServer(deps),
+    deps,
+    chain,
+    attendance,
+    claims,
+    allowances,
+    events,
+    treasuryAddress: treasury.address,
+    gateway,
+  };
 }
 
 /**
@@ -615,7 +633,7 @@ describe("POST /events/:eventId/claims", () => {
     expect(h.chain.createClaimOffer).not.toHaveBeenCalled();
   });
 
-  it("409s an unactivated wallet with funding instructions when sponsorship is off", async () => {
+  it("409s an empty wallet with funding instructions when there is nothing to top it up from", async () => {
     const h = harness();
     h.chain.accountExists.mockResolvedValue(false);
     h.chain.getAccountBalanceXrp.mockResolvedValue("0");
@@ -632,8 +650,13 @@ describe("POST /events/:eventId/claims", () => {
     expect(body.error.message).toMatch(/base reserve/i);
     // The number a person has to act on, not just the word.
     expect(body.error.message).toMatch(/owner reserve/i);
-    expect(body.error.details).toMatchObject({ balanceXrp: "0", shortfallXrp: "1.2" });
-    expect(h.chain.sponsorWallet).not.toHaveBeenCalled();
+    expect(body.error.details).toMatchObject({
+      balanceXrp: "0",
+      shortfallXrp: "1.2",
+      treasuryAvailable: false,
+    });
+    // No event row on this server: nothing to pay from, so nothing was asked.
+    expect(h.chain.payAllowance).not.toHaveBeenCalled();
     expect(h.chain.mint).not.toHaveBeenCalled();
   });
 
@@ -641,22 +664,18 @@ describe("POST /events/:eventId/claims", () => {
    * THE REGRESSION THIS BLOCK EXISTS FOR.
    *
    * The gate used to be `accountExists()`. A wallet holding dust passes that —
-   * the account is real — so nothing was sponsored, the badge was minted, the
+   * the account is real — so nothing was topped up, the badge was minted, the
    * offer created, and the attendee's wallet then refused the accept because it
    * could not afford the NFTokenPage. Cost: a badge nobody can take, 0.2 XRP of
    * issuer reserve locked in an offer that has to be reaped, and a volunteer
    * who had been told the wallet was ready.
-   *
-   * A dust balance is MORE likely than an empty account. It belongs to somebody
-   * who has used XRP before, which is exactly who does not expect this.
    */
-  it("sponsors a wallet that EXISTS but cannot afford the badge", async () => {
-    const h = harness({
-      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
-    });
+  it("tops up a wallet that EXISTS but cannot afford the badge, before minting", async () => {
+    const h = harness({ money: { allowanceXrp: "0", budgetXrp: "10" } });
+    h.chain.payAllowance.mockImplementation(payAllowance);
     // Real account, activated, and still 0.2 XRP short of holding one badge.
-    h.chain.accountExists.mockResolvedValue(true);
     h.chain.getAccountBalanceXrp.mockResolvedValue("1");
+    h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_240_999 });
 
     const res = await h.app.inject({
       method: "POST",
@@ -665,16 +684,23 @@ describe("POST /events/:eventId/claims", () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(h.chain.sponsorWallet).toHaveBeenCalledTimes(1);
-    expect(h.chain.mint).toHaveBeenCalledTimes(1);
+    // 0.2 short of the reserve, plus the fee buffer. No allowance at this event.
+    expect(res.json().allowance).toMatchObject({ outcome: "paid", topupXrp: "0.21", amountXrp: "0.21" });
+    expect(h.gateway.lastSubmit("Payment")).toMatchObject({
+      Account: h.treasuryAddress,
+      Destination: ATTENDEE,
+      Amount: "210000",
+    });
+    // Paid, THEN minted: the badge needs somewhere to land.
+    expect(h.chain.payAllowance.mock.invocationCallOrder[0]).toBeLessThan(
+      h.chain.mint.mock.invocationCallOrder[0] ?? 0,
+    );
   });
 
-  it("leaves a wallet alone the moment it can hold a badge", async () => {
-    const h = harness({
-      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
-    });
-    // Exactly base + one owner reserve. Enough, so not a penny is spent.
-    h.chain.accountExists.mockResolvedValue(true);
+  it("spends nothing on a wallet that can hold the badge at an event with no allowance", async () => {
+    const h = harness({ money: { allowanceXrp: "0", budgetXrp: "10" } });
+    h.chain.payAllowance.mockImplementation(payAllowance);
+    // Exactly base + one owner reserve. Enough, so not a drop is spent.
     h.chain.getAccountBalanceXrp.mockResolvedValue("1.2");
 
     const res = await h.app.inject({
@@ -684,15 +710,14 @@ describe("POST /events/:eventId/claims", () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(h.chain.sponsorWallet).not.toHaveBeenCalled();
+    expect(res.json().allowance).toMatchObject({ outcome: "nothing_owed", amountXrp: "0" });
+    expect(h.gateway.submits).toHaveLength(0);
   });
 
-  it("sponsors an unactivated wallet when sponsorship is on, passing the ledger guard", async () => {
-    const h = harness({
-      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
-    });
-    h.chain.accountExists.mockResolvedValue(false);
-    h.chain.getAccountBalanceXrp.mockResolvedValue("0");
+  it("pays every attendee their allowance as the badge is issued, and says so beside the offer", async () => {
+    const h = harness({ money: { allowanceXrp: "5", budgetXrp: "100" } });
+    h.chain.payAllowance.mockImplementation(payAllowance);
+    h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_240_999 });
 
     const res = await h.app.inject({
       method: "POST",
@@ -701,43 +726,99 @@ describe("POST /events/:eventId/claims", () => {
     });
 
     expect(res.statusCode).toBe(201);
-    expect(h.chain.sponsorWallet).toHaveBeenCalledTimes(1);
-    const call = h.chain.sponsorWallet.mock.calls[0]?.[1];
-    expect(call?.address).toBe(ATTENDEE);
-    expect(call?.eventId).toBe(EVENT_ID);
-    expect(call?.ledger).toBe(h.sponsorLedger);
+    const body = res.json();
+    expect(body.offerId).toBe(OFFER_ID);
+    // A wallet holding 100 XRP needs no top-up; the buffer travels with the allowance.
+    expect(body.allowance).toEqual({
+      outcome: "paid",
+      allowanceXrp: "5",
+      topupXrp: "0.01",
+      amountXrp: "5.01",
+      txHash: PAY_TX,
+    });
+    expect(await h.allowances.find(EVENT_ID, ATTENDEE)).toMatchObject({ status: "confirmed", txHash: PAY_TX });
   });
 
-  it("maps a daily-cap refusal to 429 and a plain refusal to 403", async () => {
-    const h = harness({
-      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
-    });
-    h.chain.accountExists.mockResolvedValue(false);
+  it("an empty wallet waits for its payment: a refused allowance mints nothing and frees the slot", async () => {
+    const h = harness({ money: { allowanceXrp: "5", budgetXrp: "1" } });
+    h.chain.payAllowance.mockImplementation(payAllowance);
     h.chain.getAccountBalanceXrp.mockResolvedValue("0");
-    h.chain.sponsorWallet.mockRejectedValueOnce(
-      new XrplLayerError("SPONSORSHIP_DENIED", "daily cap reached", { kind: "daily_cap" }),
-    );
 
-    const capped = await h.app.inject({
+    const res = await h.app.inject({
       method: "POST",
       url: `/events/${EVENT_ID}/claims`,
       payload: { address: ATTENDEE },
     });
-    expect(capped.statusCode).toBe(429);
 
-    h.chain.sponsorWallet.mockRejectedValueOnce(
-      new XrplLayerError("SPONSORSHIP_DENIED", "already sponsored", { kind: "duplicate" }),
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("ALLOWANCE_DENIED");
+    expect(res.json().error.details).toMatchObject({ kind: "budget" });
+    expect(h.chain.mint).not.toHaveBeenCalled();
+    expect(h.gateway.submits).toHaveLength(0);
+    expect(h.claims.rows).toHaveLength(0);
+  });
+
+  it("a wallet that can already hold the badge gets it even when the allowance fails", async () => {
+    const h = harness({ money: { allowanceXrp: "5", budgetXrp: "100" } });
+    h.chain.payAllowance.mockRejectedValueOnce(
+      new XrplLayerError("TX_FAILED", "Payment failed with tecUNFUNDED_PAYMENT"),
     );
-    const denied = await h.app.inject({
+
+    const res = await h.app.inject({
       method: "POST",
       url: `/events/${EVENT_ID}/claims`,
-      payload: { address: OTHER },
+      payload: { address: ATTENDEE },
     });
-    expect(denied.statusCode).toBe(403);
+
+    expect(res.statusCode).toBe(201);
+    expect(h.chain.mint).toHaveBeenCalledTimes(1);
+    expect(res.json().allowance).toEqual({
+      outcome: "failed",
+      error: { code: "TX_FAILED", message: "Payment failed with tecUNFUNDED_PAYMENT" },
+    });
+  });
+
+  it("an empty wallet on a server with no treasury key gets funding instructions, not a badge", async () => {
+    const h = harness({ money: { allowanceXrp: "5", budgetXrp: "100", key: false } });
+    h.chain.payAllowance.mockImplementation(payAllowance);
+    h.chain.getAccountBalanceXrp.mockResolvedValue("0");
+
+    const res = await h.app.inject({
+      method: "POST",
+      url: `/events/${EVENT_ID}/claims`,
+      payload: { address: ATTENDEE },
+    });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("ACCOUNT_NOT_FOUND");
+    expect(res.json().error.details).toMatchObject({ treasuryAvailable: false, reason: "no_treasury" });
+    expect(h.chain.mint).not.toHaveBeenCalled();
+  });
+
+  it("retrying an issue retries an allowance that was missed, and still hands back the offer", async () => {
+    const h = harness({ money: { allowanceXrp: "5", budgetXrp: "100" } });
+    h.chain.payAllowance.mockRejectedValueOnce(new XrplLayerError("TX_FAILED", "tecUNFUNDED_PAYMENT"));
+    const claim = () =>
+      h.app.inject({ method: "POST", url: `/events/${EVENT_ID}/claims`, payload: { address: ATTENDEE } });
+
+    expect((await claim()).json().allowance.outcome).toBe("failed");
+
+    h.chain.payAllowance.mockImplementation(payAllowance);
+    h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_240_999 });
+    const retry = await claim();
+
+    expect(retry.statusCode).toBe(200);
+    expect(retry.json()).toMatchObject({ reusedExistingOffer: true, offerId: OFFER_ID });
+    expect(retry.json().allowance).toMatchObject({ outcome: "paid", amountXrp: "5.01" });
+    // One badge. The retry did not mint again.
+    expect(h.chain.mint).toHaveBeenCalledTimes(1);
   });
 
   it("still returns the accept payload when Xaman is unavailable", async () => {
     const brokenXaman: XamanService = {
+      createPurchaseRequest: vi.fn(async () => {
+        throw new Error("purchases are not used here");
+      }),
       createClaimRequest: vi.fn(async () => {
         throw new XrplLayerError("CONFIG_INVALID", "Xaman is not configured");
       }),
@@ -758,6 +839,9 @@ describe("POST /events/:eventId/claims", () => {
 
   it("includes the Xaman handles when Xaman answers", async () => {
     const xaman: XamanService = {
+      createPurchaseRequest: vi.fn(async () => {
+        throw new Error("purchases are not used here");
+      }),
       createClaimRequest: vi.fn(async () => ({
         uuid: "payload-uuid-1",
         qrPng: "https://xumm.app/qr.png",
@@ -1090,7 +1174,7 @@ describe("minting is behind the admin session", () => {
     expect(h.claims.rows).toHaveLength(0);
     expect(h.chain.mint).not.toHaveBeenCalled();
     expect(h.chain.createClaimOffer).not.toHaveBeenCalled();
-    expect(h.chain.sponsorWallet).not.toHaveBeenCalled();
+    expect(h.chain.payAllowance).not.toHaveBeenCalled();
   });
 
   it("still lets a signed-in desk through", async () => {
@@ -1874,17 +1958,14 @@ describe("POST /events/:eventId/claims — the mint guard", () => {
     expect((await claim(h.app)).statusCode).toBe(201);
   });
 
-  it("releases the slot when sponsorship is refused", async () => {
-    const h = harness({
-      config: { sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" } },
-    });
-    h.chain.accountExists.mockResolvedValue(false);
+  it("releases the slot when an empty wallet's allowance is refused", async () => {
+    const h = harness({ money: { allowanceXrp: "5", budgetXrp: "100" } });
     h.chain.getAccountBalanceXrp.mockResolvedValue("0");
-    h.chain.sponsorWallet.mockRejectedValueOnce(
-      new XrplLayerError("SPONSORSHIP_DENIED", "daily cap reached", { kind: "daily_cap" }),
+    h.chain.payAllowance.mockRejectedValueOnce(
+      new AllowanceDeniedError("A payment is already on its way.", "in_flight", {}),
     );
 
-    expect((await claim(h.app)).statusCode).toBe(429);
+    expect((await claim(h.app)).statusCode).toBe(409);
     expect(h.claims.rows).toHaveLength(0);
   });
 

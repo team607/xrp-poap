@@ -18,14 +18,21 @@
  */
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { z } from "zod";
-import { AccountNotFoundError, ValidationError, XrplLayerError } from "../../errors.js";
+import {
+  AccountNotFoundError,
+  AllowanceDeniedError,
+  ValidationError,
+  XrplLayerError,
+} from "../../errors.js";
 import {
   MAX_URI_BYTES,
+  type AllowanceResult,
   type AttendanceRecord,
   type ClaimRecord,
   type EventId,
   type VerifyClaimResult,
 } from "../../types.js";
+import { payAllowanceFor } from "../allowance.js";
 import type { ApiDeps } from "../deps.js";
 import { adminGuard } from "./events.js";
 import {
@@ -49,10 +56,9 @@ import {
 /**
  * Tighter than the global limit on purpose. Every accepted request here burns a
  * mint fee, locks 0.2 XRP in an NFTokenOffer until the attendee accepts it, and
- * may hand out SPONSOR_AMOUNT_XRP to an address the caller chose (brief 5.4:
- * "anyone who can hit it with an arbitrary address can drain the issuer wallet
- * 1.5 XRP at a time"). Reads are cheap and can stay on the global bucket; this
- * one is the wallet, and it is also on the mainnet cutover checklist (brief 9).
+ * pays an allowance out of the event's treasury to an address the caller chose.
+ * Reads are cheap and can stay on the global bucket; this one is money, and it
+ * is also on the mainnet cutover checklist (brief 9).
  */
 const CLAIM_RATE_LIMIT = { max: 5, timeWindow: "1 minute" } as const;
 
@@ -261,6 +267,124 @@ async function xamanHandles(
   } catch (err) {
     log.warn({ err, eventId: params.eventId }, "Xaman sign request failed; returning the accept payload only");
     return undefined;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The allowance that goes with the badge
+// ---------------------------------------------------------------------------
+
+/** What a claim response says about the attendee's allowance. */
+export interface ClaimAllowance {
+  outcome: AllowanceResult["outcome"] | "failed";
+  allowanceXrp?: string;
+  topupXrp?: string;
+  amountXrp?: string;
+  txHash?: string;
+  /** Present when `outcome` is "failed". The badge was issued regardless. */
+  error?: { code: string; message: string };
+}
+
+async function readBalanceOrZero(deps: ApiDeps, address: string): Promise<string> {
+  try {
+    return await deps.chain.getAccountBalanceXrp(deps.gateway, address);
+  } catch (err) {
+    // Unfunded is ordinary here; "0" is the truth about an account that does
+    // not exist, and the reserve arithmetic expects exactly that.
+    if (err instanceof AccountNotFoundError) return "0";
+    throw err;
+  }
+}
+
+/**
+ * Pay the attendee's allowance as their badge is issued.
+ *
+ * What happens when the payment fails depends on the wallet, and the rule is
+ * the one the organiser chose:
+ *
+ *   - A WALLET THAT CAN ALREADY HOLD THE BADGE GETS IT ANYWAY. The failure is
+ *     reported beside the offer as `outcome: "failed"`, and the desk can send
+ *     the allowance again later — nothing about the badge depends on it.
+ *   - AN EMPTY WALLET WAITS FOR ITS PAYMENT. The payment is what lets the badge
+ *     land; minting without it would put a badge where it cannot be accepted
+ *     and lock 0.2 XRP of issuer reserve in an offer nobody can take. So the
+ *     failure is thrown, the claim slot is released, and nothing is minted.
+ *
+ * `badgeAlreadyOffered` is the retry of an issue that already happened: the
+ * badge exists, so this never throws.
+ */
+async function payOnIssue(
+  deps: ApiDeps,
+  log: FastifyBaseLogger,
+  input: { eventId: EventId; address: string; balanceXrp: string },
+  opts: { badgeAlreadyOffered?: boolean } = {},
+): Promise<ClaimAllowance | undefined> {
+  const { eventId, address, balanceXrp } = input;
+  const canHold = opts.badgeAlreadyOffered === true || canReceiveBadge(balanceXrp);
+
+  try {
+    const result = await payAllowanceFor(deps, input);
+    if (result.outcome !== "nothing_owed") {
+      log.info(
+        {
+          eventId,
+          address,
+          outcome: result.outcome,
+          amountXrp: result.amountXrp,
+          txHash: result.txHash,
+        },
+        "allowance settled at issue",
+      );
+    }
+    return {
+      outcome: result.outcome,
+      allowanceXrp: result.allowanceXrp,
+      topupXrp: result.topupXrp,
+      amountXrp: result.amountXrp,
+      ...(result.txHash ? { txHash: result.txHash } : {}),
+    };
+  } catch (err) {
+    const reason = err instanceof AllowanceDeniedError ? err.details?.reason : undefined;
+
+    if (!canHold) {
+      if (err instanceof AllowanceDeniedError && err.kind === "unavailable") {
+        throw new XrplLayerError(
+          "ACCOUNT_NOT_FOUND",
+          `${address} cannot receive a badge yet: it holds ${balanceXrp} XRP and needs ` +
+            `${badgeReadyReserveXrp()} XRP — ${BASE_RESERVE_XRP} XRP of base reserve to exist on ` +
+            `the ledger, plus ${OWNER_RESERVE_PER_OBJECT_XRP} XRP of owner reserve for the badge ` +
+            "itself — and there is no event treasury this server can top it up from. Send the " +
+            "difference from an exchange or another wallet, then claim again.",
+          {
+            address,
+            balanceXrp,
+            requiredXrp: badgeReadyReserveXrp(),
+            shortfallXrp: reserveShortfallXrp(balanceXrp),
+            treasuryAvailable: false,
+            ...(reason === undefined ? {} : { reason }),
+          },
+        );
+      }
+      throw err;
+    }
+
+    // An event this server has no row for has no allowance to speak of.
+    if (reason === "no_event") return undefined;
+
+    log.warn(
+      { err, eventId, address },
+      "the badge is being issued without its allowance; the allowance can be sent again from the desk",
+    );
+    return {
+      outcome: "failed",
+      error: {
+        code: err instanceof XrplLayerError ? err.code : "INTERNAL",
+        message:
+          err instanceof XrplLayerError
+            ? err.message
+            : "The allowance payment failed. The badge was issued; send the allowance again from the desk.",
+      },
+    };
   }
 }
 
@@ -574,6 +698,21 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
             ...(returnUrl ? { returnUrl } : {}),
           });
 
+          // A retried issue retries an allowance that did not go through the
+          // first time. Best effort: the offer is what this call is for, so a
+          // ledger that cannot be read skips the allowance rather than the badge.
+          let retriedAllowance: ClaimAllowance | undefined;
+          try {
+            retriedAllowance = await payOnIssue(
+              deps,
+              request.log,
+              { eventId, address, balanceXrp: await readBalanceOrZero(deps, address) },
+              { badgeAlreadyOffered: true },
+            );
+          } catch (err) {
+            request.log.warn({ err, eventId, address }, "could not read the wallet to retry its allowance");
+          }
+
           request.log.info(
             { eventId, address, offerId: held.offerId },
             "claim retried; returning the offer that is already open",
@@ -587,6 +726,7 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
             accept,
             reusedExistingOffer: true,
             ...(xaman ? { xaman } : {}),
+            ...(retriedAllowance ? { allowance: retriedAllowance } : {}),
           });
         }
 
@@ -628,6 +768,7 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
       let nftokenId: string;
       let mintedNftokenId: string | undefined;
       let pinnedOnDemand: boolean | undefined;
+      let allowance: ClaimAllowance | undefined;
 
       try {
         // 3. Can this address receive an NFT at all?
@@ -637,54 +778,15 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
         // base + one owner reserve refuses the accept. Minting for it produces
         // a badge nobody can take and locks 0.2 XRP of the issuer's reserve in
         // an offer that has to be reaped later.
-        let balanceXrp = "0";
-        try {
-          balanceXrp = await deps.chain.getAccountBalanceXrp(deps.gateway, address);
-        } catch (err) {
-          // Unfunded is ordinary here; "0" is the truth about an account that
-          // does not exist, and the reserve arithmetic expects exactly that.
-          if (!(err instanceof AccountNotFoundError)) throw err;
-        }
+        const balanceXrp = await readBalanceOrZero(deps, address);
 
-        if (!canReceiveBadge(balanceXrp)) {
-          if (!deps.config.sponsor.enabled) {
-            throw new XrplLayerError(
-              "ACCOUNT_NOT_FOUND",
-              `${address} cannot receive a badge yet: it holds ${balanceXrp} XRP and needs ` +
-                `${badgeReadyReserveXrp()} XRP — ${BASE_RESERVE_XRP} XRP of base reserve to exist ` +
-                `on the ledger, plus ${OWNER_RESERVE_PER_OBJECT_XRP} XRP of owner reserve for the ` +
-                "badge itself. Send the difference from an exchange or another wallet, then claim " +
-                "again.",
-              {
-                address,
-                balanceXrp,
-                requiredXrp: badgeReadyReserveXrp(),
-                shortfallXrp: reserveShortfallXrp(balanceXrp),
-                sponsorshipEnabled: false,
-              },
-            );
-          }
-          // sponsorWallet() owns the guards: one sponsorship per address per
-          // event plus the daily cap. It throws SponsorshipDeniedError (403, or
-          // 429 for the cap) rather than quietly spending.
-          const sponsorship = await deps.chain.sponsorWallet(deps.gateway, {
-            address,
-            eventId,
-            config: deps.config.sponsor,
-            ledger: deps.sponsorLedger,
-          });
-          request.log.info(
-            {
-              address,
-              eventId,
-              balanceXrp,
-              shortfallXrp: reserveShortfallXrp(balanceXrp),
-              sponsored: sponsorship.sponsored,
-              amountXrp: sponsorship.amountXrp,
-            },
-            "sponsorship checked",
-          );
-        }
+        // 3b. The attendee's allowance, and whatever the wallet lacks to hold
+        //     the badge, from the event's treasury. BEFORE the mint in every
+        //     case: an empty wallet cannot take a badge until this lands, and
+        //     a wallet that can should have its allowance by the time the
+        //     attendee looks at their phone. payOnIssue() decides what a
+        //     failure costs — see there.
+        allowance = await payOnIssue(deps, request.log, { eventId, address, balanceXrp });
 
         // 4. Decide what artwork this badge points at, then mint, then create
         //    the offer. resolveBadgeUri() owns the precedence and the Pinata
@@ -755,6 +857,7 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
         // the slow path, and worth surfacing on a volunteer console.
         ...(pinnedOnDemand === undefined ? {} : { pinnedOnDemand }),
         ...(xaman ? { xaman } : {}),
+        ...(allowance ? { allowance } : {}),
       });
     },
   );

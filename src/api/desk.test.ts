@@ -28,8 +28,13 @@ import { describe, expect, it, vi } from "vitest";
 import type { ZodType } from "zod";
 import { MockGateway, rippledError } from "../../test/helpers/mock-gateway.js";
 import type { AppConfig } from "../config.js";
-import { SponsorshipDeniedError, XrplLayerError } from "../errors.js";
-import { sponsorWallet } from "../xrpl/sponsor.js";
+import { MemoryAllowanceLedger } from "../db/allowance-ledger.js";
+import { MemoryEventRepository } from "../db/memory.js";
+import { MemoryTreasuryRepository } from "../db/treasury-repo.js";
+import { AllowanceDeniedError, XrplLayerError } from "../errors.js";
+import { TreasuryService } from "../treasury/service.js";
+import { TreasuryVault } from "../treasury/vault.js";
+import { payAllowance } from "../xrpl/allowance.js";
 import type {
   AttendanceRecord,
   AttendanceRepository,
@@ -39,9 +44,6 @@ import type {
   EventId,
   RegistrationRecord,
   RegistrationRepository,
-  SponsorLedger,
-  SponsorReservation,
-  SponsorReserveInput,
 } from "../types.js";
 import { DemoState, type DemoChainOps, type DemoOptions } from "./demo-state.js";
 import type { ApiDeps, ChainOps } from "./deps.js";
@@ -82,7 +84,7 @@ function testConfig(overrides: Partial<AppConfig> = {}): AppConfig {
     network: "mainnet",
     issuerAddress: ISSUER,
     issuerSeed: "sEdV6Xn3bRq9J2wY4tK8mZpL1cH7dQa",
-    sponsor: { enabled: true, amountXrp: "1.5", dailyCapXrp: "50" },
+    reward: { maxPerAttendeeXrp: "10", feeBufferXrp: "0.01" },
     pinata: { gateway: "https://gateway.pinata.cloud" },
     xumm: {},
     demoEnabled: false,
@@ -243,42 +245,10 @@ class FakeRegistrationRepository implements RegistrationRepository {
 }
 
 /**
- * A sponsor ledger that records what it was asked and answers how the test
- * says. The REAL sponsorWallet() drives it, so the reserve-before-pay order and
- * the denial mapping below are the shipped ones, not a re-implementation.
+ * A fixed master key, so each harness can make and open a real treasury.
+ * Not a secret: it seals nothing but test wallets that never hold XRP.
  */
-class RecordingSponsorLedger implements SponsorLedger {
-  readonly reserves: SponsorReserveInput[] = [];
-  readonly confirms: Array<{ id: string; txHash: string }> = [];
-  readonly releases: string[] = [];
-
-  /** null means "refused" — the cap, or a duplicate. */
-  grant: SponsorReservation | null = {
-    id: "reservation-1",
-    eventId: CONFERENCE,
-    address: ATTENDEE,
-    amountXrp: "1.5",
-  };
-  duplicate = false;
-  spentTodayXrp = "0";
-
-  async hasSponsored(_eventId: EventId, _address: string): Promise<boolean> {
-    return this.duplicate;
-  }
-  async sponsoredTodayXrp(): Promise<string> {
-    return this.spentTodayXrp;
-  }
-  async reserve(input: SponsorReserveInput): Promise<SponsorReservation | null> {
-    this.reserves.push(input);
-    return this.grant;
-  }
-  async confirm(reservationId: string, txHash: string): Promise<void> {
-    this.confirms.push({ id: reservationId, txHash });
-  }
-  async release(reservationId: string): Promise<void> {
-    this.releases.push(reservationId);
-  }
-}
+const TEST_MASTER_KEY = "0123456789abcdef".repeat(4);
 
 /**
  * The injected admin check. Three lines, no session store, no cookie signing —
@@ -303,7 +273,10 @@ interface Harness {
   claims: FakeClaimRepository;
   attendance: FakeAttendanceRepository;
   registrations: FakeRegistrationRepository;
-  sponsorLedger: RecordingSponsorLedger;
+  allowances: MemoryAllowanceLedger;
+  events: MemoryEventRepository;
+  /** CONFERENCE's treasury, made before the test starts. */
+  treasuryAddress: string;
   /** Addresses the fake ledger knows about, in XRP. Absent means unactivated. */
   balances: Map<string, string>;
 }
@@ -321,12 +294,24 @@ function makeDeps(
     badgeUris?: ApiDeps["badgeUris"];
     /** Leave the registration store out entirely. */
     withoutRegistrations?: boolean;
+    /** A server with no TREASURY_MASTER_KEY: treasuries exist, and cannot be opened. */
+    withoutTreasuryKey?: boolean;
   } = {},
 ) {
   const claims = new FakeClaimRepository();
   const attendance = new FakeAttendanceRepository();
   const registrations = new FakeRegistrationRepository();
-  const sponsorLedger = new RecordingSponsorLedger();
+  // Real events, a real allowance book and a real treasury. CONFERENCE pays
+  // every attendee 5 XRP out of a 100 XRP budget; WORKSHOP pays nothing.
+  const events = new MemoryEventRepository(attendance);
+  void events.create({ eventId: CONFERENCE, name: "Conference", status: "live", allowanceXrp: "5", budgetXrp: "100" });
+  void events.create({ eventId: WORKSHOP, name: "Workshop", status: "live" });
+  const allowances = new MemoryAllowanceLedger({ events });
+  const vault = new TreasuryVault(TEST_MASTER_KEY);
+  const treasuryRepo = new MemoryTreasuryRepository();
+  const conference = vault.create(CONFERENCE);
+  void treasuryRepo.insertIfAbsent({ eventId: CONFERENCE, ...conference });
+  const treasuries = new TreasuryService(treasuryRepo, options.withoutTreasuryKey ? undefined : vault);
   const balances = new Map<string, string>([[ISSUER, "999.99"]]);
 
   // The real getAccountBalanceXrp runs against this: one queued handler that
@@ -346,7 +331,9 @@ function makeDeps(
     gateway,
     attendance,
     claims,
-    sponsorLedger,
+    events,
+    allowances,
+    treasuries,
     chain: { ...unused<ChainOps>("chain"), ...options.chain },
     requireAdmin: fakeRequireAdmin,
     rateLimit: { enabled: false },
@@ -358,7 +345,17 @@ function makeDeps(
   // THE POINT OF THE WHOLE FILE. Nothing about the demo harness is wired here.
   expect(deps.demo).toBeUndefined();
 
-  return { deps, gateway, claims, attendance, registrations, sponsorLedger, balances };
+  return {
+    deps,
+    gateway,
+    claims,
+    attendance,
+    registrations,
+    allowances,
+    events,
+    treasuryAddress: conference.address,
+    balances,
+  };
 }
 
 /**
@@ -401,7 +398,7 @@ describe("the desk is behind a session", () => {
       { method: "GET" as const, url: scan(ATTENDEE, CONFERENCE) },
       {
         method: "POST" as const,
-        url: "/admin/api/desk/sponsor",
+        url: "/admin/api/desk/allowance",
         payload: { address: ATTENDEE, eventId: CONFERENCE },
       },
       {
@@ -420,7 +417,7 @@ describe("the desk is behind a session", () => {
     // Refused before anything was read, asked of the ledger, or spent.
     expect(h.gateway.requests).toHaveLength(0);
     expect(h.gateway.submits).toHaveLength(0);
-    expect(h.sponsorLedger.reserves).toHaveLength(0);
+    expect(await h.allowances.summary(CONFERENCE)).toMatchObject({ paidCount: 0, inFlightCount: 0 });
   });
 
   it("refuses a scan before it will say who an address belongs to", async () => {
@@ -459,7 +456,7 @@ describe("GET /admin/api/desk/state", () => {
       network: "mainnet",
       endpoint: "wss://xrplcluster.com",
       issuer: { address: ISSUER, balanceXrp: "999.99", activated: true },
-      sponsor: { amountXrp: "1.5" },
+      reward: { treasuriesConfigured: true, maxPerAttendeeXrp: "10" },
     });
   });
 
@@ -577,8 +574,16 @@ describe("GET /admin/api/desk/attendees/:address", () => {
       needsSponsorship: true,
       // 1 XRP account reserve + 0.2 owner reserve for the NFTokenPage.
       reserveShortfallXrp: "1.2",
-      // What the sponsor would actually send, from the real SponsorConfig.
-      sponsorAmountXrp: "1.5",
+      // What pressing Issue would send them: the 5 XRP allowance, the 1.2 an
+      // empty wallet needs to hold the badge, and the fee buffer.
+      allowance: {
+        allowanceXrp: "5",
+        status: "none",
+        amountXrp: "6.21",
+        topupXrp: "1.21",
+        txHash: null,
+        payable: true,
+      },
       claim: null,
       attended: false,
       alreadyHasBadge: false,
@@ -618,6 +623,7 @@ describe("GET /admin/api/desk/attendees/:address", () => {
     expect(Object.keys(res.json()).sort()).toEqual([
       "activated",
       "address",
+      "allowance",
       "alreadyHasBadge",
       "art",
       "attended",
@@ -627,7 +633,6 @@ describe("GET /admin/api/desk/attendees/:address", () => {
       "needsSponsorship",
       "registration",
       "reserveShortfallXrp",
-      "sponsorAmountXrp",
       "valid",
     ]);
   });
@@ -908,152 +913,172 @@ describe("GET /admin/api/desk/attendees/:address", () => {
 });
 
 // ---------------------------------------------------------------------------
-// POST /admin/api/desk/sponsor
+// POST /admin/api/desk/allowance
 // ---------------------------------------------------------------------------
 
-describe("POST /admin/api/desk/sponsor", () => {
-  const sponsor = (app: FastifyInstance, body: Record<string, unknown>, headers = asAdmin) =>
-    app.inject({ method: "POST", url: "/admin/api/desk/sponsor", payload: body, headers });
+describe("POST /admin/api/desk/allowance", () => {
+  const pay = (app: FastifyInstance, body: Record<string, unknown>, headers = asAdmin) =>
+    app.inject({ method: "POST", url: "/admin/api/desk/allowance", payload: body, headers });
 
-  it("hands the REAL sponsorWallet the real config and the real ledger", async () => {
-    const spy = vi.fn<ChainOps["sponsorWallet"]>(async (_gateway, input) => ({
-      sponsored: true,
-      alreadyActivated: false,
+  const paymentsSent = (h: Harness) => h.gateway.submits.filter((s) => s.transactionType === "Payment");
+
+  it("hands payAllowance the event's settings, the server's limits and the real book", async () => {
+    const spy = vi.fn<ChainOps["payAllowance"]>(async (_gateway, input) => ({
+      outcome: "paid",
+      eventId: input.eventId,
       address: input.address,
-      amountXrp: "1.5",
+      allowanceXrp: "5",
+      topupXrp: "1.21",
+      amountXrp: "6.21",
       txHash: PAY_TX,
       ledgerIndex: 4_242_002,
     }));
-    const h = harness({ chain: { sponsorWallet: spy } });
+    const h = harness({ chain: { payAllowance: spy } });
 
-    const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+    const res = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
 
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual({
-      sponsored: true,
-      alreadyActivated: false,
-      amountXrp: "1.5",
+      outcome: "paid",
+      allowanceXrp: "5",
+      topupXrp: "1.21",
+      amountXrp: "6.21",
       txHash: PAY_TX,
     });
 
-    // The guards are only real if the real ledger is passed: without it there
-    // is no duplicate check and no daily cap, and this is the one route a
-    // person can press that moves the issuer's XRP on purpose.
-    const call = spy.mock.calls[0]?.[1];
-    expect(call?.address).toBe(ATTENDEE);
-    expect(call?.eventId).toBe(CONFERENCE);
-    expect(call?.config).toBe(h.deps.config.sponsor);
-    expect(call?.ledger).toBe(h.deps.sponsorLedger);
+    const input = spy.mock.calls[0]?.[1];
+    expect(input).toMatchObject({
+      eventId: CONFERENCE,
+      address: ATTENDEE,
+      allowanceXrp: "5",
+      budgetXrp: "100",
+      feeBufferXrp: "0.01",
+      maxPerAttendeeXrp: "10",
+    });
+    // The guards are only real when the real book is passed: without it there
+    // is no once-per-attendee and no budget.
+    expect(input?.ledger).toBe(h.deps.allowances);
+    expect(input?.treasury?.address).toBe(h.treasuryAddress);
   });
 
-  it("books the reservation before the Payment, end to end", async () => {
-    // The REAL sponsorWallet this time, not a spy: what is under test is that
-    // the two-phase reserve genuinely runs when the route is called.
-    const h = harness({ chain: { sponsorWallet } });
+  it("pays the allowance and what an empty wallet lacks, from the event's own treasury", async () => {
+    const h = harness({ chain: { payAllowance } });
     h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_242_002 });
 
-    const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+    const res = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
 
     expect(res.statusCode).toBe(200);
+    // 5 to spend, 1.2 so a badge can land in a wallet holding nothing, 0.01 for fees.
     expect(res.json()).toEqual({
-      sponsored: true,
-      alreadyActivated: false,
-      amountXrp: "1.5",
+      outcome: "paid",
+      allowanceXrp: "5",
+      topupXrp: "1.21",
+      amountXrp: "6.21",
       txHash: PAY_TX,
     });
 
-    // Reserved with the configured amount AND the configured cap — the cap is
-    // enforced inside the reservation, so passing it is what makes it real.
-    expect(h.sponsorLedger.reserves).toEqual([
-      { eventId: CONFERENCE, address: ATTENDEE, amountXrp: "1.5", dailyCapXrp: "50" },
-    ]);
-    expect(h.sponsorLedger.confirms).toEqual([{ id: "reservation-1", txHash: PAY_TX }]);
-    expect(h.sponsorLedger.releases).toEqual([]);
-
-    // 1.5 XRP, in drops, from the issuer to the attendee.
-    expect(h.gateway.lastSubmit("Payment")).toMatchObject({
-      Account: ISSUER,
+    const [sent] = paymentsSent(h);
+    expect(sent?.tx).toMatchObject({
+      Account: h.treasuryAddress,
       Destination: ATTENDEE,
-      Amount: "1500000",
+      Amount: "6210000",
+    });
+    // Signed by the treasury. Never by the issuer.
+    expect(sent?.options?.wallet?.classicAddress).toBe(h.treasuryAddress);
+    expect(sent?.tx.Account).not.toBe(ISSUER);
+
+    expect(await h.allowances.find(CONFERENCE, ATTENDEE)).toMatchObject({
+      status: "confirmed",
+      txHash: PAY_TX,
+      amountXrp: "6.21",
     });
   });
 
-  it("reports an already-activated wallet without spending anything", async () => {
-    const h = harness({ chain: { sponsorWallet } });
-    h.balances.set(ATTENDEE, "25");
+  it("pays once, however many times it is pressed", async () => {
+    const h = harness({ chain: { payAllowance } });
+    h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_242_002 });
 
-    const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+    await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+    const again = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual({ sponsored: false, alreadyActivated: true });
-    expect(h.gateway.submits).toHaveLength(0);
-    expect(h.sponsorLedger.reserves).toHaveLength(0);
+    expect(again.statusCode).toBe(200);
+    expect(again.json()).toMatchObject({ outcome: "already_paid", amountXrp: "6.21", txHash: PAY_TX });
+    expect(paymentsSent(h)).toHaveLength(1);
   });
 
-  it("403s a refusal, with the kind the page needs, for every kind that is one", async () => {
-    for (const kind of ["duplicate", "disabled", "already_activated"] as const) {
+  it("sends a wallet that can already hold a badge its allowance and the fee buffer, nothing more", async () => {
+    const h = harness({ chain: { payAllowance } });
+    h.balances.set(ATTENDEE, "25");
+    h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_242_002 });
+
+    const res = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+
+    expect(res.json()).toMatchObject({ outcome: "paid", allowanceXrp: "5", topupXrp: "0.01", amountXrp: "5.01" });
+    expect(paymentsSent(h)[0]?.tx.Amount).toBe("5010000");
+  });
+
+  it("sends nothing at an event with no allowance to a wallet that needs nothing", async () => {
+    const h = harness({ chain: { payAllowance } });
+    h.balances.set(ATTENDEE, "25");
+
+    const res = await pay(h.app, { address: ATTENDEE, eventId: WORKSHOP });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual({ outcome: "nothing_owed", allowanceXrp: "0", topupXrp: "0", amountXrp: "0" });
+    expect(paymentsSent(h)).toHaveLength(0);
+  });
+
+  it("refuses before any money moves when the budget cannot cover the payment", async () => {
+    const h = harness({ chain: { payAllowance } });
+    await h.events.update(CONFERENCE, { budgetXrp: "6.2" });
+
+    const res = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+
+    expect(res.statusCode).toBe(409);
+    expect(res.json().error.code).toBe("ALLOWANCE_DENIED");
+    expect(res.json().error.details).toMatchObject({ kind: "budget", amountXrp: "6.21", budgetXrp: "6.2" });
+    // Refused BEFORE the money moved. That is the whole point of booking first.
+    expect(paymentsSent(h)).toHaveLength(0);
+    expect(await h.allowances.find(CONFERENCE, ATTENDEE)).toBeNull();
+  });
+
+  it("503s on a server with no treasury key, and spends nothing", async () => {
+    const h = harness({ chain: { payAllowance }, withoutTreasuryKey: true });
+
+    const res = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error.details).toMatchObject({ kind: "unavailable" });
+    expect(paymentsSent(h)).toHaveLength(0);
+  });
+
+  it("409s every refusal that may pass later, with the kind the page needs", async () => {
+    for (const kind of ["in_flight", "budget", "ceiling"] as const) {
       const h = harness({
         chain: {
-          sponsorWallet: async () => {
-            throw new SponsorshipDeniedError(`refused: ${kind}`, kind, { address: ATTENDEE });
+          payAllowance: async () => {
+            throw new AllowanceDeniedError(`refused: ${kind}`, kind, { address: ATTENDEE });
           },
         },
       });
 
-      const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+      const res = await pay(h.app, { address: ATTENDEE, eventId: CONFERENCE });
 
-      expect(res.statusCode, kind).toBe(403);
-      expect(res.json().error.code, kind).toBe("SPONSORSHIP_DENIED");
+      expect(res.statusCode, kind).toBe(409);
+      expect(res.json().error.code, kind).toBe("ALLOWANCE_DENIED");
       expect(res.json().error.details.kind, kind).toBe(kind);
     }
   });
 
-  it("429s the daily cap, because tomorrow it may pass", async () => {
-    const h = harness({ chain: { sponsorWallet } });
-    // The reservation is refused and this address holds no slot, which is what
-    // the real sponsorWallet reads as "the cap would be exceeded".
-    h.sponsorLedger.grant = null;
-    h.sponsorLedger.duplicate = false;
-    h.sponsorLedger.spentTodayXrp = "49";
+  it("refuses an event this server has no row for, without asking the ledger", async () => {
+    const spy = vi.fn<ChainOps["payAllowance"]>();
+    const h = harness({ chain: { payAllowance: spy } });
 
-    const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
+    const res = await pay(h.app, { address: ATTENDEE, eventId: 9_999 });
 
-    // A throttle, not a refusal — and never a generic 500, or the volunteer
-    // learns nothing from watching the cap work.
-    expect(res.statusCode).toBe(429);
-    expect(res.json().error.code).toBe("SPONSORSHIP_DENIED");
-    expect(res.json().error.details).toMatchObject({
-      kind: "daily_cap",
-      spentTodayXrp: "49",
-      dailyCapXrp: "50",
-    });
-    // Refused BEFORE the money moved. That is the whole point of the ordering.
-    expect(h.gateway.submits).toHaveLength(0);
-  });
-
-  it("403s a second sponsorship for the same address on the same event", async () => {
-    const h = harness({ chain: { sponsorWallet } });
-    h.sponsorLedger.grant = null;
-    h.sponsorLedger.duplicate = true;
-
-    const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error.details).toMatchObject({ kind: "duplicate" });
-    expect(h.gateway.submits).toHaveLength(0);
-  });
-
-  it("403s when sponsorship is switched off, without a ledger round trip", async () => {
-    const h = harness({
-      chain: { sponsorWallet },
-      config: { sponsor: { enabled: false, amountXrp: "1.5", dailyCapXrp: "50" } },
-    });
-
-    const res = await sponsor(h.app, { address: ATTENDEE, eventId: CONFERENCE });
-
-    expect(res.statusCode).toBe(403);
-    expect(res.json().error.details).toMatchObject({ kind: "disabled" });
-    expect(h.gateway.requests).toHaveLength(0);
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error.details).toMatchObject({ kind: "unavailable", reason: "no_event" });
+    expect(spy).not.toHaveBeenCalled();
   });
 
   it("400s an address or an event id that is not one", async () => {
@@ -1065,7 +1090,7 @@ describe("POST /admin/api/desk/sponsor", () => {
       { address: ATTENDEE, eventId: 2_147_483_648 },
       {},
     ]) {
-      const res = await sponsor(h.app, payload);
+      const res = await pay(h.app, payload);
       expect(res.statusCode, JSON.stringify(payload)).toBe(400);
     }
   });
@@ -1080,7 +1105,7 @@ describe("the desk does not depend on the demo", () => {
     // THE REGRESSION THAT MATTERS. Not "the routes are registered" — both of
     // them answer for real, all the way to a Payment, with nothing demo-shaped
     // anywhere in the deps.
-    const h = harness({ chain: { sponsorWallet } });
+    const h = harness({ chain: { payAllowance } });
     expect(h.deps.demo).toBeUndefined();
     h.gateway.onSubmit("Payment", { hash: PAY_TX, ledgerIndex: 4_242_002 });
 
@@ -1091,7 +1116,7 @@ describe("the desk does not depend on the demo", () => {
     });
     const spend = await h.app.inject({
       method: "POST",
-      url: "/admin/api/desk/sponsor",
+      url: "/admin/api/desk/allowance",
       payload: { address: ATTENDEE, eventId: CONFERENCE },
       headers: asAdmin,
     });
@@ -1099,7 +1124,7 @@ describe("the desk does not depend on the demo", () => {
     expect(lookup.statusCode).toBe(200);
     expect(lookup.json()).toMatchObject({ valid: true, eventId: CONFERENCE, needsSponsorship: true });
     expect(spend.statusCode).toBe(200);
-    expect(spend.json()).toMatchObject({ sponsored: true, txHash: PAY_TX });
+    expect(spend.json()).toMatchObject({ outcome: "paid", txHash: PAY_TX });
   });
 
   it("runs on mainnet, which is what /demo/lookup refuses to do", async () => {
@@ -1135,7 +1160,7 @@ function parityHarness() {
     // The same numbers the desk reads off the MockGateway, so a difference in
     // the two bodies is a difference in the code and never in the fixture.
     getAccountBalanceXrp: async (gateway, address) => {
-      const { getAccountBalanceXrp } = await import("../xrpl/sponsor.js");
+      const { getAccountBalanceXrp } = await import("../xrpl/account.js");
       return getAccountBalanceXrp(gateway, address);
     },
     acceptOfferAs: async () => ({ txHash: ACCEPT_TX, ledgerIndex: 1 }),
@@ -1254,38 +1279,6 @@ describe("the desk answers exactly what /demo/lookup answered", () => {
     expect(desk.eventId).toBe(CONFERENCE);
   });
 
-  it("and both sponsor routes give the same body for the same outcome", async () => {
-    const spy = vi.fn<ChainOps["sponsorWallet"]>(async (_gateway, input) => ({
-      sponsored: true,
-      alreadyActivated: false,
-      address: input.address,
-      amountXrp: "1.5",
-      txHash: PAY_TX,
-    }));
-    const h = parityHarness();
-    // Both routes call deps.chain.sponsorWallet; swap it in for both at once.
-    h.deps.chain.sponsorWallet = spy;
-
-    const demo = await h.app.inject({
-      method: "POST",
-      url: "/demo/sponsor",
-      payload: { address: ATTENDEE, eventId: CONFERENCE },
-    });
-    const desk = await h.app.inject({
-      method: "POST",
-      url: "/admin/api/desk/sponsor",
-      payload: { address: ATTENDEE, eventId: CONFERENCE },
-      headers: asAdmin,
-    });
-
-    expect(desk.statusCode).toBe(demo.statusCode);
-    expect(desk.json()).toEqual(demo.json());
-    // Same config, same ledger, from both routes.
-    for (const call of spy.mock.calls) {
-      expect(call[1].config).toBe(h.deps.config.sponsor);
-      expect(call[1].ledger).toBe(h.deps.sponsorLedger);
-    }
-  });
 });
 
 // ---------------------------------------------------------------------------

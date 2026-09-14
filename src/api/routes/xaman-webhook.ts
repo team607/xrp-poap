@@ -16,7 +16,8 @@
 import type { FastifyInstance } from "fastify";
 import type { ApiDeps } from "../deps.js";
 import { addressSchema, txHashSchema } from "../http-errors.js";
-import { parseXamanClaimMeta, parseXamanWebhook } from "../../xaman/payloads.js";
+import { settlerFor } from "../purchases.js";
+import { parseXamanClaimMeta, parseXamanPurchaseMeta, parseXamanWebhook } from "../../xaman/payloads.js";
 import { verifyThenRecord } from "./claims.js";
 
 export function registerXamanWebhookRoute(app: FastifyInstance, deps: ApiDeps): void {
@@ -32,6 +33,20 @@ export function registerXamanWebhookRoute(app: FastifyInstance, deps: ApiDeps): 
   app.post("/webhooks/xaman", async (request, reply) => {
     // Throws ValidationError -> 400 when this is not a Xaman delivery at all.
     const event = parseXamanWebhook(request.body);
+
+    // A payment at an event's store, not a badge. The delivery names the order
+    // to go and settle; what settles it is the ledger, exactly as when a
+    // vendor's screen asks. A forged delivery costs a ledger read.
+    const order = parseXamanPurchaseMeta(request.body);
+    if (order.purchaseId) {
+      const purchase = deps.purchases ? await deps.purchases.find(order.purchaseId) : null;
+      if (!purchase) {
+        return reply.code(200).send({ ok: true, recorded: false, reason: "unknown_order" });
+      }
+      const settled = await settlerFor(deps).settle(purchase, request.log, { force: true });
+      return reply.code(200).send({ ok: true, recorded: settled.status === "paid", status: settled.status });
+    }
+
     const hints = parseXamanClaimMeta(request.body);
 
     if (!event.signed || event.rejected) {

@@ -7,8 +7,10 @@
  * is the only place that reaches for real connections.
  */
 import type { FastifyServerOptions } from "fastify";
-import type { AppConfig, SponsorConfig } from "../config.js";
+import type { AppConfig } from "../config.js";
 import type {
+  AllowanceLedger,
+  AllowanceResult,
   AttendanceRepository,
   BadgeUriResolver,
   ClaimOffer,
@@ -19,17 +21,25 @@ import type {
   EventRepository,
   MintBadgeInput,
   MintResult,
+  PurchaseRepository,
   RegistrationRepository,
   Roster,
   SessionStore,
-  SponsorLedger,
-  SponsorResult,
+  TreasuryRepository,
+  VendorRepository,
+  VendorSessionStore,
   VerifyClaimInput,
   VerifyClaimResult,
   XrplGateway,
 } from "../types.js";
 import { ConfigError } from "../errors.js";
+import { TreasuryService, type BackfillReport } from "../treasury/service.js";
+import { TreasuryVault } from "../treasury/vault.js";
+import type { AccountSnapshot } from "../xrpl/account.js";
+import type { PayAllowanceInput } from "../xrpl/allowance.js";
 import { createGateway } from "../xrpl/client.js";
+import type { PurchasePaymentCheck, PurchasePaymentInput } from "../xrpl/purchase.js";
+import type { SweepInput, SweepResult } from "../xrpl/treasury.js";
 import { NullXamanService, XummXamanService, type XamanService } from "../xaman/client.js";
 import { NullSignInService, XummSignInService, type SignInService } from "../xaman/signin.js";
 import { assertDemoAllowed, type DemoOptions } from "./demo-state.js";
@@ -53,10 +63,30 @@ export interface ChainOps {
   accountExists(gateway: XrplGateway, address: string): Promise<boolean>;
   /** Spendable balance as a decimal XRP string. The desk shows this. */
   getAccountBalanceXrp(gateway: XrplGateway, address: string): Promise<string>;
-  sponsorWallet(
+  /**
+   * Balance, reserve, what the account can actually send, and the two flags
+   * that make a payment into it bounce. An unactivated account is an answer,
+   * not an error.
+   */
+  readAccount(gateway: XrplGateway, address: string): Promise<AccountSnapshot>;
+  /**
+   * Pay one attendee's allowance from their event's treasury. The guards —
+   * once per attendee, the event's budget, the per-attendee ceiling — are
+   * inside it, and it cannot be called without the ledger that enforces them.
+   */
+  payAllowance(gateway: XrplGateway, input: PayAllowanceInput): Promise<AllowanceResult>;
+  /** Send everything above a treasury's reserve to an address the organiser typed. */
+  sweepTreasury(gateway: XrplGateway, input: SweepInput): Promise<SweepResult>;
+  /**
+   * Read an order's Payment off the ledger and say whether it pays exactly that
+   * order. A vendor hands an item over on this answer and nothing weaker.
+   */
+  verifyPurchasePayment(gateway: XrplGateway, input: PurchasePaymentInput): Promise<PurchasePaymentCheck>;
+  /** Look for an order's Payment in the vendor's history, by its memo. A hint only. */
+  findPurchasePayment(
     gateway: XrplGateway,
-    input: { address: string; eventId: EventId; config: SponsorConfig; ledger?: SponsorLedger },
-  ): Promise<SponsorResult>;
+    input: { vendorAddress: string; buyerAddress: string; purchaseId: string },
+  ): Promise<string | undefined>;
   verifyClaim(gateway: XrplGateway, input: VerifyClaimInput): Promise<VerifyClaimResult>;
   /**
    * count of entries the node returned with no owner. GET /roster forwards the
@@ -74,20 +104,28 @@ export interface ChainOps {
 
 /** Bind ChainOps to the real implementations. */
 export async function loadChainOps(): Promise<ChainOps> {
-  const [mintMod, offersMod, sponsorMod, verifyMod, rosterMod] = await Promise.all([
-    import("../xrpl/mint.js"),
-    import("../xrpl/offers.js"),
-    import("../xrpl/sponsor.js"),
-    import("../xrpl/verify.js"),
-    import("../xrpl/roster.js"),
-  ]);
+  const [mintMod, offersMod, accountMod, allowanceMod, treasuryMod, purchaseMod, verifyMod, rosterMod] =
+    await Promise.all([
+      import("../xrpl/mint.js"),
+      import("../xrpl/offers.js"),
+      import("../xrpl/account.js"),
+      import("../xrpl/allowance.js"),
+      import("../xrpl/treasury.js"),
+      import("../xrpl/purchase.js"),
+      import("../xrpl/verify.js"),
+      import("../xrpl/roster.js"),
+    ]);
 
   return {
     mint: mintMod.mint,
     createClaimOffer: offersMod.createClaimOffer,
-    accountExists: sponsorMod.accountExists,
-    getAccountBalanceXrp: sponsorMod.getAccountBalanceXrp,
-    sponsorWallet: sponsorMod.sponsorWallet,
+    accountExists: accountMod.accountExists,
+    getAccountBalanceXrp: accountMod.getAccountBalanceXrp,
+    readAccount: accountMod.readAccount,
+    payAllowance: allowanceMod.payAllowance,
+    sweepTreasury: treasuryMod.sweepTreasury,
+    verifyPurchasePayment: purchaseMod.verifyPurchasePayment,
+    findPurchasePayment: purchaseMod.findPurchasePayment,
     verifyClaim: verifyMod.verifyClaim,
     getRoster: rosterMod.getRoster,
   };
@@ -204,6 +242,14 @@ export const LOG_REDACT_PATHS: string[] = [
   "issuerSeed",
   "*.issuerSeed",
   "*.*.issuerSeed",
+  // Opens every event's treasury. Same rules as the issuer seed.
+  "treasuryMasterKey",
+  "*.treasuryMasterKey",
+  "*.*.treasuryMasterKey",
+  // Useless without the master key, and still nobody's business in a log.
+  "sealedSeed",
+  "*.sealedSeed",
+  "*.*.sealedSeed",
   "secret",
   "*.secret",
   "*.*.secret",
@@ -287,7 +333,30 @@ export interface ApiDeps {
    * (brief 7) before a single row exists.
    */
   claims: ClaimRepository;
-  sponsorLedger: SponsorLedger;
+  /**
+   * The book of what each event's treasury paid, against its budget.
+   *
+   * Optional, and absence is SAFE rather than open: a server built without it —
+   * a focused test — cannot pay anybody. Every route that pays refuses with
+   * ALLOWANCE_DENIED("unavailable") instead of paying unguarded. buildDeps()
+   * always supplies it.
+   */
+  allowances?: AllowanceLedger;
+  /**
+   * Every event's treasury wallet. Present without TREASURY_MASTER_KEY too, so
+   * an address can still be shown, but `configured` is false and nothing can
+   * be paid. The badge flow does not depend on it.
+   */
+  treasuries?: TreasuryService;
+  /**
+   * The event store: vendors and their price lists, the orders placed with
+   * them, and the sessions behind a vendor's order screen. Optional together —
+   * without them the store routes are not registered and 404 — and always
+   * supplied by buildDeps().
+   */
+  vendors?: VendorRepository;
+  purchases?: PurchaseRepository;
+  vendorSessions?: VendorSessionStore;
   /**
    * Admin login sessions. Opaque ids, revocable, never a JWT.
    *
@@ -583,6 +652,50 @@ function announceSignInMode(configured: boolean): void {
 }
 
 /**
+ * Say whether events can pay their attendees, once, at startup.
+ *
+ * Same reasoning as the sign-in line above: the failure this prevents is found
+ * at a desk, in front of an attendee, by a volunteer who cannot fix it. It also
+ * names the environment variables that stopped being read, because a SPONSOR_*
+ * line left in a .env looks like it still does something.
+ */
+function announceTreasuryMode(
+  config: AppConfig,
+  treasuries: TreasuryService,
+  backfill: BackfillReport | undefined,
+): void {
+  const retired = ["SPONSOR_ENABLED", "SPONSOR_AMOUNT_XRP", "SPONSOR_DAILY_CAP_XRP"].filter(
+    (key) => process.env[key] !== undefined,
+  );
+  if (retired.length > 0) {
+    console.warn(
+      `[api] ${retired.join(", ")} ${retired.length === 1 ? "is" : "are"} no longer read. Each event now ` +
+        "sets its own allowance and budget in the organiser console, and pays from its own treasury; " +
+        "REWARD_MAX_PER_ATTENDEE_XRP caps any one payment.",
+    );
+  }
+
+  if (!treasuries.configured) {
+    console.warn(
+      "[api] treasuries: NOT CONFIGURED (TREASURY_MASTER_KEY is unset). No event can pay its " +
+        "attendees, and a wallet too empty to hold a badge cannot be topped up. Badges still issue to " +
+        "wallets that can already hold one. Set it (openssl rand -hex 32) and restart before the event.",
+    );
+    return;
+  }
+
+  console.info(
+    `[api] treasuries: LIVE (key id ${treasuries.keyId}). Each event pays its attendees from its own ` +
+      `wallet, at most ${config.reward.maxPerAttendeeXrp} XRP per attendee.` +
+      (backfill
+        ? ` Existing events: ${backfill.created} treasur${backfill.created === 1 ? "y" : "ies"} created, ` +
+          `${backfill.existing} already present` +
+          (backfill.failed > 0 ? `, ${backfill.failed} FAILED (they are retried on first use).` : ".")
+        : ""),
+  );
+}
+
+/**
  * Real wiring. Connects the gateway, picks durable storage when it is
  * configured, and constructs the Xaman service only when keys are present —
  * the server starts fine without them.
@@ -604,7 +717,11 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   const db = await import("../db/index.js");
 
   let attendance: AttendanceRepository;
-  let sponsorLedger: SponsorLedger;
+  let allowances: AllowanceLedger;
+  let treasuryRepo: TreasuryRepository;
+  let vendors: VendorRepository;
+  let purchases: PurchaseRepository;
+  let vendorSessions: VendorSessionStore;
   let claims: ClaimRepository;
   let sessions: SessionStore;
   let events: EventRepository;
@@ -615,7 +732,11 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
   if (config.databaseUrl) {
     const pool = db.createPool(config.databaseUrl);
     attendance = new db.PgAttendanceRepository(pool);
-    sponsorLedger = new db.PgSponsorLedger(pool);
+    allowances = new db.PgAllowanceLedger(pool);
+    treasuryRepo = new db.PgTreasuryRepository(pool);
+    vendors = new db.PgVendorRepository(pool);
+    purchases = new db.PgPurchaseRepository(pool);
+    vendorSessions = new db.PgVendorSessionStore(pool);
     claims = new db.PgClaimRepository(pool);
     sessions = new db.PgSessionStore(pool);
     events = new db.PgEventRepository(pool);
@@ -624,7 +745,6 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     disposeStores = () => db.closePool(pool);
   } else {
     attendance = new db.MemoryAttendanceRepository();
-    sponsorLedger = new db.MemorySponsorLedger();
     claims = new db.MemoryClaimRepository();
     // Admin sessions go with it: without a database, every restart signs the
     // operator out. Annoying, not dangerous.
@@ -639,6 +759,15 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     events = new db.MemoryEventRepository(attendance);
     registrations = new db.MemoryRegistrationRepository(events);
     eventPhotos = new db.MemoryEventPhotoRepository();
+    // Both carry a foreign key to events in Postgres, and check it here too.
+    allowances = new db.MemoryAllowanceLedger({ events });
+    treasuryRepo = new db.MemoryTreasuryRepository(events);
+    const memoryVendors = new db.MemoryVendorRepository(events);
+    const memoryPurchases = new db.MemoryPurchaseRepository(memoryVendors);
+    memoryVendors.bindOrders(memoryPurchases);
+    vendors = memoryVendors;
+    purchases = memoryPurchases;
+    vendorSessions = new db.MemoryVendorSessionStore();
     // One line, once, at startup. Losing the index does not lose attendance —
     // the ledger still has it — but it does lose every cheap read until the
     // rows are re-derived. Losing the claim slots is worse than that: an
@@ -651,6 +780,25 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
         "Offers open at restart become unreapable — cancel them by hand.",
     );
   }
+
+  // Every event pays its attendees from a wallet of its own. The master key is
+  // the one thing that opens one, so it goes into the vault — a #private field
+  // — and nowhere else in the process.
+  const vault = config.reward.treasuryMasterKey
+    ? new TreasuryVault(config.reward.treasuryMasterKey)
+    : undefined;
+  const treasuries = new TreasuryService(treasuryRepo, vault);
+
+  // Events created before treasuries existed get one now. Idempotent, so it
+  // runs on every boot and costs a read per event once they all have one.
+  const backfill = vault
+    ? await treasuries.backfill(events, (eventId, err) => {
+        console.warn(
+          `[api] could not create a treasury for event ${eventId}: ` +
+            `${err instanceof Error ? scrubSecrets(err.message) : "unknown error"}`,
+        );
+      })
+    : undefined;
 
   const { apiKey, apiSecret } = config.xumm;
   const xamanConfigured = Boolean(apiKey && apiSecret);
@@ -686,10 +834,10 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
    */
   const demo: DemoOptions | undefined = demoEnabled
     ? await (async () => {
-        const [offersMod, burnMod, sponsorMod] = await Promise.all([
+        const [offersMod, burnMod, accountMod] = await Promise.all([
           import("../xrpl/offers.js"),
           import("../xrpl/burn.js"),
-          import("../xrpl/sponsor.js"),
+          import("../xrpl/account.js"),
         ]);
         return {
           enabled: true,
@@ -700,7 +848,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
               const funded = await gateway.client.fundWallet();
               return { wallet: funded.wallet, balanceXrp: String(funded.balance) };
             },
-            getAccountBalanceXrp: sponsorMod.getAccountBalanceXrp,
+            getAccountBalanceXrp: accountMod.getAccountBalanceXrp,
             acceptOfferAs: offersMod.acceptOfferAs,
             burn: burnMod.burn,
           },
@@ -713,7 +861,11 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     gateway,
     attendance,
     claims,
-    sponsorLedger,
+    allowances,
+    treasuries,
+    vendors,
+    purchases,
+    vendorSessions,
     sessions,
     events,
     eventPhotos,
@@ -734,6 +886,7 @@ export async function buildDeps(config: AppConfig): Promise<BuiltDeps> {
     config.badgeMetadataUriMode === "selfhosted" ? config.badgeBaseUrl : undefined,
   );
   announceSignInMode(xamanConfigured);
+  announceTreasuryMode(config, treasuries, backfill);
 
   return {
     deps,

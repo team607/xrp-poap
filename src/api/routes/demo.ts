@@ -12,9 +12,9 @@
  * │                                                                           │
  * │ THEY DO NOT WRAP THE REAL API. The pages drive                            │
  * │ POST /events/:eventId/claims, POST /.../confirm, GET /verify,             │
- * │ GET /roster and GET /attendance directly, and POST /demo/sponsor calls    │
- * │ the same sponsorWallet() the claim route does, with the same two-phase    │
- * │ reservation and the same daily cap. A demo that exercised a parallel code │
+ * │ GET /roster and GET /attendance directly, and the claim route pays any    │
+ * │ allowance from the event's treasury exactly as it does in production.     │
+ * │ A demo that exercised a parallel code                                     │
  * │ path would prove nothing about the code that ships, so everything here    │
  * │ OBSERVES the stores those routes wrote rather than keeping its own idea   │
  * │ of who has a badge. Nothing is fed back in from a page, so the demo       │
@@ -29,8 +29,7 @@
  *             The same bytes that get pinned to IPFS, so both screens can show
  *             the badge before one exists. See "Badge artwork" below.
  *   volunteer GET  /demo/lookup?address=...         -> the whole scan verdict
- *   volunteer POST /demo/sponsor                    -> activate an empty wallet
- *   volunteer POST /events/:eventId/claims          -> THE REAL ROUTE. Mints.
+ *   volunteer POST /events/:eventId/claims          -> THE REAL ROUTE. Pays, mints.
  *   attendee  GET  /demo/wallet/:address/status     -> polls; sees `pending`
  *   attendee  POST /demo/wallet/:address/accept     -> signs, with its token
  *   attendee  POST /events/:id/claims/:offer/confirm-> THE REAL ROUTE. Indexes.
@@ -58,7 +57,6 @@ import { fileURLToPath } from "node:url";
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
 import { Wallet, isValidClassicAddress } from "xrpl";
 import { z } from "zod";
-import { SponsorshipDeniedError } from "../../errors.js";
 import { renderBadgeArt } from "../../metadata/badge-art.js";
 import { artLabel } from "../../metadata/badge-uri-resolver.js";
 import type { AttendanceRecord, ClaimRecord, EventId } from "../../types.js";
@@ -72,12 +70,11 @@ import {
   type DemoOptions,
   type DemoPageName,
 } from "../demo-state.js";
+import { readAllowanceStatus } from "../allowance.js";
 import type { ApiDeps } from "../deps.js";
 import {
   addressSchema,
-  eventIdSchema,
   sendError,
-  statusForXrplError,
 } from "../http-errors.js";
 
 /**
@@ -158,9 +155,6 @@ const lookupQuerySchema = z.object({
   eventId: z.coerce.number().int().min(0).max(2_147_483_647).optional(),
 });
 type LookupQuery = z.infer<typeof lookupQuerySchema>;
-
-const sponsorBodySchema = z.object({ address: addressSchema, eventId: eventIdSchema });
-type SponsorBody = z.infer<typeof sponsorBodySchema>;
 
 /**
  * The artwork query. Both fields are plain strings ON PURPOSE, unlike every
@@ -969,7 +963,6 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
         const scanned = request.query.address.trim();
         // The event the desk is working, not necessarily the demo's own.
         const lookupEventId = request.query.eventId ?? state.eventId;
-        const sponsorAmountXrp = deps.config.sponsor.amountXrp;
 
         if (!isValidClassicAddress(scanned)) {
           return reply.code(200).send({
@@ -980,7 +973,7 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
             balanceXrp: "0",
             needsSponsorship: false,
             reserveShortfallXrp: "0",
-            sponsorAmountXrp,
+            allowance: null,
             claim: null,
             attended: false,
             alreadyHasBadge: false,
@@ -1012,7 +1005,9 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
           // this is the whole question the volunteer is asking.
           needsSponsorship: !activated,
           reserveShortfallXrp: reserveShortfallXrp(balanceXrp),
-          sponsorAmountXrp,
+          // Null for the demo's own counter-generated event, which is not an
+          // event row and so has no allowance or treasury.
+          allowance: await readAllowanceStatus(deps, lookupEventId, scanned, balanceXrp),
           claim: facts.claim
             ? {
                 status: facts.claim.status,
@@ -1036,64 +1031,5 @@ export function registerDemoRoutes(app: FastifyInstance, deps: ApiDeps): void {
       },
     );
 
-    /**
-     * POST /demo/sponsor { address, eventId } — activate an empty wallet.
-     *
-     * THE REAL sponsorWallet(), with the real SponsorConfig and the real
-     * SponsorLedger, so the two-phase reservation and the daily cap genuinely
-     * apply here. That is the point: a volunteer who taps this often enough
-     * must watch it start refusing, because that guard is the only thing
-     * standing between an issuer wallet and an unbounded drain (brief 5.4).
-     *
-     * The claim route sponsors on its own when it meets an unactivated address.
-     * This exists so the volunteer can do it as a deliberate, visible step
-     * BEFORE issuing, which is what a person at a desk actually does.
-     *
-     * 200 { sponsored, alreadyActivated, amountXrp?, txHash? }
-     * 403 refused | 429 the daily cap
-     */
-    scope.post<{ Body: SponsorBody }>(
-      "/demo/sponsor",
-      { schema: { body: sponsorBodySchema } },
-      async (request, reply) => {
-        const { address, eventId } = request.body;
-
-        try {
-          const result = await deps.chain.sponsorWallet(deps.gateway, {
-            address,
-            eventId,
-            config: deps.config.sponsor,
-            ledger: deps.sponsorLedger,
-          });
-
-          request.log.info(
-            { address, eventId, sponsored: result.sponsored, amountXrp: result.amountXrp },
-            "demo sponsorship",
-          );
-
-          return reply.code(200).send({
-            sponsored: result.sponsored,
-            alreadyActivated: result.alreadyActivated,
-            ...(result.amountXrp ? { amountXrp: result.amountXrp } : {}),
-            ...(result.txHash ? { txHash: result.txHash } : {}),
-          });
-        } catch (err) {
-          // Mapped here rather than left to the error handler so the guard is
-          // visible at the route that exists to demonstrate it: 403 for a
-          // refusal that stays true, 429 for the daily cap, which is a throttle
-          // and may pass tomorrow. `details.kind` tells the page which.
-          if (err instanceof SponsorshipDeniedError) {
-            return sendError(
-              reply,
-              statusForXrplError(err),
-              err.code,
-              err.message,
-              err.details,
-            );
-          }
-          throw err;
-        }
-      },
-    );
   });
 }

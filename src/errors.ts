@@ -17,11 +17,14 @@ export type ErrorCode =
   | "URI_TOO_LONG"
   | "INVALID_TAXON"
   | "INVALID_ADDRESS"
-  | "SPONSORSHIP_DENIED"
+  /** An event's treasury refused to pay. `details.kind` says why. */
+  | "ALLOWANCE_DENIED"
   | "METADATA_INVALID"
   | "PIN_FAILED"
   | "NOT_FOUND"
   | "DUPLICATE_CLAIM"
+  /** The request is valid but the state of things will not allow it. */
+  | "CONFLICT"
   | "LEDGER_QUERY_FAILED";
 
 export class XrplLayerError extends Error {
@@ -84,13 +87,29 @@ export class AccountNotFoundError extends XrplLayerError {
 
 export class ValidationError extends XrplLayerError {}
 
-export class SponsorshipDeniedError extends XrplLayerError {
+/**
+ * Why an event's treasury did not pay an attendee.
+ *
+ *   in_flight    a payment for this attendee is on its way right now
+ *   budget       the event's budget cannot cover this payment
+ *   ceiling      the payment would exceed REWARD_MAX_PER_ATTENDEE_XRP
+ *   unavailable  there is no treasury to pay from: the event has none, or the
+ *                server has no TREASURY_MASTER_KEY to open it with
+ *   unfunded     the treasury exists but cannot pay: it was never funded, so
+ *                the ledger has no such account, or it holds too little
+ *
+ * "Already paid" is not a denial. Paying twice is refused by returning the
+ * payment that already happened, because that is the answer a retry wants.
+ */
+export type AllowanceDenial = "in_flight" | "budget" | "ceiling" | "unavailable" | "unfunded";
+
+export class AllowanceDeniedError extends XrplLayerError {
   constructor(
     message: string,
-    readonly kind: "disabled" | "duplicate" | "daily_cap" | "already_activated",
+    readonly kind: AllowanceDenial,
     details?: Record<string, unknown>,
   ) {
-    super("SPONSORSHIP_DENIED", message, { ...details, kind });
+    super("ALLOWANCE_DENIED", message, { ...details, kind });
   }
 }
 

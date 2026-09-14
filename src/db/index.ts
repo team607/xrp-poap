@@ -35,13 +35,42 @@ export {
   MAX_PAGE_LIMIT,
 } from "./attendance-repo.js";
 
+/**
+ * Money helpers, re-exported from where they now live. Every store that sums
+ * XRP uses these, and so does the ledger layer, which must not import src/db.
+ */
 export {
-  PgSponsorLedger,
   dropsToXrpString,
   xrpToDropsBigInt,
+  normalizeXrp,
+  isXrpAmount,
   DROPS_PER_XRP,
-  SPONSOR_CAP_LOCK_KEY,
-} from "./sponsor-ledger.js";
+} from "../money.js";
+
+/** Each event's wallet, with its seed sealed. */
+export { PgTreasuryRepository, MemoryTreasuryRepository } from "./treasury-repo.js";
+
+/** Vendors, their price lists, orders, and the sessions that open a vendor's screen. */
+export {
+  PgVendorRepository,
+  MemoryVendorRepository,
+  MAX_STOCK,
+  type OrderReferences,
+} from "./vendor-repo.js";
+export {
+  PgPurchaseRepository,
+  MemoryPurchaseRepository,
+  MAX_QUANTITY,
+  isPurchaseId,
+} from "./purchase-repo.js";
+export { PgVendorSessionStore, MemoryVendorSessionStore } from "./vendor-session-store.js";
+
+/** What each event's treasury paid, against its budget. */
+export {
+  PgAllowanceLedger,
+  MemoryAllowanceLedger,
+  ALLOWANCE_LOCK_CLASS,
+} from "./allowance-ledger.js";
 
 export { PgClaimRepository } from "./claim-repo.js";
 
@@ -85,7 +114,6 @@ export {
 
 export {
   MemoryAttendanceRepository,
-  MemorySponsorLedger,
   MemoryClaimRepository,
   MemoryEventRepository,
   MemoryRegistrationRepository,
