@@ -2969,10 +2969,17 @@ a{color:var(--jade)}
       var ftOk = $("chain-ft");
       clear(ftOk);
       ftOk.appendChild(node("b", null, "Do not add these to the registration count. "));
+      /* Name the issuer it asked. After a rotation, "0 minted" for an event
+         with hundreds of badges is only ever explained by which account the
+         question went to. */
+      var issuer = String(r.json.issuer || "");
       ftOk.appendChild(document.createTextNode(
-        "This is nfts_by_issuer over taxon " + current.eventId + " — what the XRP Ledger holds, not what the database was told. " +
+        "This is nfts_by_issuer over taxon " + current.eventId + ", asked of " +
+        (issuer ? issuer.slice(0, 6) + "…" + issuer.slice(-4) : "the configured issuer") +
+        " — what the XRP Ledger holds, not what the database was told. " +
         (r.json.burned ? r.json.burned + " burned badge" + (r.json.burned === 1 ? " still counts" : "s still count") + " as attendance. " : "") +
         "Somebody can register and never claim, and a badge can exist for somebody who never registered."));
+
     });
   }
 

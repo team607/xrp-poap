@@ -564,6 +564,19 @@ export interface EventRecord {
   metadataUri?: string | null;
   status: EventStatus;
   /**
+   * The account that minted this event's badges.
+   *
+   * Recorded on the first mint and never changed after, because it is a fact
+   * about what is on the ledger rather than a setting. Null means nothing has
+   * been recorded — badges minted before this was kept, or none minted yet —
+   * and readers fall back to the server's configured issuer.
+   *
+   * This is what lets the roster keep answering for an old event after the
+   * issuer is rotated: the question goes to the account that actually holds
+   * the badges.
+   */
+  issuerAddress?: string | null;
+  /**
    * What every attendee may spend at this event's vendors, as decimal XRP.
    * Paid from the event's treasury when their badge is issued, on top of
    * whatever their wallet needs to hold the badge. "0" means no allowance:
@@ -590,6 +603,15 @@ export interface EventRepository {
   list(opts?: { status?: EventStatus; limit?: number; offset?: number }): Promise<EventRecord[]>;
   /** Badges minted so far. Guards taxon reuse and blocks a destructive edit. */
   hasBadges(eventId: EventId): Promise<boolean>;
+  /**
+   * Record which account minted this event's badges, if it is not recorded yet.
+   *
+   * First mint wins and later calls do nothing: an event whose badges are on
+   * the ledger under one account does not acquire another by being minted for
+   * again after a rotation. Never throws for an event that is not there —
+   * this runs beside a claim, and a claim must not fail over bookkeeping.
+   */
+  noteIssuer(eventId: EventId, issuerAddress: string): Promise<void>;
 }
 
 /**

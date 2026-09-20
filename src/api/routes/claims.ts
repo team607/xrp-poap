@@ -805,6 +805,16 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
         mintedNftokenId = minted.nftokenId;
         await deps.claims.attach(claim.id, { nftokenId: minted.nftokenId });
 
+        /* Which account this event's badges belong to, recorded on the first
+           one. The roster reads it back, so rotating the issuer later leaves
+           this event still answerable. Bookkeeping: a failure here must not
+           cost the attendee their badge. */
+        try {
+          await deps.events?.noteIssuer(eventId, deps.gateway.issuerAddress);
+        } catch (err) {
+          request.log.warn({ err, eventId }, "could not record which issuer minted this event");
+        }
+
         // Lazily, one offer per attendee at claim time. Brief 7: an NFTokenOffer
         // locks 0.2 XRP in the issuer's account for as long as it is open, so
         // pre-creating N offers locks 0.2 * N XRP simultaneously — 20 XRP for 100

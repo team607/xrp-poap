@@ -41,6 +41,7 @@ interface EventRow {
   venue: string | null;
   metadata_uri: string | null;
   status: string;
+  issuer_address?: string | null;
   /** bigint columns, cast to text so they never pass through a JS number. */
   allowance_drops?: string | null;
   budget_drops?: string | null;
@@ -61,7 +62,7 @@ interface EventRow {
  */
 const COLUMNS =
   "event_id, name, description, to_char(event_date, 'YYYY-MM-DD') AS event_date, " +
-  "venue, metadata_uri, status, allowance_drops::text AS allowance_drops, " +
+  "venue, metadata_uri, status, issuer_address, allowance_drops::text AS allowance_drops, " +
   "budget_drops::text AS budget_drops, created_at, updated_at";
 
 /** The two money fields, stored as drops and carried as decimal XRP. */
@@ -232,6 +233,7 @@ export function rowToEvent(row: EventRow): EventRecord {
     venue: row.venue,
     metadataUri: row.metadata_uri,
     status: row.status as EventStatus,
+    issuerAddress: row.issuer_address ?? null,
     allowanceXrp: dropsToXrpString(BigInt(row.allowance_drops ?? "0")),
     budgetXrp: dropsToXrpString(BigInt(row.budget_drops ?? "0")),
     createdAt: toDate(row.created_at),
@@ -303,8 +305,8 @@ export class PgEventRepository implements EventRepository {
       const res = await this.db.query(
         `INSERT INTO events
            (event_id, name, description, event_date, venue, metadata_uri, status,
-            allowance_drops, budget_drops)
-         VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8::bigint, $9::bigint)
+            issuer_address, allowance_drops, budget_drops)
+         VALUES ($1, $2, $3, $4::date, $5, $6, $7, $8, $9::bigint, $10::bigint)
          RETURNING ${COLUMNS}`,
         [
           input.eventId,
@@ -314,6 +316,7 @@ export class PgEventRepository implements EventRepository {
           input.venue ?? null,
           input.metadataUri ?? null,
           status,
+          input.issuerAddress ?? null,
           // Text, not a JS number: a bigint parameter must not pass through 2^53.
           xrpToDropsBigInt(input.allowanceXrp ?? "0", "allowanceXrp").toString(),
           xrpToDropsBigInt(input.budgetXrp ?? "0", "budgetXrp").toString(),
@@ -428,6 +431,30 @@ export class PgEventRepository implements EventRepository {
    * seen one", never "the ledger has none" — which is why this gates an
    * admin's destructive edit rather than a mint.
    */
+  /**
+   * Write the minting account down, once.
+   *
+   * `WHERE issuer_address IS NULL` is the whole rule: the first mint records
+   * the account, and a later mint after a rotation leaves it alone, because
+   * the badges already on the ledger were not minted by the new one. A row
+   * that is not there updates nothing and says nothing — this runs beside a
+   * claim, which must not fail over bookkeeping.
+   *
+   * BACKFILL. Events minted before this column existed have NULL, and the
+   * reader falls back to the configured issuer, which is wrong once that has
+   * been rotated. Fill them in by hand, one statement per issuer:
+   *
+   *   UPDATE events SET issuer_address = 'rTHEOLDISSUER...'
+   *    WHERE issuer_address IS NULL AND event_id < 700013;
+   */
+  async noteIssuer(eventId: EventId, issuerAddress: string): Promise<void> {
+    assertValidEventId(eventId);
+    await this.db.query(
+      `UPDATE events SET issuer_address = $2 WHERE event_id = $1 AND issuer_address IS NULL`,
+      [eventId, issuerAddress],
+    );
+  }
+
   async hasBadges(eventId: EventId): Promise<boolean> {
     if (!isPossibleEventId(eventId)) return false;
     const res = await this.db.query(

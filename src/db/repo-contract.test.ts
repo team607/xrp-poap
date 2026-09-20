@@ -812,6 +812,24 @@ export function runRepositoryContract(label: string, factory: ContractFactory): 
       expect(await events.list({ offset: 99 })).toEqual([]);
     });
 
+    it("records the minting issuer once, and leaves it alone after a rotation", async () => {
+      const { events } = await fresh();
+      await events.create(eventInput());
+
+      // Nothing minted yet: the reader falls back to the configured issuer.
+      expect((await events.find(EVENT_A))?.issuerAddress ?? null).toBeNull();
+
+      await events.noteIssuer(EVENT_A, "rOLDISSUERxxxxxxxxxxxxxxxxxxxxxxx");
+      expect((await events.find(EVENT_A))?.issuerAddress).toBe("rOLDISSUERxxxxxxxxxxxxxxxxxxxxxxx");
+
+      // The badges on the ledger did not move when the server's issuer did.
+      await events.noteIssuer(EVENT_A, "rNEWISSUERxxxxxxxxxxxxxxxxxxxxxxx");
+      expect((await events.find(EVENT_A))?.issuerAddress).toBe("rOLDISSUERxxxxxxxxxxxxxxxxxxxxxxx");
+
+      // An event that is not there is not an error: this runs beside a claim.
+      await expect(events.noteIssuer(EVENT_B, "rOLDISSUERxxxxxxxxxxxxxxxxxxxxxxx")).resolves.toBeUndefined();
+    });
+
     it("hasBadges answers from the attendance index", async () => {
       const { events, repo } = await fresh();
       await events.create(eventInput());

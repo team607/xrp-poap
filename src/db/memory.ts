@@ -400,6 +400,7 @@ export class MemoryEventRepository implements EventRepository {
       venue: input.venue ?? null,
       metadataUri: input.metadataUri ?? null,
       status,
+      issuerAddress: input.issuerAddress ?? null,
       allowanceXrp: amounts.allowanceXrp,
       budgetXrp: amounts.budgetXrp,
       createdAt: at,
@@ -465,6 +466,12 @@ export class MemoryEventRepository implements EventRepository {
 
   async hasBadges(eventId: EventId): Promise<boolean> {
     return (await this.attendance.countByEvent(eventId)) > 0;
+  }
+
+  /** First mint wins; a missing row is not an error. See EventRepository. */
+  async noteIssuer(eventId: EventId, issuerAddress: string): Promise<void> {
+    const row = this.rows.get(eventId);
+    if (row && !row.issuerAddress) row.issuerAddress = issuerAddress;
   }
 
   /** Test/dev affordance. Not part of EventRepository. */

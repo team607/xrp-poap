@@ -1563,6 +1563,31 @@ describe("GET /events/:eventId/roster", () => {
     expect(h.chain.getRoster).toHaveBeenCalledWith(h.gateway, EVENT_ID, { limit: 10 });
   });
 
+  it("asks the account that minted this event, not whichever issuer is configured now", async () => {
+    // The issuer was rotated after this event. Its badges did not move, so the
+    // question has to go to the account that holds them, or the page reports
+    // zero minted for an event with hundreds.
+    // `money` is what wires an events store into the deps, which is also what
+    // gives the roster an event to read the issuer from.
+    const h = harness({ money: {} });
+    const minted = "rOLDISSUERxxxxxxxxxxxxxxxxxxxxxxx";
+    await h.events.noteIssuer(EVENT_ID, minted);
+    h.chain.getRoster.mockResolvedValue({
+      eventId: EVENT_ID,
+      issuer: minted,
+      entries: [],
+      minted: 0,
+      claimed: 0,
+      burned: 0,
+      ownerUnknown: 0,
+    });
+
+    const res = await h.app.inject({ method: "GET", url: `/events/${EVENT_ID}/roster` });
+
+    expect(res.statusCode).toBe(200);
+    expect(h.chain.getRoster).toHaveBeenCalledWith(h.gateway, EVENT_ID, { issuerAddress: minted });
+  });
+
   it("forwards an entry with no owner, and the ownerUnknown count with it", async () => {
     const h = harness();
     h.chain.getRoster.mockResolvedValue({

@@ -174,6 +174,11 @@ class FakeEventRepository implements EventRepository {
     return all.slice(offset, offset + (opts?.limit ?? 50)).map((row) => ({ ...row }));
   }
 
+  async noteIssuer(eventId: EventId, issuerAddress: string): Promise<void> {
+    const row = this.rows.get(eventId);
+    if (row && !row.issuerAddress) row.issuerAddress = issuerAddress;
+  }
+
   async hasBadges(eventId: EventId): Promise<boolean> {
     return this.withBadges.has(eventId);
   }

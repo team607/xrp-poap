@@ -8,6 +8,12 @@
  * This is the deliberately expensive path. It is for organiser tooling,
  * reconciliation and "is the index lying to me?" — not for page loads. The
  * cheap read is GET /events/:eventId/attendance (brief 6.5).
+ *
+ * WHICH ISSUER. The event's own, when it has one recorded; the server's
+ * configured issuer otherwise. Asking the configured one for every event was
+ * silently wrong the moment an issuer was rotated: every past event answered
+ * zero minted, zero claimed, zero burned, because its badges belong to an
+ * account nobody was asking about. The answer names the issuer it asked.
  */
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
@@ -36,11 +42,13 @@ export function registerRosterRoute(app: FastifyInstance, deps: ApiDeps): void {
       const { eventId } = request.params;
       const { limit } = request.query;
 
-      const roster = await deps.chain.getRoster(
-        deps.gateway,
-        eventId,
-        limit === undefined ? undefined : { limit },
-      );
+      const event = deps.events ? await deps.events.find(eventId) : null;
+      const issuerAddress = event?.issuerAddress ?? undefined;
+
+      const roster = await deps.chain.getRoster(deps.gateway, eventId, {
+        ...(limit === undefined ? {} : { limit }),
+        ...(issuerAddress === undefined ? {} : { issuerAddress }),
+      });
 
       return reply.code(200).send(roster);
     },
