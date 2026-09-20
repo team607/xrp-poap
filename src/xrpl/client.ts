@@ -24,6 +24,10 @@ export interface ConnectionOptions {
   connectTimeoutMs?: number;
   /** Signer used when submit() is called without an explicit wallet. */
   wallet?: Wallet;
+  /** Override for tests: the waits between retries of a call a busy node refused. */
+  busyBackoffMs?: readonly number[];
+  /** Override for tests: the waits between asking whether a sent transaction has landed. */
+  landingBackoffMs?: readonly number[];
   /**
    * Overrides cfg.issuerAddress. Scripts that mint from a faucet-funded
    * throwaway wallet use this instead of writing a seed into the environment.
@@ -54,6 +58,24 @@ export function isDisconnectedError(err: unknown): boolean {
   );
 }
 
+/**
+ * True when the node said "not now": its queue is full (tooBusy), or it is
+ * rate-limiting this client (slowDown).
+ *
+ * This is not a failure of the request and says nothing about the transaction.
+ * A public Clio server under load does this routinely, and the same call a
+ * second later usually works. It matters most AFTER a submit: xrpl.js waits for
+ * validation by asking `tx`, and a busy answer there threw away claims whose
+ * mint had already landed — a badge minted with nothing offering it.
+ */
+export function isBusyError(err: unknown): boolean {
+  return (
+    isRippledError(err, "tooBusy") ||
+    isRippledError(err, "slowDown") ||
+    (err instanceof Error && /too busy to help you now/i.test(err.message))
+  );
+}
+
 /** True when a rippled response carried this specific error code. */
 export function isRippledError(err: unknown, code: string): boolean {
   const data = (err as { data?: { error?: string } } | undefined)?.data;
@@ -61,6 +83,18 @@ export function isRippledError(err: unknown, code: string): boolean {
   // Some transports surface the code only in the message.
   return err instanceof Error && err.message.includes(code);
 }
+
+/** Gaps before asking a busy node again. Four tries, about ten seconds. */
+const BUSY_BACKOFF_MS: readonly number[] = [400, 1_200, 3_000, 6_000];
+
+/**
+ * Gaps before asking again whether a transaction we already sent has landed.
+ * Ledgers close every three to four seconds, so this covers several closes
+ * before anything is resent.
+ */
+const LANDING_BACKOFF_MS: readonly number[] = [1_000, 2_000, 3_000, 4_000, 5_000, 5_000];
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function metaOf(result: Record<string, any>): Record<string, unknown> {
   const meta = result?.meta ?? result?.metaData;
@@ -104,6 +138,8 @@ export class XrplConnection implements XrplGateway {
    * Stamped on everything this connection submits. See submit().
    */
   readonly #sourceTag: number | undefined;
+  readonly #busyBackoffMs: readonly number[];
+  readonly #landingBackoffMs: readonly number[];
   #closed = false;
 
   /** The raw client. Scripts use this for fundWallet(). */
@@ -126,6 +162,8 @@ export class XrplConnection implements XrplGateway {
     connectTimeoutMs: number,
     makeClient: (endpoint: string, opts: { connectionTimeout: number }) => Client,
     sourceTag: number | undefined,
+    busyBackoffMs: readonly number[],
+    landingBackoffMs: readonly number[],
   ) {
     this.#client = client;
     this.#endpoint = endpoint;
@@ -136,6 +174,8 @@ export class XrplConnection implements XrplGateway {
     this.#connectTimeoutMs = connectTimeoutMs;
     this.#makeClient = makeClient;
     this.#sourceTag = sourceTag;
+    this.#busyBackoffMs = busyBackoffMs;
+    this.#landingBackoffMs = landingBackoffMs;
   }
 
   /**
@@ -203,6 +243,53 @@ export class XrplConnection implements XrplGateway {
     }
   }
 
+  /**
+   * Run `fn`, and when the node answers "too busy", wait and ask again.
+   *
+   * There is a person at the other end of every one of these: an attendee at
+   * the desk, a queue of badges going out. A short wait turns a busy node into
+   * a pause nobody notices, rather than a failed claim.
+   */
+  async #whenNotBusy<T>(fn: () => Promise<T>): Promise<T> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        return await fn();
+      } catch (err) {
+        const wait = this.#busyBackoffMs[attempt];
+        if (wait === undefined || this.#closed || !isBusyError(err)) throw err;
+        await sleep(wait);
+      }
+    }
+  }
+
+  /**
+   * The validated transaction with this hash, once the ledger has it.
+   *
+   * Undefined means resending the same bytes is the right move. A busy node is
+   * never an answer either way: it counts as "ask again", not "not there".
+   *
+   * `keepAsking` is the difference between the two ways we get here. After a
+   * dropped socket the send may never have happened, so one clean "not there"
+   * settles it and the resend goes out at once. After a busy node the send
+   * usually DID happen — that is the whole failure mode, a mint on the ledger
+   * that nothing offered — so "not there" only means "not validated yet", and
+   * it is worth several ledger closes before sending anything again.
+   */
+  async #waitForLanding(hash: string, keepAsking: boolean): Promise<Record<string, any> | undefined> {
+    for (let attempt = 0; ; attempt += 1) {
+      try {
+        const found = await this.#findByHash(hash);
+        if (found?.validated === true) return found;
+        if (!keepAsking) return undefined;
+      } catch (err) {
+        if (!isBusyError(err)) throw err;
+      }
+      const wait = this.#landingBackoffMs[attempt];
+      if (wait === undefined) return undefined;
+      await sleep(wait);
+    }
+  }
+
   /** Has this transaction already been validated? Used before any resend. */
   async #findByHash(hash: string): Promise<Record<string, any> | undefined> {
     try {
@@ -259,6 +346,8 @@ export class XrplConnection implements XrplGateway {
           connectTimeoutMs,
           makeClient,
           cfg.sourceTag,
+          options.busyBackoffMs ?? BUSY_BACKOFF_MS,
+          options.landingBackoffMs ?? LANDING_BACKOFF_MS,
         );
       } catch (err) {
         failures.push(`${endpoint}: ${(err as Error).message}`);
@@ -276,10 +365,13 @@ export class XrplConnection implements XrplGateway {
     );
   }
 
-  /** Reads are pure, so a dropped socket is simply retried on a fresh one. */
+  /**
+   * Reads are pure: a dropped socket is retried on a fresh one, and a node too
+   * busy to answer is asked again a moment later.
+   */
   async request<Res = any>(req: Record<string, unknown>): Promise<Res> {
-    return this.#withReconnect(
-      async () => (await this.#client.request(req as any)) as Res,
+    return this.#withReconnect(async () =>
+      this.#whenNotBusy(async () => (await this.#client.request(req as any)) as Res),
     );
   }
 
@@ -360,25 +452,30 @@ export class XrplConnection implements XrplGateway {
         : tx;
 
     // --- prepare + sign: nothing sent yet, retry freely ---------------------
-    const signed = await this.#withReconnect(async () => {
-      const prepared = await this.#client.autofill(tagged);
-      return wallet.sign(prepared);
-    });
+    const signed = await this.#withReconnect(async () =>
+      this.#whenNotBusy(async () => {
+        const prepared = await this.#client.autofill(tagged);
+        return wallet.sign(prepared);
+      }),
+    );
 
     // --- send: the same bytes, or nothing ----------------------------------
     let response: { result: unknown };
     try {
       response = await this.#client.submitAndWait(signed.tx_blob);
     } catch (err) {
-      if (!isDisconnectedError(err) || this.#closed) throw err;
-      await this.#reconnect();
-      // It may well have been applied before the socket died. Ask first: a
-      // blind resend is safe against duplication but a needless round trip,
-      // and a landed transaction is the answer we already want.
-      const landed = await this.#findByHash(signed.hash);
+      const busy = isBusyError(err);
+      if ((!isDisconnectedError(err) && !busy) || this.#closed) throw err;
+      // A socket that died after the send, or a node too busy to answer the
+      // question xrpl.js asks while waiting: either way the bytes may already
+      // be on the ledger. Ask before sending anything again — a blind resend is
+      // safe against duplication but a needless round trip, and a landed
+      // transaction is the answer we already want.
+      if (!busy) await this.#reconnect();
+      const landed = await this.#waitForLanding(signed.hash, busy);
       response = landed
         ? { result: landed }
-        : await this.#client.submitAndWait(signed.tx_blob);
+        : await this.#whenNotBusy(() => this.#client.submitAndWait(signed.tx_blob));
     }
     const result = response.result as Record<string, any>;
     const meta = metaOf(result);

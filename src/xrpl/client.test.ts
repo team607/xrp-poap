@@ -12,7 +12,21 @@
  */
 import { describe, expect, it } from "vitest";
 import type { AppConfig } from "../config.js";
-import { XrplConnection, isDisconnectedError } from "./client.js";
+import { XrplConnection, isBusyError, isDisconnectedError } from "./client.js";
+
+/** What a public Clio server answers when its queue is full. */
+function tooBusy(): Error {
+  return Object.assign(new Error("The server is too busy to help you now."), {
+    data: { error: "tooBusy", error_code: 9 },
+  });
+}
+
+/** How xrpl.js rewraps that when it happens while waiting for validation. */
+function tooBusyWhileWaiting(): Error {
+  return new Error(
+    ["tooBusy ", " Preliminary result: tesSUCCESS.", "Full error details: [RippledError(...)]"].join("\n"),
+  );
+}
 
 function notConnected(): Error {
   const e = new Error('{"command":"account_info"}');
@@ -150,6 +164,18 @@ describe("SourceTag", () => {
   });
 });
 
+describe("isBusyError", () => {
+  it("knows a node saying not-now from a node saying no", () => {
+    expect(isBusyError(tooBusy())).toBe(true);
+    expect(isBusyError(tooBusyWhileWaiting())).toBe(true);
+    expect(isBusyError(Object.assign(new Error("slowDown"), { data: { error: "slowDown" } }))).toBe(true);
+    expect(isBusyError(notConnected())).toBe(false);
+    expect(
+      isBusyError(Object.assign(new Error("txnNotFound"), { data: { error: "txnNotFound" } })),
+    ).toBe(false);
+  });
+});
+
 describe("XrplConnection", () => {
   it("retries a read on a fresh socket after a drop", async () => {
     const clients: any[] = [];
@@ -280,5 +306,101 @@ describe("XrplConnection", () => {
     );
     expect(all).toHaveLength(20);
     expect(clients.length).toBe(2);
+  });
+  /* A NODE THAT SAYS "NOT NOW".
+     Two mainnet claims were lost to this: the mint landed, the wait for
+     validation was answered "tooBusy", and the claim was abandoned with the
+     badge minted and nothing offering it. */
+
+  it("waits out a busy node and reads anyway", async () => {
+    let asked = 0;
+    const conn = await XrplConnection.connect(CFG, {
+      busyBackoffMs: [0, 0],
+      clientFactory: () =>
+        makeFakeClient({
+          onRequest: () => {
+            asked += 1;
+            if (asked < 3) throw tooBusy();
+            return { result: { ok: true } };
+          },
+        }),
+    });
+
+    expect(await conn.request({ command: "account_info" })).toEqual({ result: { ok: true } });
+    expect(asked).toBe(3);
+  });
+
+  it("gives the busy node up after the last try, rather than hanging on it", async () => {
+    let asked = 0;
+    const conn = await XrplConnection.connect(CFG, {
+      busyBackoffMs: [0, 0],
+      clientFactory: () =>
+        makeFakeClient({
+          onRequest: () => {
+            asked += 1;
+            throw tooBusy();
+          },
+        }),
+    });
+
+    await expect(conn.request({ command: "account_info" })).rejects.toThrow(/too busy/i);
+    expect(asked).toBe(3);
+  });
+
+  it("keeps a transaction that landed while the node was too busy to say so", async () => {
+    let lookups = 0;
+    let fake: any;
+    const conn = await XrplConnection.connect(CFG, {
+      wallet: WALLET,
+      issuerAddress: CFG.issuerAddress,
+      busyBackoffMs: [0, 0],
+      landingBackoffMs: [0, 0],
+      clientFactory: () =>
+        (fake = makeFakeClient({
+          onSubmit: () => { throw tooBusyWhileWaiting(); },
+          onRequest: (req) => {
+            if (req.command !== "tx") return { result: {} };
+            lookups += 1;
+            // Busy again on the first ask; the second says it is on the ledger.
+            if (lookups === 1) throw tooBusy();
+            return {
+              result: { hash: "HASH1", validated: true, meta: { TransactionResult: "tesSUCCESS" } },
+            };
+          },
+        })),
+    });
+
+    const out = await conn.submit({ TransactionType: "NFTokenMint" } as any);
+    expect(out.engineResult).toBe("tesSUCCESS");
+    expect(out.validated).toBe(true);
+    expect(out.hash).toBe("HASH1");
+    // Never sent twice: the first attempt was already on the ledger.
+    expect(fake.counts().submits).toBe(1);
+  });
+
+  it("resends the same bytes when the transaction really is not there", async () => {
+    let fake: any;
+    const conn = await XrplConnection.connect(CFG, {
+      wallet: WALLET,
+      issuerAddress: CFG.issuerAddress,
+      busyBackoffMs: [0],
+      landingBackoffMs: [0],
+      clientFactory: () =>
+        (fake = makeFakeClient({
+          onSubmit: (_blob, n) => {
+            if (n === 1) throw tooBusyWhileWaiting();
+            return { result: { hash: "HASH1", validated: true, meta: { TransactionResult: "tesSUCCESS" } } };
+          },
+          onRequest: () => {
+            throw Object.assign(new Error("txnNotFound"), { data: { error: "txnNotFound" } });
+          },
+        })),
+    });
+
+    const out = await conn.submit({ TransactionType: "NFTokenBurn" } as any);
+    expect(out.engineResult).toBe("tesSUCCESS");
+    expect(fake.counts().submits).toBe(2);
+    // One autofill across both sends: the same signed blob, the same hash.
+    expect(fake.counts().autofills).toBe(1);
   });
 });
