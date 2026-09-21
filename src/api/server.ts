@@ -85,15 +85,15 @@ export function buildServer(deps: ApiDeps): FastifyInstance {
 
   /**
    * THE EVENT DESK. Two routes under `/admin/api/desk`, so the prefix hook
-   * installed immediately above is what guards them — one of them spends the
-   * issuer's XRP and the other returns an attendee's name.
+   * installed immediately above is what guards them — one of them spends an
+   * event's XRP and the other returns an attendee's name.
    *
    * Registered here rather than inside the rate-limited scope for the reason
    * /health and /demo are: a desk polls the attendee it just scanned, and a
    * poll loop eating the global 120/min bucket would 429 the actual claim
    * halfway through issuing a badge. What protects the money on these routes is
-   * the login, the duplicate check and the daily sponsorship cap, none of which
-   * is a request counter.
+   * the login, the duplicate check, and the event's own budget and the
+   * per-attendee ceiling above it — none of which is a request counter.
    */
   registerDeskRoutes(app, deps);
 

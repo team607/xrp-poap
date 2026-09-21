@@ -185,6 +185,8 @@ a{color:var(--jade)}
 .pick__n a::after{content:""; position:absolute; inset:0; border-radius:16px; z-index:0}
 .pick__n a:focus{outline:none}
 .pick__meta{margin:8px 0 0; font-size:15px; color:var(--ink-2)}
+/* The middot belongs to the pair, not to either half: no date, no separator. */
+.pick__when + .pick__where::before{content:"\00b7"; margin:0 7px; color:var(--ink-3)}
 /* Two lines, then an ellipsis. One event with a paragraph in its description
    made its card three times the height of the next, which turns a list you
    scan into a ragged column. The description is a taste of the event, not the
@@ -213,7 +215,10 @@ a{color:var(--jade)}
    ledger. They are never added together and never given the same weight: the
    badge count is the big one, in jade, because it is the one nobody here can
    move. */
-.pick__figs{flex:none; display:flex; align-items:center; gap:clamp(16px,2.6vw,32px); position:relative; z-index:1}
+/* Deliberately NOT positioned: the corner button anchors to the card, and a
+   positioned parent here would anchor it to this box instead. Nothing in here
+   is clickable, so it can sit under the link that covers the card. */
+.pick__figs{flex:none; display:flex; align-items:center; gap:clamp(16px,2.6vw,32px)}
 .fig{text-align:right}
 .fig__n{font-size:15px; font-weight:600; color:var(--ink-2)}
 .fig__k{margin-top:2px; font-size:12.5px; color:var(--ink-3)}
@@ -229,8 +234,12 @@ a{color:var(--jade)}
 .turn__fill{display:block; height:100%; background:var(--jade); border-radius:999px}
 .turn__soon{font-size:13px; color:var(--ink-3); line-height:1.4}
 
+/* The button is taken out of the numbers' row and pinned to the corner of the
+   card. In the row it pushed the numbers left, so registered, badges and the
+   turnout bar landed in one place on an event taking names and another on a
+   finished one — a column that moved depending on the row it was in. */
 .pick__act{
-  position:relative; z-index:1; flex:none;
+  position:absolute; right:22px; bottom:22px; z-index:1; flex:none;
   font-family:var(--font-display); font-size:14.5px; font-weight:600;
   background:var(--surface); color:var(--ink);
   border:1px solid var(--rule-2); border-radius:10px;
@@ -243,36 +252,34 @@ a{color:var(--jade)}
 .pick__act--go{background:var(--ink); color:var(--paper); border-color:transparent}
 .pick__act--go:hover{filter:brightness(1.35); color:var(--paper)}
 
+/* Narrow enough and the numbers drop onto their own full-width row, which
+   puts them where the corner is: the button goes back into the row. */
 @media (max-width:880px){
   .pick{gap:16px}
   .pick__figs{width:100%; justify-content:flex-start; gap:24px; padding-top:4px}
   .turn{width:100%; max-width:220px}
-}
-@media (max-width:560px){
-  .pick{padding:18px}
-  .pick__date{width:64px; height:64px}
-  .pick__day{font-size:24px}
-  .pick__mon,.pick__yr{font-size:11px}
-  .pick__figs{flex-wrap:wrap; gap:18px}
+  .pick__act{position:static; margin-left:auto}
 }
 @media (prefers-reduced-motion: reduce){
   .pick{transition:none}
   .pick:hover{transform:none}
 }
 
-/* ---- other faces --------------------------------------------------------- */
+/* ---- the other faces -----------------------------------------------------
+   Reading, empty and offline are the same kind of answer — nothing to show
+   yet, and why — so they wear the same panel, and it is the one the event
+   page shows while it reads a record. */
 
 .face{padding:8px 0 0}
-.card{
-  background:var(--surface);
+.state{
+  margin:26px 0 0;
+  padding:30px 24px;
   border:1px solid var(--rule);
-  border-radius:16px;
-  box-shadow:var(--shadow);
-  padding:30px 26px;
+  background:var(--surface);
+  color:var(--ink-2);
 }
-.card h1{font-size:clamp(1.6rem,4.4vw,2.05rem)}
-.card p{margin:12px 0 0; font-size:16px; color:var(--ink-2); max-width:52ch; text-wrap:pretty}
-.boot{padding:40px 0 0; font-size:16px; color:var(--ink-3)}
+.state h2{font-size:21px; font-weight:700; letter-spacing:-.03em; margin:0 0 8px; color:var(--ink)}
+.state p{margin:0; max-width:52ch; text-wrap:pretty}
 
 .foot{
   margin:34px 0 0;
@@ -281,14 +288,77 @@ a{color:var(--jade)}
   text-wrap:pretty;
 }
 
-@media (max-width:520px){
-  a.pick{padding:19px 18px}
-  .pick__top{flex-direction:column; gap:10px}
-  .tag{align-self:flex-start}
-}
-@media (prefers-reduced-motion: reduce){
-  a.pick{transition:none}
-  a.pick:hover{transform:none}
+/* A phone gets one card at a time, which changes what the pieces are for.
+   Nothing is level with anything else here, so the devices that keep a row of
+   cards tidy — a square date, a reserved text height, a number stacked over
+   its label — only cost height and leave half of every line blank.
+
+   So the card becomes a two-ended grid: what the thing IS down the left, when
+   and where it is down the right, and the numbers across the bottom. The
+   pieces are spread across four containers in the markup, which is what
+   display:contents is for here — it drops those boxes so their children can be
+   placed on this grid directly, without a second markup for phones. */
+@media (max-width:560px){
+  .picks{gap:12px}
+  .pick{
+    display:grid; grid-template-columns:minmax(0,1fr) auto auto;
+    column-gap:10px; row-gap:0; align-items:start;
+    padding:16px;
+  }
+  .pick__b,.pick__top,.pick__meta{display:contents}
+
+  .tag{grid-area:1 / 1; justify-self:start}
+  /* One left edge. Everything the event IS reads straight down it — name,
+     number, place — and nothing is parked in the middle of the card. */
+  .pick__tx{grid-area:3 / 1 / 4 / 3; justify-self:start; margin-top:4px}
+  /* The same calendar block as the desktop, holding the right edge of the
+     first three lines. A date as a date is the point of it — the words are in
+     the line under the name on a desktop, and here they would be a third grey
+     line saying what this already says. */
+  /* A square, as on a desktop, filling the right-hand side of the text block
+     and centred in it: the same block on every card in the list, whatever the
+     card is tall enough to say. */
+  .pick__date{
+    grid-area:1 / 3 / 6 / 4; align-self:center;
+    width:100px; height:100px; border-radius:12px; gap:2px;
+  }
+  .pick__mon,.pick__yr{font-size:12px}
+  .pick__day{font-size:32px}
+  .pick__date--none .pick__day{font-size:17px}
+
+  .pick__n{grid-area:2 / 1 / 3 / 3; margin-top:8px; font-size:20px; min-width:0}
+  /* Under the number, along the same edge. Two lines at most: a venue can be
+     an address, and an address should not be able to set the height of the
+     card. */
+  .pick__where{
+    grid-area:4 / 1 / 5 / 3; justify-self:start; margin-top:3px;
+    font-size:14.5px; color:var(--ink-2); min-width:0;
+    display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; line-clamp:2;
+    overflow:hidden;
+  }
+  /* The date has the block; the words that said it are redundant, and so is
+     the middot that joined them to the venue. */
+  .pick__when{display:none}
+  .pick__when + .pick__where::before{content:none}
+  .pick__desc{grid-area:5 / 1 / 6 / 3; margin-top:7px}
+
+  /* A number above its label spends a line on each. Side by side they read as
+     a sentence — "0 registered, 2 badges, turnout 100%" — and only the bar
+     takes a line of its own. */
+  .pick__figs{
+    grid-area:6 / 1 / 7 / -1; margin-top:13px;
+    width:100%; flex-wrap:wrap; align-items:baseline; gap:9px 18px;
+  }
+  .fig{display:flex; align-items:baseline; gap:5px; text-align:left}
+  .fig__k{margin-top:0}
+  .fig--big .fig__n{font-size:22px}
+  .fig--big .fig__k{margin-top:0}
+  .turn{display:contents}
+  .turn__hd{margin:0; gap:7px}
+  .turn__bar{flex:1 0 100%; height:5px}
+  .turn__soon{flex:1 1 100%}
+  /* One control, and a thumb: it takes the width. */
+  .pick__act{position:static; width:100%; margin-left:0; justify-content:center; padding:12px 18px}
 }
 </style>
 <script src="/assets/bar.js" defer></script>
@@ -310,28 +380,32 @@ a{color:var(--jade)}
 </header>
 
 <div class="wrap">
+  <div class="head">
+    <h1>Every event so far</h1>
+    <p class="lede">Open one to see the day itself and every badge it handed out.</p>
+  </div>
+
   <div class="face" data-face="boot" id="face-boot">
-    <p class="boot">Reading the events…</p>
+    <div class="state">
+      <h2>Reading the events</h2>
+      <p>One moment.</p>
+    </div>
   </div>
 
   <div class="face" data-face="list" id="face-list" hidden>
-    <div class="head">
-      <h1>Every event so far</h1>
-      <p class="lede">Open one to see the day itself and every badge it handed out.</p>
-    </div>
     <div class="picks" id="picks"></div>
   </div>
 
   <div class="face" data-face="none" id="face-none" hidden>
-    <div class="card">
-      <h1>No events on record yet</h1>
+    <div class="state">
+      <h2>No events on record yet</h2>
       <p>The first event to open for registration appears here as it happens.</p>
     </div>
   </div>
 
   <div class="face" data-face="err" id="face-err" hidden>
-    <div class="card">
-      <h1>This list is offline</h1>
+    <div class="state">
+      <h2>This list is offline</h2>
       <p>
         This page is served by the same desk that holds the records, so it is either restarting or
         down. Nothing is lost — the badges live on the ledger either way.
@@ -469,11 +543,17 @@ a{color:var(--jade)}
     h.appendChild(a);
     b.appendChild(h);
 
-    var bits = [];
-    var d = fmtDate(e.eventDate);
-    if (d) bits.push(d);
-    if (e.venue) bits.push(String(e.venue));
-    if (bits.length) b.appendChild(node("p", "pick__meta", bits.join(" \u00b7 ")));
+    /* Two spans rather than one string: on a desktop they read as one line,
+       "6 September 2026 · Lodhi Gardens", and on a phone the layout below
+       sends each to the end of a line of its own. A joined string cannot be
+       taken apart by CSS. */
+    var when = fmtDate(e.eventDate);
+    if (when || e.venue) {
+      var meta = node("p", "pick__meta");
+      if (when) meta.appendChild(node("span", "pick__when", when));
+      if (e.venue) meta.appendChild(node("span", "pick__where", String(e.venue)));
+      b.appendChild(meta);
+    }
     if (e.description) b.appendChild(node("p", "pick__desc", String(e.description)));
     card.appendChild(b);
 
@@ -483,12 +563,15 @@ a{color:var(--jade)}
       { big: true, none: came === 0 }));
     figs.appendChild(turnBlock(signed, came, e.status));
 
-    /* Two destinations, so two controls: the card opens the event, and the
-       button on an open event goes somewhere else entirely. */
-    var act = node("a", "pick__act" + (takingNames ? " pick__act--go" : ""),
-      takingNames ? "Register" : "Open");
-    act.href = takingNames ? "/register/" + id : href;
-    figs.appendChild(act);
+    /* A button only where it goes somewhere the card does not. Registering is
+       a different destination, so it gets one; "Open" was a button for the
+       thing the whole card already does, which reads as the only way in and
+       makes the rest of the card look like decoration. */
+    if (takingNames) {
+      var act = node("a", "pick__act pick__act--go", "Register");
+      act.href = "/register/" + id;
+      figs.appendChild(act);
+    }
     card.appendChild(figs);
 
     return card;

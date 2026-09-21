@@ -625,17 +625,19 @@ export function registerClaimRoutes(app: FastifyInstance, deps: ApiDeps): void {
    * POST /events/:eventId/claims — mint a badge and offer it to one attendee.
    *
    * 201 minted and offered | 200 a claim was already open, same offer returned
-   * 400 bad input | 403/429 sponsorship refused or rate limited
+   * 400 bad input | 403/429 not signed in, or rate limited
+   * 409 the event's treasury will not pay what this wallet needs to hold a badge
    * 409 already attended, claim in flight, or wallet not activated
    * 502 ledger trouble
    */
   // MINTING IS PRIVILEGED, and this route was open to the internet.
   //
-  // It spends the issuer's XRP — 0.2 locked in every offer, plus up to 1.5
-  // sponsoring a wallet that cannot hold a badge — and writes a permanent,
-  // unrevocable record. Anyone who could reach the host could mint against any
-  // open event, using a fresh address each time to walk straight past the
-  // per-address limit, until the daily sponsorship cap stopped them.
+  // It spends money — 0.2 XRP of the issuer's reserve locked in every offer,
+  // and, out of the event's treasury, the attendee's allowance plus whatever
+  // their wallet lacks to hold a badge — and writes a permanent, unrevocable
+  // record. Anyone who could reach the host could mint against any open event,
+  // using a fresh address each time to walk straight past the per-address
+  // limit, until the event's budget ran out.
   //
   // It was public because the attendee's own page called it. That page now
   // READS an offer the desk created (GET .../claims/for/:address below) rather
