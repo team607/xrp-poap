@@ -5,7 +5,8 @@
  * This module never asks "does this wallet hold the badge". It asks "did this
  * wallet ever accept a badge we issued under this taxon". A burned badge is
  * still attendance; `account_nfts` returning zero for someone who demonstrably
- * attended is measured fact, not theory (docs/ground-truth.md). Nothing in
+ * attended is measured fact, not theory — the fixtures in verify.test.ts are
+ * the real values off a live testnet badge. Nothing in
  * here may make `attended` depend on current ownership or on `isBurned`.
  *
  * An ordinary failed claim is a *return value*, never an exception. Throws are
@@ -131,7 +132,7 @@ function decodedIssuerMatches(decoded: DecodedNftokenId, expectedIssuer: string)
 /**
  * API v2 (xrpl.js v5's default) nests the transaction under `tx_json` and
  * keeps hash/meta/validated at the top level; API v1 puts the transaction
- * fields at the top level. Measured v2 shape, docs/ground-truth.md:
+ * fields at the top level. The v2 shape, as measured against a live node:
  *
  *   { tx_json: { TransactionType, Account, ... }, hash, meta, validated,
  *     ledger_index, ledger_hash, close_time_iso, ctid }

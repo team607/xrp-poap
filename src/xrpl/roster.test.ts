@@ -641,7 +641,7 @@ describe("getAccountNfts", () => {
   });
 
   it("returns nothing for a burned badge — which is why it is not the attendance query", async () => {
-    // The trap from docs/ground-truth.md: account_nfts drops to zero for an
+    // The measured trap: account_nfts drops to zero for an
     // attendee who demonstrably claimed, while nft_info still reports the
     // badge. Verification uses nft_info for exactly this reason.
     const g = gateway();

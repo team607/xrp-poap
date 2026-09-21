@@ -4,8 +4,8 @@
  * The load-bearing one is "a burned badge is still attendance". If that ever
  * goes red, the system is broken in the exact way brief section 4 forbids.
  *
- * Fixtures are the real measured values from docs/ground-truth.md: a live
- * testnet badge minted under taxon 424242, claimed, then burned.
+ * Fixtures are real measured values, not invented ones: a live testnet badge
+ * minted under taxon 424242, claimed, then burned.
  */
 import { decodeAccountID, encodeAccountID } from "xrpl";
 import { describe, expect, it } from "vitest";
@@ -23,7 +23,7 @@ import {
 // Fixtures — measured, not invented
 // ---------------------------------------------------------------------------
 
-/** The live testnet badge from docs/ground-truth.md. */
+/** The live testnet badge these fixtures were measured from. */
 const NFTOKEN_ID = "000100002FAFC427A43949996C47DCC5B5AC6D10B2C8505667ABB1140132438B";
 const ISSUER_ACCOUNT_ID = "2FAFC427A43949996C47DCC5B5AC6D10B2C85056";
 const EVENT_ID = 424242;
@@ -197,7 +197,7 @@ const claim = { address: ATTENDEE, eventId: EVENT_ID, txHash: TX_HASH };
 
 describe("fixtures", () => {
   it("derives the measured issuer address from the measured AccountID", () => {
-    // Pins docs/ground-truth.md so a fixture typo cannot quietly pass.
+    // Pins the measured values so a fixture typo cannot quietly pass.
     expect(ISSUER).toBe("rnM9K73cbYACGq7WVXQHeT4nTzH2kjGW1Z");
     expect(buildNftokenId({ taxon: EVENT_ID, sequence: SEQUENCE })).toBe(NFTOKEN_ID);
   });

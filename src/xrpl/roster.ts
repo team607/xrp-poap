@@ -367,7 +367,7 @@ function isoTimestamp(entry: Record<string, any>, body: Record<string, any>): st
  * The tesSUCCESS filter below is belt-and-braces on that guarantee.
  *
  * ORDER: **newest first**, exactly as the ledger returns it. Measured on Clio
- * testnet (docs/ground-truth.md): a minted-claimed-burned badge comes back as
+ * testnet: a minted-claimed-burned badge comes back as
  * NFTokenBurn -> NFTokenAcceptOffer -> NFTokenCreateOffer -> NFTokenMint. The
  * mint is the *last* element, not the first.
  *

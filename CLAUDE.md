@@ -4,8 +4,11 @@ XRPL NFT layer for a POAP-style attendance app.
 
 The original spec (`xrpl-nft-layer-brief.md`) has been removed; it is in git
 history at commit 4720bd5 if you need it. Its settled decisions are restated
-below, and its factual claims about endpoints and burn behaviour were measured
-and corrected in `docs/ground-truth.md` — trust that file over the brief.
+below. Its factual claims about endpoints and burn behaviour were measured
+against a live ledger and several were wrong; what the measurements found is
+written into the comments and the fixtures of the code that depends on it —
+`src/xrpl/verify.ts`, `src/xrpl/roster.ts` and their tests. Trust those over
+the brief, and measure again rather than reasoning from it.
 
 ## Non-negotiables
 
